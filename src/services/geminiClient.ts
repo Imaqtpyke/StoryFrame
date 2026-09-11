@@ -23,6 +23,14 @@ function sanitizeErrorMessage(errorText: string, apiKey: string): string {
 2. If your key has HTTP referrer restrictions, ensure this application domain is permitted or remove the referrer restriction.
 3. If using an AI Studio key, ensure it is active at https://aistudio.google.com/app/apikey.`;
   }
+  if (cleaned.toLowerCase().includes('503') || cleaned.toLowerCase().includes('overloaded') || cleaned.toLowerCase().includes('service unavailable')) {
+    return `Google Gemini servers are temporarily overloaded (503 Service Unavailable).
+Automatic retries were attempted, but Google's cluster is experiencing high demand. Please wait 10-20 seconds and click "Generate Breakdown" again — server capacity usually clears up quickly.`;
+  }
+  if (cleaned.toLowerCase().includes('429') || cleaned.toLowerCase().includes('quota') || cleaned.toLowerCase().includes('resource has been exhausted')) {
+    return `Gemini API rate limit or quota exceeded (429).
+Please wait a moment before trying again, or check your quotas at https://aistudio.google.com/.`;
+  }
   return cleaned;
 }
 
@@ -183,52 +191,87 @@ Format: ${isLongForm ? 'Long form (16:9)' : 'Short form (9:16)'}
 Platform: ${platform}
 ${durationInstruction}`;
 
-  const primaryModel = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-3.8-flash';
-  const fallbackModel = 'gemini-3.8-flash';
+  const candidateModels = modelQuality === 'high'
+    ? ['gemini-3.1-pro-preview', 'gemini-3.8-flash', 'gemini-flash-latest', 'gemini-2.5-flash']
+    : ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-3.1-pro-preview'];
 
   let rawText = '';
   let parsedData: any = null;
   let lastError: Error | null = null;
 
-  for (const model of [primaryModel, fallbackModel]) {
-    try {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': apiKey,
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
-            },
-          ],
-          generationConfig: {
-            responseMimeType: 'application/json',
-            temperature: 0.7,
+  for (let mIdx = 0; mIdx < candidateModels.length; mIdx++) {
+    const model = candidateModels[mIdx];
+    let modelSuccess = false;
+
+    // Up to 2 attempts per model with backoff on 503/429/transient errors
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey,
           },
-        }),
-      });
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
+              },
+            ],
+            generationConfig: {
+              responseMimeType: 'application/json',
+              temperature: 0.7,
+            },
+          }),
+        });
 
-      const data = await response.json();
-      if (!response.ok) {
-        const errorMsg = data?.error?.message || `Direct Gemini API call failed (${response.status})`;
-        throw new Error(sanitizeErrorMessage(errorMsg, apiKey));
-      }
+        const data = await response.json();
+        if (!response.ok) {
+          const status = response.status;
+          const rawMsg = data?.error?.message || `Direct Gemini API call failed (${status})`;
 
-      rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      const cleanedText = rawText.trim().replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
-      parsedData = JSON.parse(cleanedText);
-      if (parsedData && Array.isArray(parsedData.scenes) && parsedData.scenes.length > 0) {
-        break;
+          // Non-retryable client errors (invalid key, permission denied, bad request)
+          if (status === 400 || status === 403) {
+            throw new Error(sanitizeErrorMessage(rawMsg, apiKey));
+          }
+
+          // Transient server overload or rate limits: retry with backoff
+          if (status === 503 || status === 429 || status >= 500) {
+            if (attempt === 1) {
+              await new Promise((resolve) => setTimeout(resolve, 1500));
+              continue; // try attempt 2 for this model
+            }
+          }
+
+          throw new Error(sanitizeErrorMessage(rawMsg, apiKey));
+        }
+
+        rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const cleanedText = rawText.trim().replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+        parsedData = JSON.parse(cleanedText);
+        if (parsedData && Array.isArray(parsedData.scenes) && parsedData.scenes.length > 0) {
+          modelSuccess = true;
+          break;
+        }
+      } catch (err: any) {
+        lastError = new Error(sanitizeErrorMessage(err.message || 'Direct generation failed.', apiKey));
+
+        // If permission denied or invalid key, abort immediately - trying other models won't help
+        const lowerMsg = (err.message || '').toLowerCase();
+        if (lowerMsg.includes('permission') || lowerMsg.includes('api key not valid') || lowerMsg.includes('bad request')) {
+          throw lastError;
+        }
+
+        // On attempt 1, sleep briefly before retry
+        if (attempt === 1) {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+        }
       }
-    } catch (err: any) {
-      lastError = new Error(sanitizeErrorMessage(err.message || 'Direct generation failed.', apiKey));
-      if (model === fallbackModel) {
-        throw lastError;
-      }
+    }
+
+    if (modelSuccess && parsedData) {
+      break;
     }
   }
 

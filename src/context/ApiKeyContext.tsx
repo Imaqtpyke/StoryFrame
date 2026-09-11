@@ -19,8 +19,12 @@ const ApiKeyContext = createContext<ApiKeyContextType>({
 });
 
 export const ApiKeyProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [apiKey, setApiKey] = useState<string>('');
-  const [rememberInSession, setRememberInSession] = useState<boolean>(false);
+  const envDefaultKey = typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GEMINI_API_KEY
+    ? String((import.meta as any).env.VITE_GEMINI_API_KEY).trim()
+    : '';
+
+  const [apiKey, setApiKey] = useState<string>(envDefaultKey);
+  const [rememberInSession, setRememberInSession] = useState<boolean>(Boolean(envDefaultKey));
 
   useEffect(() => {
     try {
@@ -28,11 +32,14 @@ export const ApiKeyProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (stored && stored.trim()) {
         setApiKey(stored.trim());
         setRememberInSession(true);
+      } else if (envDefaultKey) {
+        setApiKey(envDefaultKey);
+        setRememberInSession(true);
       }
     } catch {
       // Ignore sessionStorage access errors
     }
-  }, []);
+  }, [envDefaultKey]);
 
   const setCustomApiKey = (newKey: string, remember: boolean) => {
     const trimmed = newKey.trim();

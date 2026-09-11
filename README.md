@@ -63,6 +63,20 @@ StoryFrame is a creative suite for storytellers, filmmakers, video creators, and
 
 ---
 
+## 🌐 Deploying to Vercel
+
+1. Push your repository to GitHub.
+2. In the [Vercel Dashboard](https://vercel.com/), click **Add New** > **Project** and select your repository.
+3. In **Project Settings** > **Environment Variables**, optionally add:
+   - `VITE_GEMINI_API_KEY`: Your Google Gemini API key.
+   *(If not set as an environment variable, users can also securely enter their API key directly in the web app under Model Options).*
+4. Click **Deploy**.
+
+> **Note on 503 (Model Overloaded) Errors**:
+> Google's free-tier Gemini endpoints can occasionally experience high-traffic spikes, resulting in temporary `503 Service Unavailable: The model is overloaded` responses. StoryFrame includes built-in exponential backoff retries and automatic multi-model failover (`gemini-3.8-flash` ➔ `gemini-flash-latest` ➔ `gemini-2.5-flash` ➔ `gemini-3.1-pro-preview`). If a 503 occurs during peak hours, waiting 10-20 seconds before retrying usually resolves it immediately as Google's cluster clears.
+
+---
+
 ## 📦 Available Scripts
 
 - `npm run dev` — Starts the Vite development server.
