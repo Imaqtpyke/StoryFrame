@@ -1,0 +1,6 @@
+{
+  "name": "StoryFrame",
+  "description": "Generate scene-by-scene image prompts and narrator scripts from any story idea with custom character styles, formats, and platforms.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
