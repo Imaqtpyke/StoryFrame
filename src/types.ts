@@ -40,4 +40,12 @@ export interface GenerateStoryRequest {
   modelQuality?: 'standard' | 'high';
 }
 
+export interface HistoryItem {
+  id: string;
+  timestamp: number;
+  storyTitle: string;
+  request: GenerateStoryRequest;
+  result: StoryGenerationResult;
+}
+
 export type ActivePage = 'generator' | 'terms' | 'privacy';

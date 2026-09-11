@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Header from './components/Header';
 import Footer from './components/Footer';
 import BackgroundEffect from './components/BackgroundEffect';
@@ -6,9 +6,11 @@ import GeneratorForm from './components/GeneratorForm';
 import ResultsView from './components/ResultsView';
 import LegalView from './components/LegalViews';
 import ScrollToTopButton from './components/ScrollToTopButton';
+import HistoryModal from './components/HistoryModal';
 import { ApiKeyProvider, useApiKey } from './context/ApiKeyContext';
 import { generateStoryDirectly } from './services/geminiClient';
-import { ActivePage, GenerateStoryRequest, StoryGenerationResult } from './types';
+import { getHistoryItems, addHistoryItem, deleteHistoryItem, clearAllHistory } from './services/historyStorage';
+import { ActivePage, GenerateStoryRequest, HistoryItem, StoryGenerationResult } from './types';
 
 function StoryFrameMain() {
   const { apiKey } = useApiKey();
@@ -17,6 +19,13 @@ function StoryFrameMain() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [result, setResult] = useState<StoryGenerationResult | null>(null);
   const [lastRequest, setLastRequest] = useState<GenerateStoryRequest | null>(null);
+  const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+
+  // Load history on initial mount
+  useEffect(() => {
+    setHistoryItems(getHistoryItems());
+  }, []);
 
   const handleGenerateStory = async (data: GenerateStoryRequest) => {
     setIsLoading(true);
@@ -31,6 +40,11 @@ function StoryFrameMain() {
       // Direct client-side generation using BYOK
       const responseData = await generateStoryDirectly(data, apiKey.trim());
       setResult(responseData);
+
+      // Save to local history
+      const updatedHistory = addHistoryItem(data, responseData);
+      setHistoryItems(updatedHistory);
+
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: any) {
       const errorMsg = err?.message || 'An unexpected failure occurred while connecting to Google Gemini.';
@@ -40,6 +54,24 @@ function StoryFrameMain() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSelectFromHistory = (item: HistoryItem) => {
+    setLastRequest(item.request);
+    setResult(item.result);
+    setErrorMessage(null);
+    setActivePage('generator');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleDeleteHistoryItem = (id: string) => {
+    const updated = deleteHistoryItem(id);
+    setHistoryItems(updated);
+  };
+
+  const handleClearAllHistory = () => {
+    const updated = clearAllHistory();
+    setHistoryItems(updated);
   };
 
   const handleBackToEdit = () => {
@@ -58,7 +90,12 @@ function StoryFrameMain() {
       {/* Subtle monochrome motion background layer */}
       <BackgroundEffect />
 
-      <Header activePage={activePage} onNavigate={setActivePage} />
+      <Header 
+        activePage={activePage} 
+        onNavigate={setActivePage} 
+        onOpenHistory={() => setIsHistoryOpen(true)}
+        historyCount={historyItems.length}
+      />
 
       <main className="flex-1 w-full max-w-5xl mx-auto px-3 xs:px-4 sm:px-6 pt-6 sm:pt-14 pb-12 sm:pb-16 relative z-10">
         {activePage === 'generator' ? (
@@ -88,6 +125,16 @@ function StoryFrameMain() {
 
       <Footer onNavigate={setActivePage} />
 
+      {/* Story History Modal (Web) / Drawer (Mobile) */}
+      <HistoryModal
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+        items={historyItems}
+        onSelectStory={handleSelectFromHistory}
+        onDeleteItem={handleDeleteHistoryItem}
+        onClearAll={handleClearAllHistory}
+      />
+
       {/* Up button when scrolled down */}
       <ScrollToTopButton />
     </div>
@@ -101,3 +148,4 @@ export default function App() {
     </ApiKeyProvider>
   );
 }
+
