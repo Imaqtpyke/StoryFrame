@@ -1,6 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
-import { StoryGenerationResult, StoryFormat } from '../types';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { StoryGenerationResult, StoryFormat, Beat } from '../types';
 import StyleAndCharactersSection from './StyleAndCharactersSection';
+import BeatBottomSheet from './BeatBottomSheet';
+import { enforceBeatCeilings, getPreviewText } from '../services/beatSplitting';
 import {
   Copy,
   Check,
@@ -73,6 +75,25 @@ export default function ResultsView({
   const [isMobileStyleModalOpen, setIsMobileStyleModalOpen] = useState(false);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const exportMenuRef = useRef<HTMLDivElement>(null);
+
+  // Desktop beat inline expansion state (compact by default: empty object)
+  const [expandedDesktopBeats, setExpandedDesktopBeats] = useState<Record<string, boolean>>({});
+
+  // Mobile bottom sheet beat breakdown state
+  const [mobileActiveBeat, setMobileActiveBeat] = useState<{
+    sceneIndex: number;
+    sceneRoman: string;
+    beat: Beat;
+    allBeats: Beat[];
+  } | null>(null);
+
+  // Normalize scenes with hard beat ceilings (ensuring no beat exceeds 2s or 8 words)
+  const normalizedScenes = useMemo(() => {
+    return result.scenes.map((scene) => ({
+      ...scene,
+      beats: enforceBeatCeilings(scene.beats || [], scene.index),
+    }));
+  }, [result.scenes]);
 
   // Scene collapse state (default: all expanded)
   const [expandedScenes, setExpandedScenes] = useState<Record<number, boolean>>(() => {
@@ -154,7 +175,7 @@ export default function ResultsView({
 
   const setAllScenesExpanded = (expanded: boolean) => {
     const updated: Record<number, boolean> = {};
-    result.scenes.forEach((s) => {
+    normalizedScenes.forEach((s) => {
       updated[s.index] = expanded;
     });
     setExpandedScenes(updated);
@@ -169,19 +190,54 @@ export default function ResultsView({
     }
   };
 
-  const fullScript = result.scenes.map((s) => s.narratorLine).join(' ');
-  const totalBeatsCount = result.scenes.reduce((acc, s) => acc + (s.beats?.length || 0), 0);
+  // Beat interaction handlers: compact-by-default, expand inline on desktop, bottom sheet on mobile
+  const handleBeatClick = (sceneIndex: number, sceneRoman: string, beat: Beat, allBeats: Beat[]) => {
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+    if (isMobile) {
+      setMobileActiveBeat({ sceneIndex, sceneRoman, beat, allBeats });
+    } else {
+      const beatKey = `scene-${sceneIndex}-beat-${beat.beatIndex}`;
+      setExpandedDesktopBeats((prev) => ({
+        ...prev,
+        [beatKey]: !prev[beatKey],
+      }));
+    }
+  };
+
+  const handleCollapseDesktopBeat = (beatKey: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpandedDesktopBeats((prev) => ({
+      ...prev,
+      [beatKey]: false,
+    }));
+  };
+
+  const handleToggleAllBeatsInScene = (sceneIndex: number, beatsList: Beat[]) => {
+    const allExpanded = beatsList.every(
+      (b) => expandedDesktopBeats[`scene-${sceneIndex}-beat-${b.beatIndex}`]
+    );
+    setExpandedDesktopBeats((prev) => {
+      const next = { ...prev };
+      beatsList.forEach((b) => {
+        next[`scene-${sceneIndex}-beat-${b.beatIndex}`] = !allExpanded;
+      });
+      return next;
+    });
+  };
+
+  const fullScript = normalizedScenes.map((s) => s.narratorLine).join(' ');
+  const totalBeatsCount = normalizedScenes.reduce((acc, s) => acc + (s.beats?.length || 0), 0);
   const characterEntries = Object.entries(result.characterSheet || {});
 
   // Calculate timeline ranges
   let accumulatedSeconds = 0;
-  const sceneTimelineRanges = result.scenes.map((scene) => {
+  const sceneTimelineRanges = normalizedScenes.map((scene) => {
     const startSec = accumulatedSeconds;
     const endSec = startSec + scene.estimatedSeconds;
     accumulatedSeconds = endSec;
     const pct = result.totalDurationSeconds > 0
       ? (scene.estimatedSeconds / result.totalDurationSeconds) * 100
-      : 100 / result.scenes.length;
+      : 100 / normalizedScenes.length;
     return {
       sceneIndex: scene.index,
       startSec,
@@ -193,7 +249,7 @@ export default function ResultsView({
   // Batch actions
   const handleCopyAllPrompts = () => {
     const lines: string[] = [];
-    result.scenes.forEach((scene) => {
+    normalizedScenes.forEach((scene) => {
       (scene.beats || []).forEach((b) => {
         const shotTag = b.shotType ? `[${b.shotType}] ` : '';
         lines.push(`SCENE ${toRomanNumeral(scene.index)} - BEAT ${b.beatIndex} ${shotTag}: ${b.imagePrompt}`);
@@ -209,7 +265,11 @@ export default function ResultsView({
   // Export functions
   const downloadJsonExport = () => {
     setIsExportMenuOpen(false);
-    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(result, null, 2));
+    const exportPayload = {
+      ...result,
+      scenes: normalizedScenes,
+    };
+    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(exportPayload, null, 2));
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute('href', dataStr);
     downloadAnchor.setAttribute('download', `storyboard-production-${platform.toLowerCase().replace(/[^a-z0-9]/g, '-')}.json`);
@@ -224,7 +284,7 @@ export default function ResultsView({
       ['Scene', 'Roman Scene', 'Beat', 'Estimated Seconds', 'Shot Type', 'Camera Movement', 'Spoken Narration', 'Visual Image Prompt'],
     ];
 
-    result.scenes.forEach((scene) => {
+    normalizedScenes.forEach((scene) => {
       (scene.beats || []).forEach((beat) => {
         rows.push([
           `Scene ${scene.index}`,
@@ -253,7 +313,7 @@ export default function ResultsView({
     let md = `# Production Storyboard & Shot List\n\n`;
     md += `**Platform**: ${platform} (${format === 'long' ? '16:9 Widescreen' : '9:16 Vertical'})\n`;
     md += `**Estimated Duration**: ~${formatSecondsToMinutes(result.totalDurationSeconds)}\n`;
-    md += `**Total Scenes**: ${result.scenes.length} | **Total Visual Beats**: ${totalBeatsCount}\n\n`;
+    md += `**Total Scenes**: ${normalizedScenes.length} | **Total Visual Beats**: ${totalBeatsCount}\n\n`;
 
     if (result.styleProfile) {
       md += `## Visual Style Profile\n`;
@@ -274,7 +334,7 @@ export default function ResultsView({
     md += `## Complete Narrator Script\n\n> ${fullScript}\n\n`;
 
     md += `## Director Shot List Breakdown\n\n`;
-    result.scenes.forEach((scene) => {
+    normalizedScenes.forEach((scene) => {
       md += `### SCENE ${toRomanNumeral(scene.index)} (~${scene.estimatedSeconds}s)\n`;
       md += `**Narrator Line**:\n"${scene.narratorLine}"\n\n`;
       md += `| Beat | Duration | Shot Type | Camera Motion | Spoken Words | Visual Image Prompt |\n`;
@@ -477,7 +537,7 @@ export default function ResultsView({
 
       {/* STORYBOARD CARDS VIEW */}
       <div className="space-y-5 sm:space-y-8" id="scene-cards-container">
-        {result.scenes.map((scene) => {
+        {normalizedScenes.map((scene) => {
           const isCopiedNarration = copiedIndex === `narration-${scene.index}`;
           const beats = scene.beats || [];
           const isExpanded = expandedScenes[scene.index] ?? true;
@@ -551,7 +611,7 @@ export default function ResultsView({
                     </div>
                   </div>
 
-                  {/* Stack of Beat Cards */}
+                  {/* Beats Breakdown Section */}
                   <div className="space-y-3.5 sm:space-y-4 pt-1 sm:pt-2">
                     <div className="flex items-center justify-between border-t border-white/10 pt-3 sm:pt-4">
                       <div className="flex items-center space-x-1.5 sm:space-x-2">
@@ -560,78 +620,183 @@ export default function ResultsView({
                           CINEMATOGRAPHY &amp; VISUAL BEATS
                         </span>
                       </div>
-                      <span className="font-editorial-meta text-[9px] sm:text-[10px] text-[#7D7D76]">
-                        {beats.length} SETUPS
-                      </span>
+                      <div className="flex items-center space-x-2">
+                        <span className="font-editorial-meta text-[9px] sm:text-[10px] text-[#7D7D76]">
+                          {beats.length} SETUPS
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleAllBeatsInScene(scene.index, beats)}
+                          className="hidden sm:inline-flex items-center font-editorial-meta text-[9px] text-[#A8A8A2] hover:text-white bg-white/5 hover:bg-white/10 px-2 py-0.5 border border-white/10 transition-colors"
+                        >
+                          {beats.every((b) => expandedDesktopBeats[`scene-${scene.index}-beat-${b.beatIndex}`])
+                            ? 'COLLAPSE ALL'
+                            : 'EXPAND ALL'}
+                        </button>
+                      </div>
                     </div>
 
-                    {/* Beats List */}
-                    <div className="space-y-3 sm:space-y-4">
+                    {/* Mobile Filmstrip Row (Compact Scan Row: 2-3 fit on screen horizontally) */}
+                    <div className="block sm:hidden space-y-2">
+                      <div className="flex overflow-x-auto pb-2.5 pt-1 gap-2.5 snap-x snap-mandatory scrollbar-thin overscroll-x-contain -mx-1 px-1">
+                        {beats.map((beat) => (
+                          <div
+                            key={beat.beatIndex}
+                            id={`mobile-beat-card-${scene.index}-${beat.beatIndex}`}
+                            onClick={() => handleBeatClick(scene.index, romanScene, beat, beats)}
+                            className="flex-none w-[160px] xs:w-[175px] snap-start bg-[#161614] border border-white/10 active:border-white/40 active:bg-[#1E1E1C] p-2.5 flex flex-col justify-between min-h-[96px] cursor-pointer transition-all rounded-[2px]"
+                          >
+                            <div className="flex items-center justify-between gap-1 border-b border-white/5 pb-1">
+                              <span className="stamp-chip stamp-chip-primary font-bold text-[8px]">
+                                B{String(beat.beatIndex).padStart(2, '0')}
+                              </span>
+                              <span className="font-editorial-meta text-[8px] text-emerald-400/90">
+                                ~{beat.estimatedSeconds}s
+                              </span>
+                            </div>
+
+                            <div className="my-1.5 space-y-0.5">
+                              <div className="flex items-center gap-1 text-[8px] font-editorial-meta text-[#C4C4C0]">
+                                <Camera size={8} className="text-[#9C9C96] shrink-0" />
+                                <span className="truncate">{beat.shotType || 'Medium Shot'}</span>
+                              </div>
+                              {beat.cameraMovement && (
+                                <div className="flex items-center gap-1 text-[8px] font-editorial-meta text-[#8C8C86]">
+                                  <Video size={8} className="text-[#7D7D76] shrink-0" />
+                                  <span className="truncate">{beat.cameraMovement}</span>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="pt-1 border-t border-white/5">
+                              <p className="text-[10px] text-[#E6E6E1] italic font-narrative line-clamp-2 leading-tight">
+                                &ldquo;{getPreviewText(beat.textSpan, 6)}&rdquo;
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-[8px] text-[#7D7D76] font-editorial-meta text-center tracking-wider">
+                        TAP ANY BEAT TO SLIDE UP COMPLETE VISUAL PROMPT &amp; SCRIPT
+                      </p>
+                    </div>
+
+                    {/* Desktop Wrapped Grid (Compact Chips by default, Expands Inline on click) */}
+                    <div className="hidden sm:grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-3">
                       {beats.map((beat) => {
                         const beatKey = `scene-${scene.index}-beat-${beat.beatIndex}`;
+                        const isExpandedBeat = !!expandedDesktopBeats[beatKey];
                         const isCopiedPrompt = copiedIndex === `prompt-${beatKey}`;
                         const isCopiedText = copiedIndex === `text-${beatKey}`;
 
+                        if (!isExpandedBeat) {
+                          /* Compact Chip State */
+                          return (
+                            <div
+                              key={beat.beatIndex}
+                              id={`desktop-beat-chip-${scene.index}-${beat.beatIndex}`}
+                              onClick={() => handleBeatClick(scene.index, romanScene, beat, beats)}
+                              className="bg-[#161614] border border-white/10 hover:border-white/30 hover:bg-[#1C1C1A] p-3 flex flex-col justify-between min-h-[112px] cursor-pointer transition-all group select-none rounded-[2px]"
+                              title="Click to expand full beat breakdown"
+                            >
+                              <div className="flex items-center justify-between gap-1 border-b border-white/5 pb-1.5">
+                                <span className="stamp-chip stamp-chip-primary font-bold text-[9px]">
+                                  BEAT {String(beat.beatIndex).padStart(2, '0')}
+                                </span>
+                                <span className="font-editorial-meta text-[9px] text-emerald-400/90">
+                                  ~{beat.estimatedSeconds}S
+                                </span>
+                              </div>
+
+                              <div className="my-1.5 space-y-0.5">
+                                <div className="flex items-center gap-1 text-[9px] font-editorial-meta text-[#C4C4C0]">
+                                  <Camera size={9} className="text-[#9C9C96] shrink-0" />
+                                  <span className="truncate">{beat.shotType || 'Medium Shot'}</span>
+                                </div>
+                                {beat.cameraMovement && (
+                                  <div className="flex items-center gap-1 text-[8px] font-editorial-meta text-[#8C8C86]">
+                                    <Video size={8} className="text-[#7D7D76] shrink-0" />
+                                    <span className="truncate">{beat.cameraMovement}</span>
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="pt-1.5 border-t border-white/5 flex items-center justify-between gap-1">
+                                <p className="text-[11px] text-[#E6E6E1] italic font-narrative truncate max-w-[85%]">
+                                  &ldquo;{getPreviewText(beat.textSpan, 6)}&rdquo;
+                                </p>
+                                <ChevronDown size={11} className="text-[#7D7D76] group-hover:text-white transition-colors shrink-0" />
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        /* Expanded Card State in Place */
                         return (
                           <div
                             key={beat.beatIndex}
-                            id={`beat-card-${scene.index}-${beat.beatIndex}`}
-                            className="bg-[#161614] border border-white/10 p-3 sm:p-5 md:p-6 space-y-3 sm:space-y-3.5 hover:border-white/25 transition-colors"
+                            id={`desktop-beat-card-expanded-${scene.index}-${beat.beatIndex}`}
+                            className="col-span-full bg-[#181816] border border-white/25 p-4 sm:p-5 md:p-6 space-y-3.5 shadow-xl transition-all rounded-[2px]"
                           >
-                            {/* Beat Header with Stamped Production Tags */}
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-2.5 sm:pb-3">
-                              <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap">
+                              <div className="flex items-center gap-1.5 flex-wrap">
                                 <span className="stamp-chip stamp-chip-primary font-bold">
                                   BEAT {String(beat.beatIndex).padStart(2, '0')}
                                 </span>
-
-                                {/* Stamped Shot Taxonomy Tag */}
                                 {beat.shotType && (
                                   <span className="stamp-chip">
                                     <Camera size={9} className="mr-1 text-[#9C9C96] shrink-0 sm:w-2.5 sm:h-2.5" />
                                     {beat.shotType}
                                   </span>
                                 )}
-
-                                {/* Stamped Camera Movement Tag */}
                                 {beat.cameraMovement && (
                                   <span className="stamp-chip">
                                     <Video size={9} className="mr-1 text-[#9C9C96] shrink-0 sm:w-2.5 sm:h-2.5" />
                                     {beat.cameraMovement}
                                   </span>
                                 )}
-
-                                <span className="font-editorial-meta text-[9px] sm:text-[10px] text-[#9C9C96]">
+                                <span className="font-editorial-meta text-[9px] sm:text-[10px] text-emerald-400">
                                   ~{beat.estimatedSeconds}S
                                 </span>
                               </div>
 
-                              {/* Copy Prompt Action */}
-                              <button
-                                type="button"
-                                id={`copy-beat-prompt-btn-${scene.index}-${beat.beatIndex}`}
-                                onClick={() => copyToClipboard(beat.imagePrompt, `prompt-${beatKey}`)}
-                                className="inline-flex items-center justify-center font-editorial-meta text-[9px] sm:text-[10px] px-2.5 sm:px-3 py-1 text-white bg-[#222220] hover:bg-[#2e2e2a] border border-white/20 transition-colors whitespace-nowrap min-h-[28px] self-start sm:self-auto"
-                              >
-                                {isCopiedPrompt ? (
-                                  <>
-                                    <Check size={10} className="mr-1 text-white shrink-0 sm:w-3 sm:h-3" />
-                                    <span className="text-white font-semibold">COPIED</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Copy size={10} className="mr-1 shrink-0 text-[#9C9C96] sm:w-3 sm:h-3" />
-                                    <span>COPY PROMPT</span>
-                                  </>
-                                )}
-                              </button>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  id={`copy-beat-prompt-btn-${scene.index}-${beat.beatIndex}`}
+                                  onClick={() => copyToClipboard(beat.imagePrompt, `prompt-${beatKey}`)}
+                                  className="inline-flex items-center justify-center font-editorial-meta text-[9px] sm:text-[10px] px-2.5 sm:px-3 py-1 text-white bg-[#222220] hover:bg-[#2e2e2a] border border-white/20 transition-colors whitespace-nowrap min-h-[28px]"
+                                >
+                                  {isCopiedPrompt ? (
+                                    <>
+                                      <Check size={10} className="mr-1 text-white shrink-0 sm:w-3 sm:h-3" />
+                                      <span className="text-white font-semibold">COPIED</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Copy size={10} className="mr-1 shrink-0 text-[#9C9C96] sm:w-3 sm:h-3" />
+                                      <span>COPY PROMPT</span>
+                                    </>
+                                  )}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleCollapseDesktopBeat(beatKey, e)}
+                                  className="inline-flex items-center justify-center font-editorial-meta text-[9px] sm:text-[10px] px-2 sm:px-2.5 py-1 text-[#A8A8A2] hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 transition-colors whitespace-nowrap min-h-[28px]"
+                                  title="Collapse to compact chip"
+                                >
+                                  <ChevronUp size={11} className="mr-1" />
+                                  <span>COLLAPSE</span>
+                                </button>
+                              </div>
                             </div>
 
                             {/* Spoken Text Span for this Beat */}
                             <div className="space-y-1">
                               <div className="flex items-center justify-between">
                                 <span className="font-editorial-meta text-[9px] sm:text-[10px] text-[#9C9C96]">
-                                  SPOKEN PHRASE
+                                  SPOKEN PHRASE (MAX 8 WORDS)
                                 </span>
                                 <button
                                   type="button"
@@ -847,6 +1012,26 @@ export default function ResultsView({
           </div>
         </div>
       )}
+
+      {/* Mobile Beat Expansion Bottom Sheet */}
+      <BeatBottomSheet
+        isOpen={Boolean(mobileActiveBeat)}
+        onClose={() => setMobileActiveBeat(null)}
+        sceneIndex={mobileActiveBeat?.sceneIndex ?? 1}
+        sceneRoman={mobileActiveBeat?.sceneRoman ?? 'I'}
+        beat={mobileActiveBeat?.beat ?? null}
+        allBeatsInScene={mobileActiveBeat?.allBeats ?? []}
+        onNavigateBeat={(nextBeat) => {
+          if (mobileActiveBeat) {
+            setMobileActiveBeat({
+              ...mobileActiveBeat,
+              beat: nextBeat,
+            });
+          }
+        }}
+        copiedIndex={copiedIndex}
+        onCopy={copyToClipboard}
+      />
     </div>
   );
 }

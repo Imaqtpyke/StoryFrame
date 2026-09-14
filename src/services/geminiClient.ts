@@ -3,6 +3,7 @@
 // API keys are strictly kept in browser memory / sessionStorage and never sent to any remote backend.
 
 import { GenerateStoryRequest, StoryGenerationResult } from '../types';
+import { enforceBeatCeilings } from './beatSplitting';
 
 function removeEmDashes(text: string): string {
   if (!text) return text;
@@ -126,21 +127,27 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - "estimatedSeconds": total estimated spoken seconds for this entire scene.
    - "beats": an array of fine-grained visual beats.
 
-4. Granular Visual Beat Partitioning & Cinematic Taxonomy:
-   Split each scene's narratorLine at EVERY natural phrase pause (a comma, a clause shift, a change in subject, action, object, or location), NOT into a fixed 2 to 5 chunks.
-   Most beats should run 2 to 8 words.
+4. Granular Visual Beat Partitioning & HARD CEILING RULE:
+   HARD CEILING: No beat may represent more than 2 seconds of estimated narration or 8 words, whichever is smaller.
+   A sentence like "If you think volcanoes take thousands of years to grow," MUST be split into micro-beats:
+   - "If you think" [~1.2s]
+   - "volcanoes" [~1.0s]
+   - "take thousands of years" [~1.8s]
+   - "to grow," [~1.1s]
+   Split each scene's narratorLine at EVERY natural phrase pause, comma, conjunction, preposition, and clause boundary.
+   NEVER leave a whole sentence as one static beat. Expect 6 to 12 fine-grained micro-beats per scene.
    
    CRITICAL CINEMATIC SHOT VARIETY:
    Vary camera angles across sequential beats to ensure rhythmic dynamic pacing (e.g., alternate Establishing Wide Shots, Medium Shots, Intimate Close-Ups, Dynamic Over-The-Shoulder angles, and Low-Angle Hero shots). Do not use the same shot type twice in a row.
 
    Each beat must specify:
    - "beatIndex": integer (1, 2, 3...)
-   - "textSpan": the exact words from the scene's narratorLine that this visual beat covers.
+   - "textSpan": the exact words from the scene's narratorLine that this visual beat covers (MAX 8 WORDS).
    - "shotType": explicit cinematography shot type (e.g., "Wide Establishing Shot", "Medium Shot", "Close-Up", "Extreme Close-Up", "Over-the-Shoulder (OTS)", "Low-Angle Shot", "High-Angle POV", "Dutch Angle")
    - "cameraMovement": cinematic motion cue (e.g., "Slow Push-In", "Static Frame", "Tracking Subject", "Smooth Pan", "Low Dolly Glide", "Aerial Drift")
    - "imagePrompt": a structured cinematic prompt formatted according to the formula:
      [Shot Type & Framing] of [Subject with exact character appearance details], [Key Action/Beat] in [Setting/Environment], [Lighting & Color Grade]. [Aspect ratio and style anchors: ${defaultAspectRatio}, ${characterStyle || 'cinematic rendering'}].
-   - "estimatedSeconds": estimated spoken narration duration for this phrase in seconds (typically 1 to 3 seconds).
+   - "estimatedSeconds": estimated spoken narration duration in seconds (HARD CEILING: MAXIMUM 2.0 SECONDS, typically 1.0 to 1.8 seconds).
 
 5. Duration and Pacing:
    ${durationInstruction}
@@ -377,16 +384,24 @@ ${durationInstruction}`;
       };
     });
 
-    const calculatedSceneSeconds = sanitizedBeats.reduce((sum: number, b: any) => sum + b.estimatedSeconds, 0);
-    const sceneSeconds = typeof scene.estimatedSeconds === 'number' && scene.estimatedSeconds > 0
-      ? scene.estimatedSeconds
-      : calculatedSceneSeconds;
+    // Enforce hard ceiling validation: split any beat > 2.0s or > 8 words into micro-beats
+    const ceilingEnforcedBeats = enforceBeatCeilings(sanitizedBeats, sceneIndex);
+
+    const calculatedSceneSeconds = Math.round(
+      ceilingEnforcedBeats.reduce((sum: number, b: any) => sum + (b.estimatedSeconds || 1.5), 0)
+    );
+    const sceneSeconds = Math.max(
+      calculatedSceneSeconds,
+      typeof scene.estimatedSeconds === 'number' && scene.estimatedSeconds > 0
+        ? scene.estimatedSeconds
+        : calculatedSceneSeconds
+    );
 
     return {
       index: sceneIndex,
       narratorLine,
       estimatedSeconds: sceneSeconds,
-      beats: sanitizedBeats,
+      beats: ceilingEnforcedBeats,
     };
   });
 
