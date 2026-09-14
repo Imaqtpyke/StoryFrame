@@ -40,6 +40,15 @@ const DYNAMIC_MOVEMENT_CYCLE = [
   'Slow Tilt Up'
 ];
 
+const DYNAMIC_ANGLE_CYCLE = [
+  'eye-level',
+  'high-angle',
+  'low-angle',
+  'birds-eye',
+  'worms-eye',
+  'dutch-tilt'
+];
+
 /**
  * Count non-empty words in a phrase
  */
@@ -185,13 +194,18 @@ export function enforceBeatCeilings(
           Math.max(0.8, Math.round((subWords * 0.35 + 0.3) * 10) / 10)
         );
 
-        // Dynamically rotate shot types and camera movements so each micro-beat feels varied
+        // Dynamically rotate shot types, camera angles, and camera movements so each micro-beat feels varied
         const shotCycleIndex = (sceneIndex * 3 + globalBeatCounter) % DYNAMIC_SHOT_CYCLE.length;
         const moveCycleIndex = (sceneIndex * 2 + globalBeatCounter) % DYNAMIC_MOVEMENT_CYCLE.length;
+        const angleCycleIndex = (sceneIndex * 4 + globalBeatCounter) % DYNAMIC_ANGLE_CYCLE.length;
         
         const subShotType = subIdx === 0 && originalBeat.shotType
           ? originalBeat.shotType
           : DYNAMIC_SHOT_CYCLE[shotCycleIndex];
+
+        const subCameraAngle = originalBeat.cameraAngle
+          ? originalBeat.cameraAngle
+          : DYNAMIC_ANGLE_CYCLE[angleCycleIndex];
 
         const subCameraMove = subIdx === 0 && originalBeat.cameraMovement
           ? originalBeat.cameraMovement
@@ -200,7 +214,7 @@ export function enforceBeatCeilings(
         // Adapt the prompt to emphasize this sub-beat's visual focus
         let adaptedPrompt = basePrompt;
         if (subIdx > 0) {
-          adaptedPrompt = `[${subShotType}, ${subCameraMove}] Focusing on "${subPhrase}": ` +
+          adaptedPrompt = `[${subShotType}, ${subCameraAngle}, ${subCameraMove}] Focusing on "${subPhrase}": ` +
             basePrompt.replace(/^\[.*?\]\s*/, '');
         }
 
@@ -210,6 +224,7 @@ export function enforceBeatCeilings(
           imagePrompt: adaptedPrompt,
           estimatedSeconds: subSeconds,
           shotType: subShotType,
+          cameraAngle: subCameraAngle,
           cameraMovement: subCameraMove,
         });
       });

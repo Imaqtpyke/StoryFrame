@@ -288,7 +288,7 @@ export default function ResultsView({
   const downloadCsvExport = () => {
     setIsExportMenuOpen(false);
     const hasVideo = result.generationMode === 'video' || normalizedScenes.some((s) => s.videoPrompt);
-    const headers = ['Scene', 'Roman Scene', 'Beat', 'Estimated Seconds', 'Shot Type', 'Camera Movement', 'Spoken Narration', 'Visual Image Prompt'];
+    const headers = ['Scene', 'Roman Scene', 'Beat', 'Estimated Seconds', 'Shot Type', 'Camera Angle', 'Camera Movement', 'Spoken Narration', 'Visual Image Prompt'];
     if (hasVideo) {
       headers.push('Scene Video Prompt (8-Part)', 'Start Frame Keyframe Prompt');
     }
@@ -302,6 +302,7 @@ export default function ResultsView({
           `Beat ${beat.beatIndex}`,
           `${beat.estimatedSeconds}s`,
           beat.shotType || 'Medium Shot',
+          beat.cameraAngle || 'Eye-level',
           beat.cameraMovement || 'Static',
           `"${beat.textSpan.replace(/"/g, '""')}"`,
           `"${beat.imagePrompt.replace(/"/g, '""')}"`,
@@ -353,6 +354,15 @@ export default function ResultsView({
       md += `\n`;
     }
 
+    const locationEntries = result.locationSheet ? Object.entries(result.locationSheet) : [];
+    if (locationEntries.length > 0) {
+      md += `## Location Continuity Sheet\n`;
+      locationEntries.forEach(([name, desc]) => {
+        md += `- **${name}**: ${desc}\n`;
+      });
+      md += `\n`;
+    }
+
     md += `## Complete Narrator Script\n\n> ${fullScript}\n\n`;
 
     md += `## Director Shot List Breakdown\n\n`;
@@ -367,10 +377,10 @@ export default function ResultsView({
         md += `#### Start Frame Keyframe Prompt (Image Ingredient)\n\`\`\`text\n${scene.startFramePrompt}\n\`\`\`\n\n`;
       }
 
-      md += `| Beat | Duration | Shot Type | Camera Motion | Spoken Words | Visual Image Prompt |\n`;
-      md += `| :--- | :--- | :--- | :--- | :--- | :--- |\n`;
+      md += `| Beat | Duration | Shot Size | Angle | Movement | Spoken Words | Visual Image Prompt |\n`;
+      md += `| :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n`;
       (scene.beats || []).forEach((b) => {
-        md += `| Beat ${b.beatIndex} | ~${b.estimatedSeconds}s | ${b.shotType || 'Medium Shot'} | ${b.cameraMovement || 'Static'} | "${b.textSpan.replace(/\|/g, '-')}" | ${b.imagePrompt.replace(/\|/g, '-')} |\n`;
+        md += `| Beat ${b.beatIndex} | ~${b.estimatedSeconds}s | ${b.shotType || 'Medium Shot'} | ${b.cameraAngle || 'Eye-level'} | ${b.cameraMovement || 'Static'} | "${b.textSpan.replace(/\|/g, '-')}" | ${b.imagePrompt.replace(/\|/g, '-')} |\n`;
       });
       md += `\n`;
     });
@@ -570,6 +580,7 @@ export default function ResultsView({
         <StyleAndCharactersSection
           styleProfile={result.styleProfile}
           characterSheet={result.characterSheet}
+          locationSheet={result.locationSheet}
           copiedIndex={copiedIndex}
           onCopy={copyToClipboard}
           isModal={false}
@@ -779,6 +790,12 @@ export default function ResultsView({
                                   <Camera size={9} className="text-[#9C9C96] shrink-0" />
                                   <span className="truncate">{beat.shotType || 'Medium Shot'}</span>
                                 </div>
+                                {beat.cameraAngle && (
+                                  <div className="flex items-center gap-1 text-[8px] font-editorial-meta text-[#A0A098]">
+                                    <Video size={8} className="text-[#8C8C86] shrink-0" />
+                                    <span className="truncate">{beat.cameraAngle}</span>
+                                  </div>
+                                )}
                                 {beat.cameraMovement && (
                                   <div className="flex items-center gap-1 text-[8px] font-editorial-meta text-[#8C8C86]">
                                     <Video size={8} className="text-[#7D7D76] shrink-0" />
@@ -815,6 +832,12 @@ export default function ResultsView({
                                   <span className="stamp-chip">
                                     <Camera size={9} className="mr-1 text-[#9C9C96] shrink-0 sm:w-2.5 sm:h-2.5" />
                                     {beat.shotType}
+                                  </span>
+                                )}
+                                {beat.cameraAngle && (
+                                  <span className="stamp-chip">
+                                    <Video size={9} className="mr-1 text-[#9C9C96] shrink-0 sm:w-2.5 sm:h-2.5" />
+                                    {beat.cameraAngle}
                                   </span>
                                 )}
                                 {beat.cameraMovement && (

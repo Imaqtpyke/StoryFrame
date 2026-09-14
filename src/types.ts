@@ -15,6 +15,7 @@ export interface Beat {
   imagePrompt: string;
   estimatedSeconds: number;
   shotType?: string;
+  cameraAngle?: string;
   cameraMovement?: string;
 }
 
@@ -34,6 +35,7 @@ export interface StoryGenerationResult {
   totalDurationSeconds: number;
   styleProfile: StyleProfile;
   characterSheet: Record<string, string>;
+  locationSheet: Record<string, string>;
   scenes: Scene[];
   generationMode?: GenerationMode;
   targetVideoDuration?: number;

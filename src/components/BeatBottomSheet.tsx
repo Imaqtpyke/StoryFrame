@@ -138,6 +138,12 @@ export default function BeatBottomSheet({
               {beat.shotType}
             </span>
           )}
+          {beat.cameraAngle && (
+            <span className="stamp-chip text-[9px]">
+              <Video size={9} className="mr-1 text-[#9C9C96] shrink-0" />
+              {beat.cameraAngle}
+            </span>
+          )}
           {beat.cameraMovement && (
             <span className="stamp-chip text-[9px]">
               <Video size={9} className="mr-1 text-[#9C9C96] shrink-0" />

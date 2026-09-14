@@ -99,6 +99,14 @@
   position: relative;
 }
 
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
+}
+.scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
 /* Corner bracket lines created with clean CSS */
 .corner-bracket-container::before,
 .corner-bracket-container::after {

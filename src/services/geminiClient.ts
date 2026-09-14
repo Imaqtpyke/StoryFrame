@@ -55,6 +55,15 @@ const DEFAULT_CAMERA_MOVEMENTS = [
   'Handheld Cinematic Drift'
 ];
 
+const DEFAULT_CAMERA_ANGLES = [
+  'eye-level',
+  'high-angle',
+  'low-angle',
+  'birds-eye',
+  'worms-eye',
+  'dutch-tilt'
+];
+
 function inferShotType(imagePrompt: string, beatIndex: number): string {
   const lower = imagePrompt.toLowerCase();
   if (lower.includes('extreme close') || lower.includes('macro')) return 'Extreme Close-Up';
@@ -65,6 +74,17 @@ function inferShotType(imagePrompt: string, beatIndex: number): string {
   if (lower.includes('high angle') || lower.includes('top down') || lower.includes('bird')) return 'High-Angle Shot';
   if (lower.includes('medium') || lower.includes('waist up') || lower.includes('torso')) return 'Medium Shot';
   return DEFAULT_SHOT_TYPES[(beatIndex - 1) % DEFAULT_SHOT_TYPES.length];
+}
+
+function inferCameraAngle(imagePrompt: string, beatIndex: number): string {
+  const lower = imagePrompt.toLowerCase();
+  if (lower.includes('high angle') || lower.includes('from above') || lower.includes('looking down')) return 'high-angle';
+  if (lower.includes('low angle') || lower.includes('from below') || lower.includes('looking up')) return 'low-angle';
+  if (lower.includes('bird') || lower.includes('overhead') || lower.includes('aerial') || lower.includes('top down') || lower.includes('top-down')) return 'birds-eye';
+  if (lower.includes('worm') || lower.includes('ground level')) return 'worms-eye';
+  if (lower.includes('dutch') || lower.includes('tilted') || lower.includes('canted')) return 'dutch-tilt';
+  if (lower.includes('eye level') || lower.includes('eye-level') || lower.includes('straight-on')) return 'eye-level';
+  return DEFAULT_CAMERA_ANGLES[(beatIndex - 1) % DEFAULT_CAMERA_ANGLES.length];
 }
 
 function inferCameraMovement(imagePrompt: string, beatIndex: number): string {
@@ -135,21 +155,22 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - "eraAndSetting": historical or fictional period, geography, and environmental backdrop
    - "lensAndFilmStock": lens and film stock descriptor (e.g., "Shot on 35mm anamorphic prime lens, subtle 35mm Kodak 5219 film grain, high dynamic range")
 
-2. Character Sheet:
-   Create a top-level "characterSheet" object mapping each recurring character name to ONE fixed, highly detailed visual description.
+2. Continuity Sheets (MANDATORY RESOLUTION):
+   Generate the full breakdown in one model call that has the entire story in view.
+   - "characterSheet": Create a top-level object mapping each recurring character name to ONE fixed, highly detailed visual description. You MUST resolve any unstated attributes (gender, age, build, hair) into concrete, locked choices. Ambiguity is forbidden. Side characters appearing more than once must be included, keyed by role (e.g., "the jockey") if unnamed.
+   - "locationSheet": Create a top-level object mapping any specific place returned to more than once (a particular room, a specific ridge) to ONE fixed, highly detailed visual description.
 
 3. Character and Setting Continuity (MANDATORY ANCHOR-SHOT RULE):
    - Mark the first scene where each character or setting is established.
    - In that first scene, the character/setting is described in full detail.
-   - In EVERY later videoPrompt for that character, reference it as matching the established look rather than re-describing it from scratch (e.g., "Subject: Kael (matching established look from Scene 1)").
-   - Apply the same rule to recurring settings (e.g., "Lighting & Environment: The Clockwork Observatory (matching established setting from Scene 1)").
+   - In EVERY later videoPrompt for that character/location, reference it as matching the established look rather than re-describing it from scratch (e.g., "Subject: Kael (matching established look from Scene 1)").
 
 4. Mandatory 8-Part Master Scene "videoPrompt" Structure:
    For EACH scene, construct "videoPrompt" adhering strictly to these exact 8 components:
    - subject: (from characterSheet for recurring characters. First scene uses full visual description; subsequent scenes state "matching established look from Scene [X]").
    - action: described in temporal order across the shot.
-   - camera: exactly ONE shot type plus exactly ONE movement, NEVER stacked movements (e.g., "Medium shot, slow forward push-in").
-   - lighting and environment: atmospheric lighting and environment details from styleProfile.
+   - camera: exactly ONE shot type, exactly ONE camera angle, and exactly ONE movement, NEVER stacked movements (e.g., "Medium shot, low-angle, slow forward push-in").
+   - lighting and environment: atmospheric lighting and environment details from styleProfile and locationSheet.
    - style: styleProfile artStyle plus the lens/film-stock descriptor.
    - physics: concrete physical dynamics (e.g. "cloth trailing in wind", "embers drifting upward", "waves crashing against rocks").
    - audio: ALWAYS state "no dialogue, ambient sound only" or "silent".
@@ -157,7 +178,7 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
 
 5. Start Frame Ingredients (Text to Image Prompt):
    For each scene, provide "startFramePrompt": a pristine text-to-image prompt to generate the initial reference keyframe image for image-to-video tools (Kling, Runway, Luma, Sora). Formatted as:
-   [Shot framing] of [Subject with exact character details], [Initial frame pose] in [Setting], [Lighting & Color palette], ${defaultAspectRatio}, ${characterStyle || 'cinematic rendering'}.
+   [Shot framing and angle] of [Subject with exact character details], [Initial frame pose] in [Setting/Location Details], [Lighting & Color palette], ${defaultAspectRatio}, ${characterStyle || 'cinematic rendering'}.
 
 6. Smart Video Beats Array ("beats"):
    For each scene, provide an array of fine-grained video beats representing the temporal subdivisions of this ${targetVideoDuration}-second clip.
@@ -165,9 +186,10 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - "beatIndex": integer (1, 2, 3...)
    - "textSpan": the specific phrase/action segment from the narrator line (e.g. "Imagine an entire island")
    - "estimatedSeconds": estimated duration in seconds for this beat, distributed so the sum of all beats in the scene equals approximately ${targetVideoDuration} seconds.
-   - "shotType": explicit cinematography shot framing (e.g., "Wide Aerial Establishing Shot", "Medium Tracking Shot", "Close-Up Facial Reaction", "Low-Angle Hero Shot")
+   - "shotType": explicit cinematography shot size (e.g., "extreme-wide", "wide", "medium", "close-up", "extreme-close-up")
+   - "cameraAngle": explicit camera angle (e.g., "eye-level", "high-angle", "low-angle", "birds-eye", "worms-eye", "dutch-tilt")
    - "cameraMovement": cinematic camera motion cue (e.g., "Slow forward push-in", "Smooth lateral tracking", "Gentle crane tilt down")
-   - "imagePrompt": A complete, standalone, production-ready TEXT TO VIDEO PROMPT formatted for AI video generators capturing this specific beat's action, shot framing, camera motion, physics, lighting, and audio: "no dialogue, ambient sound only". Aspect ratio: ${defaultAspectRatio}.
+   - "imagePrompt": A complete, standalone, production-ready TEXT TO VIDEO PROMPT formatted for AI video generators capturing this specific beat's action, shot framing, camera angle, motion, physics, lighting, and audio: "no dialogue, ambient sound only". Aspect ratio: ${defaultAspectRatio}.
 
 STRICT CONSTRAINTS:
 1. DO NOT use em dashes anywhere (do not use "\\u2014", "\\u2013", or "--"). Use commas, periods, or parentheses instead.
@@ -182,7 +204,10 @@ STRICT CONSTRAINTS:
     "lensAndFilmStock": "Shot on 35mm anamorphic lens, fine film grain..."
   },
   "characterSheet": {
-    "CharacterName": "Detailed visual description..."
+    "CharacterName": "Detailed visual description with all physical attributes resolved..."
+  },
+  "locationSheet": {
+    "LocationName": "Detailed visual description of the specific recurring location..."
   },
   "totalDurationSeconds": number,
   "scenes": [
@@ -190,7 +215,7 @@ STRICT CONSTRAINTS:
       "index": number,
       "narratorLine": string,
       "estimatedSeconds": number,
-      "videoPrompt": "Subject: ... Action: ... Camera: ... Lighting & Environment: ... Style: ... Physics: ... Audio: no dialogue, ambient sound only. Duration: ...",
+      "videoPrompt": "Subject: ... Action: ... Camera: [Shot Type], [Camera Angle], [Camera Movement]. Lighting & Environment: ... Style: ... Physics: ... Audio: no dialogue, ambient sound only. Duration: ...",
       "startFramePrompt": "Text to image prompt for initial keyframe...",
       "establishedCharacters": ["Name"],
       "establishedSettings": ["Setting"],
@@ -200,6 +225,7 @@ STRICT CONSTRAINTS:
           "textSpan": string,
           "estimatedSeconds": number,
           "shotType": string,
+          "cameraAngle": string,
           "cameraMovement": string,
           "imagePrompt": string
         }
@@ -209,7 +235,7 @@ STRICT CONSTRAINTS:
 }
 Do not include markdown code fences or backticks, just raw JSON.`
     : `You are an expert film director, cinematographer, and storyboard production supervisor.
-Your task is to take a story and generate a production-ready, nested scene-and-beat visual breakdown with exact cinematic image prompts, shot taxonomy tags, narrator lines, a style profile, and a visual character sheet.
+Your task is to take a story and generate a production-ready, nested scene-and-beat visual breakdown with exact cinematic image prompts, shot taxonomy tags, narrator lines, a style profile, and visual continuity sheets.
 
 SCHEMA AND STRUCTURE REQUIREMENTS:
 1. Style Profile:
@@ -220,10 +246,11 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - "eraAndSetting": historical or fictional period, geography, and environmental backdrop of the story
    - "lensAndFilmStock": lens and film stock descriptor (e.g. "Shot on 35mm prime lens, fine film grain")
 
-2. Character Sheet:
-   Create a top-level "characterSheet" object mapping each recurring character name to ONE fixed, highly detailed visual description.
-   Example: { "Kael": "A 32-year-old weathered scout with amber eyes, tied-back raven hair, wearing a patched olive-gray canvas cloak and worn leather gauntlets in a cinematic digital painting style." }
-   CRITICAL CONTINUITY RULE: Whenever any character from the characterSheet appears in any beat's imagePrompt, you MUST reuse that exact visual description wording word-for-word in that imagePrompt to guarantee character consistency across every frame.
+2. Continuity Sheets (MANDATORY RESOLUTION):
+   Generate the full breakdown in one model call that has the entire story in view.
+   - "characterSheet": Create a top-level object mapping each recurring character name to ONE fixed, highly detailed visual description. You MUST resolve any unstated attributes (gender, age, build, hair) into concrete, locked choices. Ambiguity is forbidden. Side characters appearing more than once must be included, keyed by role (e.g., "the jockey") if unnamed.
+   - "locationSheet": Create a top-level object mapping any specific place returned to more than once (a particular room, a specific ridge) to ONE fixed, highly detailed visual description.
+   CRITICAL CONTINUITY RULE: Whenever any character or location from these sheets appears in any beat's imagePrompt, you MUST reuse that exact visual description wording word-for-word in that imagePrompt to guarantee consistency across every frame.
 
 3. Nested Scenes and Beats:
    Break the story into a sequence of scenes.
@@ -244,15 +271,16 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    NEVER leave a whole sentence as one static beat. Expect 6 to 12 fine-grained micro-beats per scene.
    
    CRITICAL CINEMATIC SHOT VARIETY:
-   Vary camera angles across sequential beats to ensure rhythmic dynamic pacing (e.g., alternate Establishing Wide Shots, Medium Shots, Intimate Close-Ups, Dynamic Over-The-Shoulder angles, and Low-Angle Hero shots). Do not use the same shot type twice in a row.
+   Vary camera sizes and angles across sequential beats to ensure rhythmic dynamic pacing. Do not default every beat to eye-level medium static shots. Vary size, angle, and movement deliberately based on what's happening in that beat.
 
    Each beat must specify:
    - "beatIndex": integer (1, 2, 3...)
    - "textSpan": the exact words from the scene's narratorLine that this visual beat covers (MAX 8 WORDS).
-   - "shotType": explicit cinematography shot type (e.g., "Wide Establishing Shot", "Medium Shot", "Close-Up", "Extreme Close-Up", "Over-the-Shoulder (OTS)", "Low-Angle Shot", "High-Angle POV", "Dutch Angle")
+   - "shotType": explicit cinematography shot size (e.g., "extreme-wide", "wide", "medium", "close-up", "extreme-close-up")
+   - "cameraAngle": explicit camera angle (e.g., "eye-level", "high-angle", "low-angle", "birds-eye", "worms-eye", "dutch-tilt")
    - "cameraMovement": cinematic motion cue (e.g., "Slow Push-In", "Static Frame", "Tracking Subject", "Smooth Pan", "Low Dolly Glide", "Aerial Drift")
    - "imagePrompt": a structured cinematic prompt formatted according to the formula:
-     [Shot Type & Framing] of [Subject with exact character appearance details], [Key Action/Beat] in [Setting/Environment], [Lighting & Color Grade]. [Aspect ratio and style anchors: ${defaultAspectRatio}, ${characterStyle || 'cinematic rendering'}].
+     [Shot Type & Camera Angle] of [Subject with exact character appearance details word-for-word from characterSheet], [Key Action/Beat] in [Exact Location Details word-for-word from locationSheet], [Lighting & Color Grade]. [Aspect ratio and style anchors: ${defaultAspectRatio}, ${characterStyle || 'cinematic rendering'}].
    - "estimatedSeconds": estimated spoken narration duration in seconds (HARD CEILING: MAXIMUM 2.0 SECONDS, typically 1.0 to 1.8 seconds).
 
 5. Duration and Pacing:
@@ -271,7 +299,10 @@ STRICT CONSTRAINTS:
     "eraAndSetting": "Era and setting..."
   },
   "characterSheet": {
-    "CharacterName": "Fixed visual description..."
+    "CharacterName": "Fixed visual description with all physical attributes resolved..."
+  },
+  "locationSheet": {
+    "LocationName": "Fixed visual description of the specific recurring location..."
   },
   "totalDurationSeconds": number,
   "scenes": [
@@ -283,7 +314,8 @@ STRICT CONSTRAINTS:
         {
           "beatIndex": number,
           "textSpan": string,
-          "shotType": "Wide Establishing Shot | Medium Shot | Close-Up | Over-the-Shoulder | Low-Angle Shot...",
+          "shotType": "extreme-wide | wide | medium | close-up | extreme-close-up",
+          "cameraAngle": "eye-level | high-angle | low-angle | birds-eye | worms-eye | dutch-tilt",
           "cameraMovement": "Slow Push-In | Static Frame | Tracking...",
           "imagePrompt": string,
           "estimatedSeconds": number
@@ -417,6 +449,17 @@ ${durationInstruction}`;
     }
   }
 
+  // Sanitize locationSheet
+  const rawLocSheet = parsedData.locationSheet && typeof parsedData.locationSheet === 'object' && !Array.isArray(parsedData.locationSheet)
+    ? parsedData.locationSheet
+    : {};
+  const sanitizedLocationSheet: Record<string, string> = {};
+  for (const [locName, desc] of Object.entries(rawLocSheet)) {
+    if (typeof desc === 'string' && desc.trim()) {
+      sanitizedLocationSheet[removeEmDashes(locName.trim())] = removeEmDashes(desc.trim());
+    }
+  }
+
   function toRoman(num: number): string {
     const romanMap: [number, string][] = [
       [1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'],
@@ -474,15 +517,27 @@ ${durationInstruction}`;
       const textSpan = removeEmDashes(beat.textSpan || beat.text_span || '');
       let imagePrompt = removeEmDashes(beat.imagePrompt || beat.image_prompt || '');
       const shotType = removeEmDashes(beat.shotType || beat.shot_type || inferShotType(imagePrompt, beatIndex));
+      const cameraAngle = removeEmDashes(beat.cameraAngle || beat.camera_angle || inferCameraAngle(imagePrompt, beatIndex));
       const cameraMovement = removeEmDashes(beat.cameraMovement || beat.camera_movement || inferCameraMovement(imagePrompt, beatIndex));
 
       const matchedCharClauses: string[] = [];
       for (const [charName, visualDesc] of Object.entries(sanitizedCharacterSheet)) {
         const escapedName = charName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const nameRegex = new RegExp(`\\b${escapedName}\\b`, 'i');
-        if (nameRegex.test(textSpan) || nameRegex.test(imagePrompt)) {
+        if (nameRegex.test(textSpan) || nameRegex.test(imagePrompt) || nameRegex.test(narratorLine)) {
           if (!imagePrompt.includes(visualDesc)) {
             matchedCharClauses.push(`${charName} appearance: ${visualDesc}`);
+          }
+        }
+      }
+
+      const matchedLocClauses: string[] = [];
+      for (const [locName, visualDesc] of Object.entries(sanitizedLocationSheet)) {
+        const escapedName = locName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const nameRegex = new RegExp(`\\b${escapedName}\\b`, 'i');
+        if (nameRegex.test(textSpan) || nameRegex.test(imagePrompt) || nameRegex.test(narratorLine)) {
+          if (!imagePrompt.includes(visualDesc)) {
+            matchedLocClauses.push(`${locName} environment: ${visualDesc}`);
           }
         }
       }
@@ -496,6 +551,10 @@ ${durationInstruction}`;
         finalImagePrompt += ` Character Continuity (${matchedCharClauses.join('. ')}).`;
       }
 
+      if (matchedLocClauses.length > 0) {
+        finalImagePrompt += ` Location Continuity (${matchedLocClauses.join('. ')}).`;
+      }
+
       if (!finalImagePrompt.includes(sanitizedStyleProfile.artStyle)) {
         finalImagePrompt += ` ${styleProfileWording}`;
       }
@@ -504,6 +563,7 @@ ${durationInstruction}`;
         beatIndex,
         textSpan,
         shotType,
+        cameraAngle,
         cameraMovement,
         imagePrompt: removeEmDashes(finalImagePrompt),
         estimatedSeconds: typeof beat.estimatedSeconds === 'number' && beat.estimatedSeconds > 0
@@ -701,6 +761,7 @@ ${durationInstruction}`;
   return {
     styleProfile: sanitizedStyleProfile,
     characterSheet: sanitizedCharacterSheet,
+    locationSheet: sanitizedLocationSheet,
     totalDurationSeconds: totalSeconds,
     scenes: sanitizedScenes,
     generationMode: isVideoMode ? 'video' : 'image',
