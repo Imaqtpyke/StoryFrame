@@ -11,40 +11,14 @@ interface GeneratorFormProps {
   errorMessage: string | null;
 }
 
-interface RandomStoryPreset {
-  story: string;
-  characterStyle: string;
-}
-
-const RANDOM_STORIES: RandomStoryPreset[] = [
-  {
-    story: "A lonely clockmaker discovers an ancient mechanical pocket watch that ticks backward, rewinding the room around him by thirty seconds whenever he presses the winding crown.",
-    characterStyle: "Tactile stop-motion felt animation, dense wool textures, miniature studio lighting",
-  },
-  {
-    story: "Two deep-sea marine biologists in a research submersible encounter an illuminated underwater metropolis buried inside the Mariana Trench that responds to sonar pulses with musical harmonics.",
-    characterStyle: "Holographic glitch-glass, prismatic transparent sculptures, chromatic aberration",
-  },
-  {
-    story: "A ramen chef operates a midnight street stall at a forgotten Tokyo crossroads that only spirits and wandering ghosts can see, serving warm broth that restores mortal memories.",
-    characterStyle: "Celluloid Noir, high-contrast B&W ink, single hyper-saturated glowing accents",
-  },
-  {
-    story: "An archivist in a grand subterranean library unearths an unwritten leather tome whose ink forms words only when illuminated by starlight, revealing the secret history of an extinct solar system.",
-    characterStyle: "Porcelain and Kintsugi 3D render, smooth white ceramic, glowing gold filled cracks",
-  },
-  {
-    story: "A solo astronaut stranded on a terraformed greenhouse asteroid tends to an alien bioluminescent flora that produces breathable oxygen and whispers echoes of Earth's radio broadcasts.",
-    characterStyle: "Retro-futuristic risograph print, visible halftone dots, offset registration",
-  },
-  {
-    story: "A young street photographer in 1980s Neo-Seoul develops black-and-white film that unexpectedly captures future headlines ten minutes before they happen.",
-    characterStyle: "Gritty 90s anime VHS aesthetic, scanlines, hand-drawn cel animation style",
-  },
-  {
-    story: "A silent desert nomad guides a caravan of solar-powered mechanical beasts across an endless dune sea, seeking an oasis made entirely of crystallized mirrors.",
-    characterStyle: "Textured oil painting in motion, thick impasto brushstrokes, golden hour lighting",
-  },
+const RANDOM_STORIES: string[] = [
+  "A lonely clockmaker discovers an ancient mechanical pocket watch that ticks backward, rewinding the room around him by thirty seconds whenever he presses the winding crown.",
+  "Two deep-sea marine biologists in a research submersible encounter an illuminated underwater metropolis buried inside the Mariana Trench that responds to sonar pulses with musical harmonics.",
+  "A ramen chef operates a midnight street stall at a forgotten Tokyo crossroads that only spirits and wandering ghosts can see, serving warm broth that restores mortal memories.",
+  "An archivist in a grand subterranean library unearths an unwritten leather tome whose ink forms words only when illuminated by starlight, revealing the secret history of an extinct solar system.",
+  "A solo astronaut stranded on a terraformed greenhouse asteroid tends to an alien bioluminescent flora that produces breathable oxygen and whispers echoes of Earth's radio broadcasts.",
+  "A young street photographer in 1980s Neo-Seoul develops black-and-white film that unexpectedly captures future headlines ten minutes before they happen.",
+  "A silent desert nomad guides a caravan of solar-powered mechanical beasts across an endless dune sea, seeking an oasis made entirely of crystallized mirrors.",
 ];
 
 const SHORT_PLATFORMS: DropdownOption[] = [
@@ -158,12 +132,11 @@ export default function GeneratorForm({
   };
 
   const handlePickRandomStory = () => {
-    const available = RANDOM_STORIES.filter((s) => s.story !== story);
+    const available = RANDOM_STORIES.filter((s) => s !== story);
     const pool = available.length > 0 ? available : RANDOM_STORIES;
-    const randomPreset = pool[Math.floor(Math.random() * pool.length)];
-    if (randomPreset) {
-      setStory(randomPreset.story);
-      setCharacterStyle(randomPreset.characterStyle);
+    const randomStory = pool[Math.floor(Math.random() * pool.length)];
+    if (randomStory) {
+      setStory(randomStory);
     }
   };
 
@@ -368,13 +341,13 @@ export default function GeneratorForm({
           </div>
         </div>
 
-        {/* Character Prompt Box & DNA Carousel */}
+        {/* Character Style Input Box */}
         <div className="space-y-1.5 sm:space-y-2">
           <label
             htmlFor="character-prompt-input"
             className="block font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96]"
           >
-            CHARACTER STYLE DNA
+            CHARACTER STYLE DESCRIPTOR
           </label>
           <input
             type="text"
@@ -382,27 +355,9 @@ export default function GeneratorForm({
             value={characterStyle}
             onChange={(e) => setCharacterStyle(e.target.value)}
             disabled={isLoading}
-            placeholder="e.g. realistic human, anime, or select a DNA strand below..."
+            placeholder="e.g. cinematic hyperrealism, 90s anime cel animation, stop-motion felt, textured oil painting..."
             className="w-full px-3.5 sm:px-4 py-2 sm:py-3 bg-[#121211] hover:bg-[#161614] focus:bg-[#121211] text-[#F5F5F0] placeholder:text-[#666660] border border-white/10 transition-colors focus:outline-none focus:border-white text-sm sm:text-base"
           />
-
-          {/* Horizontally Scrolling DNA Carousel */}
-          <div className="flex overflow-x-auto gap-2 pb-2 scrollbar-hide snap-x">
-            {RANDOM_STORIES.map((preset, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => setCharacterStyle(preset.characterStyle)}
-                className="snap-start shrink-0 whitespace-nowrap px-3 py-1.5 bg-[#1C1C1A] hover:bg-[#282826] active:bg-[#333330] text-[#D4D4D0] hover:text-white border border-white/10 text-[10px] sm:text-xs font-editorial-meta transition-all flex items-center gap-1.5"
-                title={preset.characterStyle}
-              >
-                <span className="text-emerald-400">🧬</span>
-                <span className="truncate max-w-[120px] sm:max-w-[160px]">
-                  {preset.characterStyle.split(',')[0]}
-                </span>
-              </button>
-            ))}
-          </div>
         </div>
 
         {/* Aspect Ratio Format, Distribution Platform & Target/Clip Duration */}
