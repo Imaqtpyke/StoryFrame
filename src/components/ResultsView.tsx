@@ -415,12 +415,12 @@ export default function ResultsView({
         <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           {result.generationMode === 'video' ? (
             <span className="stamp-chip bg-amber-950/70 text-amber-300 border-amber-800/80 font-semibold">
-              <Clapperboard size={9} className="mr-1 inline" />
+              <Clapperboard size={9} className="mr-1 inline text-amber-400" />
               TEXT TO VIDEO ({result.targetVideoDuration || 5}S CLIPS)
             </span>
           ) : (
-            <span className="stamp-chip">
-              <ImageIcon size={9} className="mr-1 inline" />
+            <span className="stamp-chip bg-sky-950/25 text-sky-200/70 border-sky-800/25 font-semibold">
+              <ImageIcon size={9} className="mr-1 inline text-sky-400/60" />
               TEXT TO IMAGE
             </span>
           )}
@@ -665,8 +665,8 @@ export default function ResultsView({
                           </>
                         ) : (
                           <>
-                            <Layers size={12} className="text-[#9C9C96] sm:w-3.5 sm:h-3.5" />
-                            <span className="font-editorial-meta text-[9px] sm:text-[10px] text-[#C4C4C0]">
+                            <ImageIcon size={12} className="text-sky-400/60 sm:w-3.5 sm:h-3.5" />
+                            <span className="font-editorial-meta text-[9px] sm:text-[10px] text-sky-200/70 font-medium">
                               CINEMATOGRAPHY &amp; VISUAL BEATS
                             </span>
                           </>
@@ -678,8 +678,8 @@ export default function ResultsView({
                             {beats.length} VIDEO SHOTS (~{result.targetVideoDuration || scene.estimatedSeconds || 5}S TOTAL)
                           </span>
                         ) : (
-                          <span className="font-editorial-meta text-[9px] sm:text-[10px] text-[#7D7D76]">
-                            {beats.length} SETUPS
+                          <span className="stamp-chip bg-sky-950/25 text-sky-200/70 border-sky-800/25 text-[8px] sm:text-[9px]">
+                            {beats.length} VISUAL SETUPS
                           </span>
                         )}
                         <button
@@ -703,11 +703,11 @@ export default function ResultsView({
                             id={`mobile-beat-card-${scene.index}-${beat.beatIndex}`}
                             onClick={() => handleBeatClick(scene.index, romanScene, beat, beats)}
                             className={`flex-none w-[160px] xs:w-[175px] snap-start border active:bg-[#1E1E1C] p-2.5 flex flex-col justify-between min-h-[96px] cursor-pointer transition-all rounded-[2px] ${
-                              isVideoMode ? 'bg-[#141310] border-amber-900/30 active:border-amber-400/50' : 'bg-[#161614] border-white/10 active:border-white/40'
+                              isVideoMode ? 'bg-[#141310] border-amber-900/30 active:border-amber-400/50' : 'bg-[#080D14] border-sky-900/15 active:border-sky-400/30'
                             }`}
                           >
                             <div className="flex items-center justify-between gap-1 border-b border-white/5 pb-1">
-                              <span className={`stamp-chip font-bold text-[8px] ${isVideoMode ? 'bg-amber-950/70 text-amber-300 border-amber-800/80' : 'stamp-chip-primary'}`}>
+                              <span className={`stamp-chip font-bold text-[8px] ${isVideoMode ? 'bg-amber-950/70 text-amber-300 border-amber-800/80' : 'bg-sky-950/25 text-sky-200/70 border-sky-800/25'}`}>
                                 B{String(beat.beatIndex).padStart(2, '0')}
                               </span>
                               <span className="font-editorial-meta text-[8px] text-emerald-400/90">
@@ -761,12 +761,12 @@ export default function ResultsView({
                               className={`border p-3 flex flex-col justify-between min-h-[112px] cursor-pointer transition-all group select-none rounded-[2px] ${
                                 isVideoMode
                                   ? 'bg-[#141310] border-amber-900/30 hover:border-amber-700/60 hover:bg-[#1A1813]'
-                                  : 'bg-[#161614] border-white/10 hover:border-white/30 hover:bg-[#1C1C1A]'
+                                  : 'bg-[#080D14] border-sky-900/15 hover:border-sky-700/30 hover:bg-[#0C141F]'
                               }`}
                               title={isVideoMode ? 'Click to expand video prompt breakdown' : 'Click to expand visual prompt breakdown'}
                             >
                               <div className="flex items-center justify-between gap-1 border-b border-white/5 pb-1.5">
-                                <span className={`stamp-chip font-bold text-[9px] ${isVideoMode ? 'bg-amber-950/70 text-amber-300 border-amber-800/80' : 'stamp-chip-primary'}`}>
+                                <span className={`stamp-chip font-bold text-[9px] ${isVideoMode ? 'bg-amber-950/70 text-amber-300 border-amber-800/80' : 'bg-sky-950/25 text-sky-200/70 border-sky-800/25'}`}>
                                   BEAT {String(beat.beatIndex).padStart(2, '0')}
                                 </span>
                                 <span className="font-editorial-meta text-[9px] text-emerald-400/90">
@@ -803,12 +803,12 @@ export default function ResultsView({
                             key={beat.beatIndex}
                             id={`desktop-beat-card-expanded-${scene.index}-${beat.beatIndex}`}
                             className={`col-span-full border p-4 sm:p-5 md:p-6 space-y-3.5 shadow-xl transition-all rounded-[2px] ${
-                              isVideoMode ? 'bg-[#151411] border-amber-900/50' : 'bg-[#181816] border-white/25'
+                              isVideoMode ? 'bg-[#151411] border-amber-900/50' : 'bg-[#060A10] border-sky-900/25'
                             }`}
                           >
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-2.5 sm:pb-3">
                               <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className={`stamp-chip font-bold ${isVideoMode ? 'bg-amber-950/70 text-amber-300 border-amber-800/80' : 'stamp-chip-primary'}`}>
+                                <span className={`stamp-chip font-bold ${isVideoMode ? 'bg-amber-950/70 text-amber-300 border-amber-800/80' : 'bg-sky-950/25 text-sky-200/70 border-sky-800/25'}`}>
                                   BEAT {String(beat.beatIndex).padStart(2, '0')}
                                 </span>
                                 {beat.shotType && (
@@ -836,18 +836,18 @@ export default function ResultsView({
                                   className={`inline-flex items-center justify-center font-editorial-meta text-[9px] sm:text-[10px] px-2.5 sm:px-3 py-1 transition-colors whitespace-nowrap min-h-[28px] ${
                                     isVideoMode
                                       ? 'bg-amber-400 text-black hover:bg-amber-300 font-semibold'
-                                      : 'text-white bg-[#222220] hover:bg-[#2e2e2a] border border-white/20'
+                                      : 'bg-sky-400/70 text-black hover:bg-sky-400 font-semibold'
                                   }`}
                                 >
                                   {isCopiedPrompt ? (
                                     <>
-                                      <Check size={10} className={`mr-1 shrink-0 sm:w-3 sm:h-3 ${isVideoMode ? 'text-black' : 'text-white'}`} />
+                                      <Check size={10} className="mr-1 shrink-0 sm:w-3 sm:h-3 text-black" />
                                       <span className="font-semibold">COPIED</span>
                                     </>
                                   ) : (
                                     <>
-                                      <Copy size={10} className={`mr-1 shrink-0 sm:w-3 sm:h-3 ${isVideoMode ? 'text-black' : 'text-[#9C9C96]'}`} />
-                                      <span>{isVideoMode ? 'COPY VIDEO PROMPT' : 'COPY PROMPT'}</span>
+                                      <Copy size={10} className="mr-1 shrink-0 sm:w-3 sm:h-3 text-black" />
+                                      <span>{isVideoMode ? 'COPY VIDEO PROMPT' : 'COPY IMAGE PROMPT'}</span>
                                     </>
                                   )}
                                 </button>
@@ -889,17 +889,17 @@ export default function ResultsView({
                                 {isVideoMode ? (
                                   <>
                                     <Clapperboard size={11} className="text-amber-400" />
-                                    <span>TEXT TO VIDEO PROMPT</span>
+                                    <span className="text-amber-300 font-medium">TEXT TO VIDEO PROMPT</span>
                                   </>
                                 ) : (
                                   <>
-                                    <Sparkles size={11} className="text-white/70" />
-                                    <span>STRUCTURED VISUAL PROMPT</span>
+                                    <ImageIcon size={11} className="text-sky-400/60" />
+                                    <span className="text-sky-200/70 font-medium">STRUCTURED IMAGE PROMPT</span>
                                   </>
                                 )}
                               </span>
                               <div className={`text-xs sm:text-sm leading-relaxed p-2.5 sm:p-3.5 border selection:bg-white selection:text-black ${
-                                isVideoMode ? 'bg-[#0A0A08] border-amber-900/40 font-mono text-[#F0EFEA]' : 'bg-[#080808] border-white/10 font-narrative text-[#E6E6E1]'
+                                isVideoMode ? 'bg-[#0A0A08] border-amber-900/40 font-mono text-[#F0EFEA]' : 'bg-[#04070C] border-sky-900/20 font-mono text-[#D0DFEB]'
                               }`}>
                                 {beat.imagePrompt}
                               </div>

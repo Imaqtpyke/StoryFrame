@@ -8,7 +8,12 @@ interface HeaderProps {
   historyCount?: number;
 }
 
-export default function Header({ activePage, onNavigate, onOpenHistory, historyCount = 0 }: HeaderProps) {
+export default function Header({
+  activePage,
+  onNavigate,
+  onOpenHistory,
+  historyCount = 0,
+}: HeaderProps) {
   return (
     <header className="w-full border-b border-white/10 bg-[#0C0C0B]/90 backdrop-blur-sm sticky top-0 z-40">
       <div className="max-w-5xl mx-auto px-3 sm:px-6 h-14 sm:h-16 flex items-center justify-between">

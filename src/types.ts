@@ -59,4 +59,4 @@ export interface HistoryItem {
   result: StoryGenerationResult;
 }
 
-export type ActivePage = 'generator' | 'terms' | 'privacy';
+export type ActivePage = 'generator' | 'terms' | 'privacy' | 'guide';

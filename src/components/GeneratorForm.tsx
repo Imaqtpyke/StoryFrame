@@ -19,31 +19,31 @@ interface RandomStoryPreset {
 const RANDOM_STORIES: RandomStoryPreset[] = [
   {
     story: "A lonely clockmaker discovers an ancient mechanical pocket watch that ticks backward, rewinding the room around him by thirty seconds whenever he presses the winding crown.",
-    characterStyle: "Vintage steampunk artisan with brass spectacles and leather apron",
+    characterStyle: "Tactile stop-motion felt animation, dense wool textures, miniature studio lighting, cozy but uncanny",
   },
   {
     story: "Two deep-sea marine biologists in a research submersible encounter an illuminated underwater metropolis buried inside the Mariana Trench that responds to sonar pulses with musical harmonics.",
-    characterStyle: "Realistic expedition divers with futuristic oceanic diving suits",
+    characterStyle: "Holographic glitch-glass, prismatic transparent sculptures, iridescent reflections, chromatic aberration",
   },
   {
     story: "A ramen chef operates a midnight street stall at a forgotten Tokyo crossroads that only spirits and wandering ghosts can see, serving warm broth that restores mortal memories.",
-    characterStyle: "Traditional anime aesthetic with warm watercolor lighting",
+    characterStyle: "Celluloid Noir with neon accents, high-contrast black and white ink, single hyper-saturated glowing colors",
   },
   {
     story: "An archivist in a grand subterranean library unearths an unwritten leather tome whose ink forms words only when illuminated by starlight, revealing the secret history of an extinct solar system.",
-    characterStyle: "Scholarly Victorian archivist in dark velvet robes holding an ornate brass lamp",
+    characterStyle: "Porcelain and Kintsugi 3D render, smooth white ceramic skin, glowing gold filled cracks, dramatic rim lighting",
   },
   {
     story: "A solo astronaut stranded on a terraformed greenhouse asteroid tends to an alien bioluminescent flora that produces breathable oxygen and whispers echoes of Earth's radio broadcasts.",
-    characterStyle: "Worn utilitarian space explorer in a weathered white EVA suit",
+    characterStyle: "Retro-futuristic risograph print style, visible halftone dots, offset registration, limited vibrant ink palette",
   },
   {
     story: "A young street photographer in 1980s Neo-Seoul develops black-and-white film that unexpectedly captures future headlines ten minutes before they happen.",
-    characterStyle: "Retro cyberpunk style with vintage film camera, oversized jacket, and neon reflections",
+    characterStyle: "Gritty 90s anime VHS aesthetic, scanlines, muted pastel color grading, hand-drawn cel animation style",
   },
   {
     story: "A silent desert nomad guides a caravan of solar-powered mechanical beasts across an endless dune sea, seeking an oasis made entirely of crystallized mirrors.",
-    characterStyle: "Wind-swept desert traveler in indigo silks with gold-rimmed sand goggles",
+    characterStyle: "Textured oil painting in motion, thick impasto brushstrokes, golden hour lighting, vibrant impressionist colors",
   },
 ];
 
@@ -387,25 +387,25 @@ export default function GeneratorForm({
           />
         </div>
 
-        {/* Format, Platform & Duration */}
-        <div className="grid grid-cols-2 md:grid-cols-12 gap-3 sm:gap-4 md:gap-5 items-start">
+        {/* Aspect Ratio Format, Distribution Platform & Target/Clip Duration */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4 md:gap-5 items-start">
           {/* Format Toggle */}
-          <div className="col-span-2 md:col-span-4 space-y-1.5 sm:space-y-2">
+          <div className="sm:col-span-2 md:col-span-1 space-y-1.5 sm:space-y-2">
             <span className="block font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96]">
-              FORMAT
+              ASPECT RATIO FORMAT
             </span>
             <div
               id="format-toggle-group"
-              className="w-full flex p-1 bg-[#121211] border border-white/10"
+              className="w-full flex p-1 bg-[#121211] border border-white/10 h-[42px] sm:h-[46px] items-center"
               role="group"
-              aria-label="Story format selection"
+              aria-label="Aspect ratio format selection"
             >
               <button
                 type="button"
                 id="format-short-btn"
                 disabled={isLoading}
                 onClick={() => handleFormatChange('short')}
-                className={`flex-1 px-2 sm:px-4 py-2 sm:py-2 text-xs sm:text-sm transition-all font-display text-center whitespace-nowrap min-h-[36px] sm:min-h-[38px] flex items-center justify-center ${
+                className={`flex-1 h-full px-2 sm:px-3 text-xs sm:text-sm transition-all font-display text-center whitespace-nowrap flex items-center justify-center ${
                   format === 'short'
                     ? 'bg-white text-black font-semibold shadow-sm'
                     : 'text-[#9C9C96] hover:text-white'
@@ -418,7 +418,7 @@ export default function GeneratorForm({
                 id="format-long-btn"
                 disabled={isLoading}
                 onClick={() => handleFormatChange('long')}
-                className={`flex-1 px-2 sm:px-4 py-2 sm:py-2 text-xs sm:text-sm transition-all font-display text-center whitespace-nowrap min-h-[36px] sm:min-h-[38px] flex items-center justify-center ${
+                className={`flex-1 h-full px-2 sm:px-3 text-xs sm:text-sm transition-all font-display text-center whitespace-nowrap flex items-center justify-center ${
                   format === 'long'
                     ? 'bg-white text-black font-semibold shadow-sm'
                     : 'text-[#9C9C96] hover:text-white'
@@ -430,10 +430,10 @@ export default function GeneratorForm({
           </div>
 
           {/* Platform Dropdown */}
-          <div className="col-span-1 md:col-span-4">
+          <div className="col-span-1">
             <CustomDropdown
               id="platform-select"
-              label="Platform"
+              label="Distribution Platform"
               options={format === 'short' ? SHORT_PLATFORMS : LONG_PLATFORMS}
               selectedValue={platform}
               onSelect={setPlatform}
@@ -442,7 +442,7 @@ export default function GeneratorForm({
           </div>
 
           {/* Duration Selector: Dynamic based on Generation Mode */}
-          <div className="col-span-1 md:col-span-4 space-y-1.5 sm:space-y-2">
+          <div className="col-span-1 space-y-1.5 sm:space-y-2">
             {generationMode === 'video' ? (
               <>
                 <CustomDropdown
@@ -458,9 +458,9 @@ export default function GeneratorForm({
                   <div className="pt-1.5 sm:pt-2">
                     <label
                       htmlFor="custom-video-numeric-input"
-                      className="block text-xs text-[#A0A0A0] mb-1 font-serif"
+                      className="block font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96] mb-1.5"
                     >
-                      Enter clip seconds (3 - 60):
+                      CUSTOM CLIP DURATION (3 - 60 SECONDS)
                     </label>
                     <input
                       type="number"
@@ -471,7 +471,7 @@ export default function GeneratorForm({
                       onChange={(e) => setCustomVideoSeconds(e.target.value)}
                       disabled={isLoading}
                       placeholder="e.g. 8"
-                      className="w-full px-3 sm:px-4 py-1.5 sm:py-2 bg-[#111111] text-white placeholder:text-[#666666] border border-neutral-800 rounded-md focus:outline-none focus:border-white text-xs sm:text-sm"
+                      className="w-full px-3 sm:px-4 h-[42px] sm:h-[46px] bg-[#121211] text-[#F5F5F0] placeholder:text-[#666660] border border-white/10 focus:border-white rounded-[2px] focus:outline-none text-xs sm:text-sm font-mono transition-colors"
                       required
                     />
                   </div>
@@ -492,9 +492,9 @@ export default function GeneratorForm({
                   <div className="pt-1.5 sm:pt-2">
                     <label
                       htmlFor="custom-numeric-input"
-                      className="block text-xs text-[#A0A0A0] mb-1 font-serif"
+                      className="block font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96] mb-1.5"
                     >
-                      {format === 'long' ? 'Enter minutes:' : 'Enter seconds:'}
+                      {format === 'long' ? 'CUSTOM MINUTES (1 - 120)' : 'CUSTOM SECONDS (5 - 600)'}
                     </label>
                     <input
                       type="number"
@@ -505,7 +505,7 @@ export default function GeneratorForm({
                       onChange={(e) => setCustomNumeric(e.target.value)}
                       disabled={isLoading}
                       placeholder={format === 'long' ? 'e.g. 7' : 'e.g. 35'}
-                      className="w-full px-3 sm:px-4 py-1.5 sm:py-2 bg-[#111111] text-white placeholder:text-[#666666] border border-neutral-800 rounded-md focus:outline-none focus:border-white text-xs sm:text-sm"
+                      className="w-full px-3 sm:px-4 h-[42px] sm:h-[46px] bg-[#121211] text-[#F5F5F0] placeholder:text-[#666660] border border-white/10 focus:border-white rounded-[2px] focus:outline-none text-xs sm:text-sm font-mono transition-colors"
                       required
                     />
                   </div>
@@ -515,13 +515,13 @@ export default function GeneratorForm({
           </div>
         </div>
 
-        {/* Generate Button: Primary scale ~36-40px mobile, ~44-48px desktop */}
+        {/* Generate Button: Primary scale ~38-42px mobile, ~46-48px desktop */}
         <div className="pt-1 sm:pt-2 flex justify-center">
           <button
             type="submit"
             id="generate-scenes-button"
             disabled={isLoading || !story.trim()}
-            className="w-full sm:w-auto px-5 sm:px-8 py-2.5 sm:py-3.5 min-h-[38px] sm:min-h-[46px] bg-white text-black hover:bg-neutral-200 active:bg-neutral-300 disabled:opacity-40 disabled:cursor-not-allowed font-serif text-sm sm:text-base font-semibold tracking-wide rounded-[4px] transition-all flex items-center justify-center space-x-2 shadow-sm"
+            className="w-full sm:w-auto px-6 sm:px-10 py-2.5 sm:py-3.5 min-h-[42px] sm:min-h-[48px] bg-white text-black hover:bg-[#EAEAE6] active:bg-[#D4D4D0] disabled:opacity-40 disabled:cursor-not-allowed font-display text-sm sm:text-base font-medium tracking-tight rounded-[2px] transition-all flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl"
           >
             {isLoading ? (
               <>
@@ -540,33 +540,36 @@ export default function GeneratorForm({
             type="button"
             id="toggle-advanced-btn"
             onClick={() => setShowAdvanced(!showAdvanced)}
-            className="inline-flex items-center justify-center text-[11px] sm:text-xs text-[#A0A0A0] hover:text-white transition-colors min-h-[36px] sm:min-h-[40px] px-2.5 sm:px-3"
+            className="inline-flex items-center justify-center font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96] hover:text-white transition-colors min-h-[36px] sm:min-h-[40px] px-3 tracking-wider"
           >
-            <Sliders size={13} className="mr-1.5 text-neutral-400 sm:w-3.5 sm:h-3.5" />
-            {showAdvanced ? 'Hide model options' : 'Configure model options'}
+            <Sliders size={13} className="mr-1.5 text-[#7D7D76] sm:w-3.5 sm:h-3.5" />
+            {showAdvanced ? 'HIDE MODEL & API OPTIONS' : 'CONFIGURE MODEL & API OPTIONS'}
           </button>
 
           {showAdvanced && (
-            <div className="mt-2 w-full p-3.5 sm:p-5 bg-[#111111] border border-neutral-800 rounded-md space-y-4 sm:space-y-5 text-left animate-in fade-in duration-200">
+            <div className="mt-2 w-full p-4 sm:p-6 bg-[#121211] border border-white/10 corner-bracket-container shadow-2xl rounded-[2px] space-y-5 text-left animate-in fade-in duration-200">
               {/* Gemini Model Tier */}
               <div className="space-y-2">
-                <span className="block text-[10px] sm:text-xs uppercase tracking-wider text-[#A0A0A0]">
-                  Gemini Model Tier
+                <span className="block font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96]">
+                  GEMINI MODEL SELECTION
                 </span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
                   <button
                     type="button"
                     id="model-standard-tier"
                     onClick={() => setModelQuality('standard')}
-                    className={`p-2.5 sm:p-3 text-left border rounded-md transition-colors ${
+                    className={`p-3 sm:p-3.5 text-left border rounded-[2px] transition-all ${
                       modelQuality === 'standard'
-                        ? 'border-white bg-[#1a1a1a] text-white'
-                        : 'border-neutral-800 text-neutral-400 hover:text-white'
+                        ? 'border-white bg-[#1F1F1D] text-white shadow-sm'
+                        : 'border-white/10 bg-[#161614] text-[#9C9C96] hover:border-white/30 hover:text-white'
                     }`}
                   >
-                    <p className="text-xs sm:text-sm font-medium">Standard (gemini-3.8-flash)</p>
-                    <p className="text-[11px] sm:text-xs text-[#A0A0A0] mt-0.5">
-                      Standard: fast text breakdown
+                    <div className="flex items-center justify-between">
+                      <p className="font-display text-xs sm:text-sm font-medium text-white">Standard (Gemini 3.8 Flash)</p>
+                      {modelQuality === 'standard' && <span className="stamp-chip bg-white text-black font-bold text-[8px]">ACTIVE</span>}
+                    </div>
+                    <p className="text-[11px] sm:text-xs text-[#9C9C96] mt-1 font-narrative leading-relaxed">
+                      Recommended: High-speed inference and precise narrative scene-to-beat partitioning.
                     </p>
                   </button>
 
@@ -574,38 +577,41 @@ export default function GeneratorForm({
                     type="button"
                     id="model-high-tier"
                     onClick={() => setModelQuality('high')}
-                    className={`p-2.5 sm:p-3 text-left border rounded-md transition-colors ${
+                    className={`p-3 sm:p-3.5 text-left border rounded-[2px] transition-all ${
                       modelQuality === 'high'
-                        ? 'border-white bg-[#1a1a1a] text-white'
-                        : 'border-neutral-800 text-neutral-400 hover:text-white'
+                        ? 'border-white bg-[#1F1F1D] text-white shadow-sm'
+                        : 'border-white/10 bg-[#161614] text-[#9C9C96] hover:border-white/30 hover:text-white'
                     }`}
                   >
-                    <p className="text-xs sm:text-sm font-medium">High Quality (gemini-3.1-pro-preview)</p>
-                    <p className="text-[11px] sm:text-xs text-[#A0A0A0] mt-0.5">
-                      High: nuanced cinematic direction
+                    <div className="flex items-center justify-between">
+                      <p className="font-display text-xs sm:text-sm font-medium text-white">Pro Quality (Gemini 3.1 Pro)</p>
+                      {modelQuality === 'high' && <span className="stamp-chip bg-white text-black font-bold text-[8px]">ACTIVE</span>}
+                    </div>
+                    <p className="text-[11px] sm:text-xs text-[#9C9C96] mt-1 font-narrative leading-relaxed">
+                      Deep cinematic reasoning for complex narratives and intricate character style sheets.
                     </p>
                   </button>
                 </div>
               </div>
 
               {/* Bring Your Own Key (BYOK) Section */}
-              <div className="space-y-3 pt-2 border-t border-neutral-800">
+              <div className="space-y-3 pt-3 border-t border-white/10">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-1.5">
-                    <KeyRound size={13} className="text-[#A0A0A0]" />
-                    <span className="text-[10px] sm:text-xs uppercase tracking-wider text-[#A0A0A0]">
-                      Your Gemini API Key (BYOK)
+                    <KeyRound size={13} className="text-[#9C9C96]" />
+                    <span className="font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96]">
+                      GEMINI API KEY (BYOK)
                     </span>
                   </div>
                   {hasCustomKey && (
-                    <span className="inline-flex items-center text-[10px] text-emerald-400 font-medium">
+                    <span className="inline-flex items-center text-[10px] text-emerald-400 font-editorial-meta font-medium">
                       <CheckCircle2 size={11} className="mr-1" />
-                      Active
+                      KEY ACTIVE
                     </span>
                   )}
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   <div className="relative">
                     <input
                       type={showKeyText ? 'text' : 'password'}
@@ -613,30 +619,30 @@ export default function GeneratorForm({
                       value={keyInput}
                       onChange={(e) => setKeyInput(e.target.value)}
                       placeholder="AIzaSy..."
-                      className="w-full pl-3.5 pr-20 py-2 bg-[#0d0d0d] text-white placeholder:text-[#555555] border border-neutral-700 rounded-md focus:outline-none focus:border-white text-xs sm:text-sm font-mono"
+                      className="w-full pl-3.5 pr-20 py-2.5 bg-[#0A0A09] text-[#F5F5F0] placeholder:text-[#555550] border border-white/15 rounded-[2px] focus:outline-none focus:border-white text-xs sm:text-sm font-mono"
                     />
-                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center space-x-1">
+                    <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center space-x-1">
                       <button
                         type="button"
                         id="toggle-key-visibility-btn"
                         onClick={() => setShowKeyText(!showKeyText)}
-                        className="p-1 text-[#888888] hover:text-white transition-colors"
+                        className="p-1.5 text-[#888884] hover:text-white transition-colors"
                         title={showKeyText ? 'Hide API key' : 'Show API key'}
                         aria-label="Toggle API key visibility"
                       >
-                        {showKeyText ? <EyeOff size={13} /> : <Eye size={13} />}
+                        {showKeyText ? <EyeOff size={14} /> : <Eye size={14} />}
                       </button>
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                    <label className="flex items-center space-x-2 text-[11px] text-[#A0A0A0] cursor-pointer select-none">
+                  <div className="flex flex-wrap items-center justify-between gap-2.5 pt-0.5">
+                    <label className="flex items-center space-x-2 text-[11px] sm:text-xs text-[#9C9C96] cursor-pointer select-none font-narrative">
                       <input
                         type="checkbox"
                         id="remember-key-checkbox"
                         checked={rememberOptIn}
                         onChange={(e) => setRememberOptIn(e.target.checked)}
-                        className="rounded border-neutral-700 bg-neutral-900 text-white focus:ring-0 focus:ring-offset-0"
+                        className="rounded-[2px] border-white/20 bg-[#121211] text-white focus:ring-0 focus:ring-offset-0"
                       />
                       <span>Remember in this browser session (sessionStorage)</span>
                     </label>
@@ -647,19 +653,19 @@ export default function GeneratorForm({
                           type="button"
                           id="clear-key-button"
                           onClick={handleClearKey}
-                          className="inline-flex items-center text-[11px] text-red-400 hover:text-red-300 transition-colors py-1 px-2"
+                          className="inline-flex items-center font-editorial-meta text-[10px] text-red-400 hover:text-red-300 transition-colors py-1 px-2"
                         >
                           <Trash2 size={11} className="mr-1" />
-                          Remove
+                          REMOVE
                         </button>
                       )}
                       <button
                         type="button"
                         id="apply-key-button"
                         onClick={handleApplyKey}
-                        className="inline-flex items-center text-xs px-3 py-1.5 bg-white text-black font-medium hover:bg-neutral-200 transition-colors rounded-sm"
+                        className="inline-flex items-center font-editorial-meta text-[10px] sm:text-[11px] px-3.5 py-1.5 bg-white text-black font-semibold hover:bg-[#EAEAE6] transition-colors rounded-[2px]"
                       >
-                        Apply Key
+                        APPLY KEY
                       </button>
                     </div>
                   </div>
@@ -670,21 +676,21 @@ export default function GeneratorForm({
                     </p>
                   )}
 
-                  <div className="p-2.5 bg-[#0a0a0a] border border-neutral-800 rounded text-[11px] text-[#888888] space-y-1">
-                    <div className="flex items-center space-x-1.5 text-neutral-300 font-medium">
-                      <Shield size={11} className="text-emerald-400" />
-                      <span>Direct-to-Google Privacy</span>
+                  <div className="p-3 bg-[#171715] border border-white/10 rounded-[2px] text-xs text-[#9C9C96] space-y-1 font-narrative">
+                    <div className="flex items-center space-x-1.5 text-white font-medium">
+                      <Shield size={12} className="text-emerald-400" />
+                      <span className="font-editorial-meta text-[10px]">DIRECT BROWSER-TO-GOOGLE ARCHITECTURE</span>
                     </div>
-                    <p>
-                      Your key is held strictly in your browser and used only to directly query Google Gemini servers. It is never logged or stored on external servers.
+                    <p className="leading-relaxed">
+                      Your Gemini API key is kept exclusively within your local browser memory and used directly for Google Generative AI queries. Keys are never transmitted to or logged on third-party servers.
                     </p>
                     <a
                       href="https://aistudio.google.com/app/apikey"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-block text-neutral-200 hover:text-white underline underline-offset-2 pt-0.5"
+                      className="inline-flex items-center text-white hover:underline underline-offset-2 pt-0.5 font-editorial-meta text-[10px]"
                     >
-                      Get an API key from Google AI Studio &rarr;
+                      GET A FREE GEMINI API KEY AT GOOGLE AI STUDIO &rarr;
                     </a>
                   </div>
                 </div>

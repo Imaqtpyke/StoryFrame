@@ -66,7 +66,7 @@ export default function CustomDropdown({
         onClick={() => setIsOpen(!isOpen)}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
-        className="w-full flex items-center justify-between px-3 sm:px-4 py-2 sm:py-2.5 bg-[#121211] hover:bg-[#161614] text-[#F5F5F0] border border-white/10 transition-colors text-left focus:outline-none focus:border-white disabled:opacity-50 text-xs sm:text-base min-h-[36px] sm:min-h-[44px]"
+        className="w-full flex items-center justify-between px-3 sm:px-4 h-[42px] sm:h-[46px] bg-[#121211] hover:bg-[#161614] text-[#F5F5F0] border border-white/10 transition-colors text-left focus:outline-none focus:border-white disabled:opacity-50 text-xs sm:text-sm font-narrative"
       >
         <span className="truncate min-w-0 pr-1 font-narrative">
           {selectedOption ? selectedOption.label : 'Select an option'}

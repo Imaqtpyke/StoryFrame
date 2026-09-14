@@ -11,7 +11,8 @@ import {
   ChevronRight, 
   Clock,
   Sparkles,
-  Clapperboard
+  Clapperboard,
+  Image as ImageIcon
 } from 'lucide-react';
 
 interface BeatBottomSheetProps {
@@ -96,7 +97,9 @@ export default function BeatBottomSheet({
         {/* Sheet Header */}
         <div className="px-4 py-2.5 border-b border-white/10 flex items-center justify-between bg-[#161614] shrink-0">
           <div className="flex items-center space-x-2">
-            <span className="stamp-chip stamp-chip-primary font-bold text-[10px]">
+            <span className={`stamp-chip font-bold text-[10px] ${
+              isVideoMode ? 'bg-amber-950/70 text-amber-300 border-amber-800/80' : 'bg-sky-950/25 text-sky-200/70 border-sky-800/25'
+            }`}>
               BEAT {String(beat.beatIndex).padStart(2, '0')}
             </span>
             <span className="font-editorial-meta text-[10px] text-[#A8A8A2]">
@@ -105,9 +108,13 @@ export default function BeatBottomSheet({
             <span className="font-editorial-meta text-[9px] text-[#7D7D76]">
               ({currentIndex + 1} of {allBeatsInScene.length})
             </span>
-            {isVideoMode && (
+            {isVideoMode ? (
               <span className="stamp-chip bg-amber-950/70 text-amber-300 border-amber-800/80 text-[8px] py-0 px-1">
                 VIDEO
+              </span>
+            ) : (
+              <span className="stamp-chip bg-sky-950/25 text-sky-200/70 border-sky-800/25 text-[8px] py-0 px-1">
+                IMAGE
               </span>
             )}
           </div>
@@ -182,12 +189,12 @@ export default function BeatBottomSheet({
                 {isVideoMode ? (
                   <>
                     <Clapperboard size={10} className="text-amber-400" />
-                    Text to Video Prompt
+                    <span className="text-amber-300 font-medium">Text to Video Prompt</span>
                   </>
                 ) : (
                   <>
-                    <Sparkles size={10} className="text-white/70" />
-                    Complete Visual Prompt
+                    <ImageIcon size={10} className="text-sky-400/60" />
+                    <span className="text-sky-200/70 font-medium">Structured Image Prompt</span>
                   </>
                 )}
               </span>
@@ -195,23 +202,27 @@ export default function BeatBottomSheet({
                 type="button"
                 id={`mobile-copy-prompt-btn-${beat.beatIndex}`}
                 onClick={() => onCopy(beat.imagePrompt, `prompt-${beatKey}`)}
-                className="font-editorial-meta text-[9px] text-white bg-[#262624] hover:bg-[#333330] px-2 py-1 rounded transition-colors flex items-center gap-1"
+                className={`font-editorial-meta text-[9px] px-2.5 py-1 rounded transition-colors flex items-center gap-1 font-semibold ${
+                  isVideoMode
+                    ? 'bg-amber-400 text-black hover:bg-amber-300'
+                    : 'bg-sky-400/70 text-black hover:bg-sky-400'
+                }`}
               >
                 {isCopiedPrompt ? (
                   <>
-                    <Check size={10} className="text-white" />
+                    <Check size={10} className="text-black" />
                     <span>COPIED</span>
                   </>
                 ) : (
                   <>
-                    <Copy size={10} />
-                    <span>{isVideoMode ? 'COPY VIDEO PROMPT' : 'COPY PROMPT'}</span>
+                    <Copy size={10} className="text-black" />
+                    <span>{isVideoMode ? 'COPY VIDEO PROMPT' : 'COPY IMAGE PROMPT'}</span>
                   </>
                 )}
               </button>
             </div>
-            <div className={`text-xs text-[#E6E6E1] leading-relaxed p-3 border rounded selection:bg-white selection:text-black ${
-              isVideoMode ? 'bg-[#080807] border-amber-900/40 font-mono' : 'bg-[#080808] border-white/10'
+            <div className={`text-xs leading-relaxed p-3 border rounded selection:bg-white selection:text-black font-mono ${
+              isVideoMode ? 'bg-[#080807] border-amber-900/40 text-[#F0EFEA]' : 'bg-[#04070C] border-sky-900/20 text-[#D0DFEB]'
             }`}>
               {beat.imagePrompt}
             </div>

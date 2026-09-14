@@ -7,6 +7,7 @@ import ResultsView from './components/ResultsView';
 import LegalView from './components/LegalViews';
 import ScrollToTopButton from './components/ScrollToTopButton';
 import HistoryModal from './components/HistoryModal';
+import HelpGuideModal from './components/HelpGuideModal';
 import { ApiKeyProvider, useApiKey } from './context/ApiKeyContext';
 import { generateStoryDirectly } from './services/geminiClient';
 import { getHistoryItems, addHistoryItem, deleteHistoryItem, clearAllHistory } from './services/historyStorage';
@@ -21,6 +22,7 @@ function StoryFrameMain() {
   const [lastRequest, setLastRequest] = useState<GenerateStoryRequest | null>(null);
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
 
   // Load history on initial mount
   useEffect(() => {
@@ -123,7 +125,10 @@ function StoryFrameMain() {
         )}
       </main>
 
-      <Footer onNavigate={setActivePage} />
+      <Footer
+        onNavigate={setActivePage}
+        onOpenHelp={() => setIsHelpOpen(true)}
+      />
 
       {/* Story History Modal (Web) / Drawer (Mobile) */}
       <HistoryModal
@@ -133,6 +138,12 @@ function StoryFrameMain() {
         onSelectStory={handleSelectFromHistory}
         onDeleteItem={handleDeleteHistoryItem}
         onClearAll={handleClearAllHistory}
+      />
+
+      {/* User Guide & Free AI Directory Modal */}
+      <HelpGuideModal
+        isOpen={isHelpOpen}
+        onClose={() => setIsHelpOpen(false)}
       />
 
       {/* Up button when scrolled down */}
