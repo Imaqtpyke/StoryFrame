@@ -2,7 +2,7 @@
 // In BYOK mode, calls are dispatched straight from the browser to Google Generative Language API.
 // API keys are strictly kept in browser memory / sessionStorage and never sent to any remote backend.
 
-import { GenerateStoryRequest, StoryGenerationResult } from '../types';
+import { GenerateStoryRequest, StoryGenerationResult, StyleProfile } from '../types';
 import { enforceBeatCeilings } from './beatSplitting';
 
 function removeEmDashes(text: string): string {
@@ -89,13 +89,20 @@ export async function generateStoryDirectly(
     durationMode,
     durationSeconds,
     modelQuality,
+    generationMode = 'image',
+    targetVideoDuration: reqTargetVideoDuration,
   } = req;
+
+  const isVideoMode = generationMode === 'video';
+  const targetVideoDuration = reqTargetVideoDuration || (typeof durationSeconds === 'number' && durationSeconds <= 15 ? durationSeconds : 5);
 
   const isLongForm = format === 'long';
   const defaultAspectRatio = isLongForm ? '16:9 widescreen' : '9:16 vertical';
 
   let durationInstruction = '';
-  if (durationMode === 'automatic') {
+  if (isVideoMode) {
+    durationInstruction = `Generation mode is Text to Video. Target single video clip duration is ${targetVideoDuration} seconds per scene (options 5-15s). Break the story into distinct visual scenes that can each be captured in a single ${targetVideoDuration}-second AI video shot.`;
+  } else if (durationMode === 'automatic') {
     durationInstruction = `Duration mode is Automatic. Break the story into however many scenes it naturally requires. Estimate realistic narration pacing with a floor of 3 to 6 seconds of spoken narration per scene. Calculate and return totalDurationSeconds accurately based on the scene pacing.`;
   } else if (durationSeconds && durationSeconds > 0) {
     durationInstruction = `Target total duration is exactly ${durationSeconds} seconds (${isLongForm ? Math.round(durationSeconds / 60) + ' minutes' : durationSeconds + ' seconds'}). Carefully pace the number of scenes and the length of each scene's spoken narrator line so their combined spoken narration matches this target duration closely.`;
@@ -103,7 +110,105 @@ export async function generateStoryDirectly(
     durationInstruction = `Provide a well-paced scene sequence with 3 to 6 seconds per scene floor.`;
   }
 
-  const systemPrompt = `You are an expert film director, cinematographer, and storyboard production supervisor.
+  const systemPrompt = isVideoMode
+    ? `You are an expert film director, cinematographer, and AI video prompt engineer.
+Your task is to take a story and generate a production-ready, scene-by-scene video generation breakdown with smart duration-adaptive video beats.
+
+TARGET DURATION & SMART BEAT ADAPTATION:
+The target video duration is ${targetVideoDuration} seconds per scene clip (e.g., 5s, 6s, 8s, 10s, 15s).
+You MUST analyze the narrator sentence and narrative action of each scene and break it into sequential visual video shot beats that TOGETHER precisely span and cover the ${targetVideoDuration}-second duration.
+- For a 5-second clip: create 2 to 3 concise video shot beats (~1.5s to 2.5s each, totaling ~5s).
+- For a 10-second clip: create 3 to 5 developmental video shot beats (~2.0s to 3.0s each, totaling ~10s).
+- For a 15-second clip: create 4 to 6 expansive video shot beats (~2.5s to 3.5s each, totaling ~15s).
+
+For example, for the sentence: "Imagine an entire island, packed with a bustling mining town, completely vanishing into the ocean overnight":
+- Beat 1 ("Imagine an entire island"): Complete video prompt of an entire island shot with aerial camera movement.
+- Beat 2 ("packed with a bustling mining town"): Complete video prompt of the mining town shot with street-level tracking.
+- Beat 3 ("completely vanishing into the ocean overnight"): Complete video prompt of the town being consumed by waves.
+
+SCHEMA AND STRUCTURE REQUIREMENTS:
+1. Style Profile:
+   Analyze the whole story to generate a top-level "styleProfile" object containing:
+   - "artStyle": visual art medium or cinematic style adapting to: "${characterStyle || 'cinematic hyperrealism'}"
+   - "colorPalette": harmonious color palette matching the specific mood of this story
+   - "lighting": lighting style and atmospheric quality (e.g., golden hour rim light, misty neon glow, or soft lantern ambience)
+   - "eraAndSetting": historical or fictional period, geography, and environmental backdrop
+   - "lensAndFilmStock": lens and film stock descriptor (e.g., "Shot on 35mm anamorphic prime lens, subtle 35mm Kodak 5219 film grain, high dynamic range")
+
+2. Character Sheet:
+   Create a top-level "characterSheet" object mapping each recurring character name to ONE fixed, highly detailed visual description.
+
+3. Character and Setting Continuity (MANDATORY ANCHOR-SHOT RULE):
+   - Mark the first scene where each character or setting is established.
+   - In that first scene, the character/setting is described in full detail.
+   - In EVERY later videoPrompt for that character, reference it as matching the established look rather than re-describing it from scratch (e.g., "Subject: Kael (matching established look from Scene 1)").
+   - Apply the same rule to recurring settings (e.g., "Lighting & Environment: The Clockwork Observatory (matching established setting from Scene 1)").
+
+4. Mandatory 8-Part Master Scene "videoPrompt" Structure:
+   For EACH scene, construct "videoPrompt" adhering strictly to these exact 8 components:
+   - subject: (from characterSheet for recurring characters. First scene uses full visual description; subsequent scenes state "matching established look from Scene [X]").
+   - action: described in temporal order across the shot.
+   - camera: exactly ONE shot type plus exactly ONE movement, NEVER stacked movements (e.g., "Medium shot, slow forward push-in").
+   - lighting and environment: atmospheric lighting and environment details from styleProfile.
+   - style: styleProfile artStyle plus the lens/film-stock descriptor.
+   - physics: concrete physical dynamics (e.g. "cloth trailing in wind", "embers drifting upward", "waves crashing against rocks").
+   - audio: ALWAYS state "no dialogue, ambient sound only" or "silent".
+   - duration: in seconds matching ${targetVideoDuration} seconds.
+
+5. Start Frame Ingredients (Text to Image Prompt):
+   For each scene, provide "startFramePrompt": a pristine text-to-image prompt to generate the initial reference keyframe image for image-to-video tools (Kling, Runway, Luma, Sora). Formatted as:
+   [Shot framing] of [Subject with exact character details], [Initial frame pose] in [Setting], [Lighting & Color palette], ${defaultAspectRatio}, ${characterStyle || 'cinematic rendering'}.
+
+6. Smart Video Beats Array ("beats"):
+   For each scene, provide an array of fine-grained video beats representing the temporal subdivisions of this ${targetVideoDuration}-second clip.
+   Each beat MUST contain:
+   - "beatIndex": integer (1, 2, 3...)
+   - "textSpan": the specific phrase/action segment from the narrator line (e.g. "Imagine an entire island")
+   - "estimatedSeconds": estimated duration in seconds for this beat, distributed so the sum of all beats in the scene equals approximately ${targetVideoDuration} seconds.
+   - "shotType": explicit cinematography shot framing (e.g., "Wide Aerial Establishing Shot", "Medium Tracking Shot", "Close-Up Facial Reaction", "Low-Angle Hero Shot")
+   - "cameraMovement": cinematic camera motion cue (e.g., "Slow forward push-in", "Smooth lateral tracking", "Gentle crane tilt down")
+   - "imagePrompt": A complete, standalone, production-ready TEXT TO VIDEO PROMPT formatted for AI video generators capturing this specific beat's action, shot framing, camera motion, physics, lighting, and audio: "no dialogue, ambient sound only". Aspect ratio: ${defaultAspectRatio}.
+
+STRICT CONSTRAINTS:
+1. DO NOT use em dashes anywhere (do not use "\\u2014", "\\u2013", or "--"). Use commas, periods, or parentheses instead.
+2. Platform and Framing: Target platform is "${platform || (isLongForm ? 'YouTube' : 'TikTok')}". Format is ${isLongForm ? '16:9 widescreen' : '9:16 vertical'}.
+3. You MUST respond with ONLY a valid JSON object matching this schema:
+{
+  "styleProfile": {
+    "artStyle": "...",
+    "colorPalette": "...",
+    "lighting": "...",
+    "eraAndSetting": "...",
+    "lensAndFilmStock": "Shot on 35mm anamorphic lens, fine film grain..."
+  },
+  "characterSheet": {
+    "CharacterName": "Detailed visual description..."
+  },
+  "totalDurationSeconds": number,
+  "scenes": [
+    {
+      "index": number,
+      "narratorLine": string,
+      "estimatedSeconds": number,
+      "videoPrompt": "Subject: ... Action: ... Camera: ... Lighting & Environment: ... Style: ... Physics: ... Audio: no dialogue, ambient sound only. Duration: ...",
+      "startFramePrompt": "Text to image prompt for initial keyframe...",
+      "establishedCharacters": ["Name"],
+      "establishedSettings": ["Setting"],
+      "beats": [
+        {
+          "beatIndex": number,
+          "textSpan": string,
+          "estimatedSeconds": number,
+          "shotType": string,
+          "cameraMovement": string,
+          "imagePrompt": string
+        }
+      ]
+    }
+  ]
+}
+Do not include markdown code fences or backticks, just raw JSON.`
+    : `You are an expert film director, cinematographer, and storyboard production supervisor.
 Your task is to take a story and generate a production-ready, nested scene-and-beat visual breakdown with exact cinematic image prompts, shot taxonomy tags, narrator lines, a style profile, and a visual character sheet.
 
 SCHEMA AND STRUCTURE REQUIREMENTS:
@@ -113,6 +218,7 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - "colorPalette": harmonious color palette matching the specific mood of this story (for example, muted earth tones, saturated neon, sepia chiaroscuro, or oceanic teals and golds)
    - "lighting": lighting style and atmospheric quality (for example, moody rim lighting, harsh equatorial sunlight, or soft lantern glow)
    - "eraAndSetting": historical or fictional period, geography, and environmental backdrop of the story
+   - "lensAndFilmStock": lens and film stock descriptor (e.g. "Shot on 35mm prime lens, fine film grain")
 
 2. Character Sheet:
    Create a top-level "characterSheet" object mapping each recurring character name to ONE fixed, highly detailed visual description.
@@ -290,11 +396,12 @@ ${durationInstruction}`;
   const rawStyle = parsedData.styleProfile && typeof parsedData.styleProfile === 'object'
     ? parsedData.styleProfile
     : {};
-  const sanitizedStyleProfile = {
+  const sanitizedStyleProfile: StyleProfile = {
     artStyle: removeEmDashes(rawStyle.artStyle || characterStyle || 'Cinematic conceptual illustration'),
     colorPalette: removeEmDashes(rawStyle.colorPalette || 'Cohesive cinematic palette tailored to narrative mood'),
     lighting: removeEmDashes(rawStyle.lighting || 'Directional cinematic lighting with atmospheric depth'),
     eraAndSetting: removeEmDashes(rawStyle.eraAndSetting || 'Story specific era and environment'),
+    lensAndFilmStock: removeEmDashes(rawStyle.lensAndFilmStock || 'Shot on 35mm anamorphic prime lens, subtle 35mm Kodak 5219 film grain, high dynamic range cinematic grade'),
   };
 
   const styleProfileWording = `Visual Style: ${sanitizedStyleProfile.artStyle}. Color Palette: ${sanitizedStyleProfile.colorPalette}. Lighting: ${sanitizedStyleProfile.lighting}. Era and Setting: ${sanitizedStyleProfile.eraAndSetting}.`;
@@ -309,6 +416,27 @@ ${durationInstruction}`;
       sanitizedCharacterSheet[removeEmDashes(charName.trim())] = removeEmDashes(desc.trim());
     }
   }
+
+  function toRoman(num: number): string {
+    const romanMap: [number, string][] = [
+      [1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'],
+      [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'],
+      [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']
+    ];
+    let res = '';
+    let n = num;
+    for (const [val, sym] of romanMap) {
+      while (n >= val) {
+        res += sym;
+        n -= val;
+      }
+    }
+    return res || 'I';
+  }
+
+  // Continuity tracking for characters and settings in video mode
+  const characterFirstScene = new Map<string, number>();
+  const settingFirstScene = new Map<string, number>();
 
   // Sanitize scenes and beats
   const sanitizedScenes = parsedData.scenes.map((scene: any, sIdx: number) => {
@@ -384,8 +512,11 @@ ${durationInstruction}`;
       };
     });
 
-    // Enforce hard ceiling validation: split any beat > 2.0s or > 8 words into micro-beats
-    const ceilingEnforcedBeats = enforceBeatCeilings(sanitizedBeats, sceneIndex);
+    // Enforce ceiling validation: in Image mode, max 2.0s / 8 words; in Video mode, smart duration calibration spanning targetVideoDuration
+    const ceilingEnforcedBeats = enforceBeatCeilings(sanitizedBeats, sceneIndex, {
+      isVideoMode,
+      targetVideoDuration,
+    });
 
     const calculatedSceneSeconds = Math.round(
       ceilingEnforcedBeats.reduce((sum: number, b: any) => sum + (b.estimatedSeconds || 1.5), 0)
@@ -397,11 +528,168 @@ ${durationInstruction}`;
         : calculatedSceneSeconds
     );
 
+    // Track characters established in this scene
+    const establishedCharacters: string[] = [];
+    const charactersInScene: string[] = [];
+    for (const charName of Object.keys(sanitizedCharacterSheet)) {
+      const escaped = charName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const reg = new RegExp(`\\b${escaped}\\b`, 'i');
+      if (
+        reg.test(narratorLine) ||
+        reg.test(scene.videoPrompt || '') ||
+        reg.test(scene.startFramePrompt || '') ||
+        (Array.isArray(scene.establishedCharacters) && scene.establishedCharacters.includes(charName))
+      ) {
+        charactersInScene.push(charName);
+        if (!characterFirstScene.has(charName)) {
+          characterFirstScene.set(charName, sceneIndex);
+          establishedCharacters.push(charName);
+        }
+      }
+    }
+
+    // Track settings established in this scene
+    const establishedSettings: string[] = [];
+    if (sceneIndex === 1 && sanitizedStyleProfile.eraAndSetting) {
+      establishedSettings.push(sanitizedStyleProfile.eraAndSetting);
+      settingFirstScene.set(sanitizedStyleProfile.eraAndSetting, 1);
+    }
+    if (Array.isArray(scene.establishedSettings)) {
+      scene.establishedSettings.forEach((setting: string) => {
+        const cleanSetting = removeEmDashes(String(setting).trim());
+        if (cleanSetting && !settingFirstScene.has(cleanSetting)) {
+          settingFirstScene.set(cleanSetting, sceneIndex);
+          if (!establishedSettings.includes(cleanSetting)) {
+            establishedSettings.push(cleanSetting);
+          }
+        }
+      });
+    }
+
+    // Video Mode: construct or sanitize 8-part videoPrompt and startFramePrompt
+    let videoPrompt: string | undefined = undefined;
+    let startFramePrompt: string | undefined = undefined;
+
+    if (isVideoMode) {
+      const primaryBeat = ceilingEnforcedBeats[0] || sanitizedBeats[0] || {
+        shotType: 'Medium Shot',
+        cameraMovement: 'Slow Push-In',
+        textSpan: narratorLine,
+        imagePrompt: narratorLine,
+      };
+
+      // 1. Subject description with anchor continuity
+      let subjectDesc = '';
+      if (charactersInScene.length > 0) {
+        subjectDesc = charactersInScene.map(cName => {
+          const firstSeen = characterFirstScene.get(cName);
+          if (firstSeen === sceneIndex) {
+            return `${cName}, ${sanitizedCharacterSheet[cName] || 'cinematic protagonist'} [Established Look]`;
+          } else {
+            return `${cName} (matching established look from Scene ${toRoman(firstSeen || 1)})`;
+          }
+        }).join(' and ');
+      } else {
+        subjectDesc = `Cinematic subject reflecting "${narratorLine.substring(0, 50)}"`;
+      }
+
+      // 2. Action in temporal order
+      let actionDesc = '';
+      if (ceilingEnforcedBeats.length >= 3) {
+        const firstBeat = ceilingEnforcedBeats[0].textSpan;
+        const midBeat = ceilingEnforcedBeats[Math.floor(ceilingEnforcedBeats.length / 2)].textSpan;
+        const lastBeat = ceilingEnforcedBeats[ceilingEnforcedBeats.length - 1].textSpan;
+        actionDesc = `Initially begins as "${firstBeat}", dynamically progresses through "${midBeat}", and settles as "${lastBeat}".`;
+      } else if (ceilingEnforcedBeats.length === 2) {
+        actionDesc = `Initially starts with "${ceilingEnforcedBeats[0].textSpan}", then naturally transitions into "${ceilingEnforcedBeats[1].textSpan}".`;
+      } else {
+        actionDesc = `Unfolds continuously across the shot portraying "${narratorLine}".`;
+      }
+
+      // 3. Camera: exactly one shot type plus one movement (never stacked)
+      const shotType = primaryBeat.shotType || 'Medium Shot';
+      const rawMove = primaryBeat.cameraMovement || 'Slow push-in';
+      const singleCameraMove = rawMove.replace(/\b(and|then|with)\b/gi, ',').split(/[,;]/)[0].trim() || 'Slow push-in';
+      const cameraDesc = `${shotType}, ${singleCameraMove}`;
+
+      // 4. Lighting & Environment from styleProfile
+      let envDesc = sanitizedStyleProfile.eraAndSetting;
+      if (sceneIndex > 1 && settingFirstScene.has(sanitizedStyleProfile.eraAndSetting)) {
+        const sFirst = settingFirstScene.get(sanitizedStyleProfile.eraAndSetting);
+        if (sFirst && sFirst < sceneIndex) {
+          envDesc += ` (matching established setting from Scene ${toRoman(sFirst)})`;
+        }
+      }
+      const lightingDesc = `${sanitizedStyleProfile.lighting} in ${envDesc}, palette: ${sanitizedStyleProfile.colorPalette}`;
+
+      // 5. Style + lens/film-stock descriptor
+      const styleDesc = `${sanitizedStyleProfile.artStyle}, ${sanitizedStyleProfile.lensAndFilmStock || 'shot on 35mm anamorphic lens, fine 35mm film grain'}`;
+
+      // 6. Physics (only when it matters, concrete dynamics)
+      const physicsDesc = 'Natural atmospheric dynamics, subtle cloth movement and airborne particles drifting in light';
+
+      // 7. Audio (always no dialogue / ambient sound only)
+      const audioDesc = 'no dialogue, ambient sound only';
+
+      // 8. Duration capped to targetVideoDuration with note if narration runs longer
+      let durationDesc = `${targetVideoDuration} seconds`;
+      if (sceneSeconds > targetVideoDuration + 1) {
+        durationDesc += ` (Note: Scene spoken narration runs ~${sceneSeconds}s; consider splitting across multiple shots or trimming narration for single-generation video models)`;
+      } else {
+        durationDesc += `.`;
+      }
+
+      // If Gemini returned a structured videoPrompt, sanitize and align it
+      const rawVP = scene.videoPrompt || scene.video_prompt;
+      if (typeof rawVP === 'string' && rawVP.trim().length > 30) {
+        let cleanedVP = removeEmDashes(rawVP.trim());
+        // Ensure Audio is explicit
+        if (!cleanedVP.toLowerCase().includes('audio:')) {
+          cleanedVP += `\nAudio: ${audioDesc}.`;
+        } else {
+          cleanedVP = cleanedVP.replace(/Audio:[^\n.]*/i, `Audio: ${audioDesc}`);
+        }
+        // Ensure Duration is aligned to target
+        if (!cleanedVP.toLowerCase().includes('duration:')) {
+          cleanedVP += `\nDuration: ${durationDesc}`;
+        } else {
+          cleanedVP = cleanedVP.replace(/Duration:[^\n.]*(?:\.|$)/i, `Duration: ${durationDesc}`);
+        }
+        videoPrompt = cleanedVP;
+      } else {
+        videoPrompt = [
+          `Subject: ${subjectDesc}.`,
+          `Action: ${actionDesc}`,
+          `Camera: ${cameraDesc}.`,
+          `Lighting & Environment: ${lightingDesc}.`,
+          `Style: ${styleDesc}.`,
+          `Physics: ${physicsDesc}.`,
+          `Audio: ${audioDesc}.`,
+          `Duration: ${durationDesc}`
+        ].join('\n');
+      }
+
+      // Generate startFramePrompt (Text to Image Prompt for start frame ingredient)
+      const rawStartFrame = scene.startFramePrompt || scene.start_frame_prompt || scene.start_frame_image_prompt;
+      if (typeof rawStartFrame === 'string' && rawStartFrame.trim().length > 20) {
+        startFramePrompt = removeEmDashes(rawStartFrame.trim());
+      } else {
+        startFramePrompt = removeEmDashes(
+          `[${shotType}] of ${subjectDesc}, opening start frame pose in ${sanitizedStyleProfile.eraAndSetting}, ${sanitizedStyleProfile.lighting}, ${sanitizedStyleProfile.colorPalette}. ${sanitizedStyleProfile.lensAndFilmStock}. ${defaultAspectRatio}, ${characterStyle || 'cinematic production rendering'}.`
+        );
+      }
+    }
+
     return {
       index: sceneIndex,
       narratorLine,
       estimatedSeconds: sceneSeconds,
       beats: ceilingEnforcedBeats,
+      videoPrompt,
+      startFramePrompt,
+      establishedCharacters,
+      establishedSettings,
+      isAnchorScene: establishedCharacters.length > 0 || establishedSettings.length > 0,
     };
   });
 
@@ -415,5 +703,7 @@ ${durationInstruction}`;
     characterSheet: sanitizedCharacterSheet,
     totalDurationSeconds: totalSeconds,
     scenes: sanitizedScenes,
+    generationMode: isVideoMode ? 'video' : 'image',
+    targetVideoDuration: isVideoMode ? targetVideoDuration : undefined,
   };
 }

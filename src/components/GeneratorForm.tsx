@@ -2,8 +2,8 @@ import { useState, FormEvent, MouseEvent, useEffect } from 'react';
 import CustomDropdown, { DropdownOption } from './CustomDropdown';
 import KeyConsentModal from './KeyConsentModal';
 import { useApiKey } from '../context/ApiKeyContext';
-import { StoryFormat, GenerateStoryRequest } from '../types';
-import { Sliders, RefreshCw, AlertCircle, Dices, Eye, EyeOff, KeyRound, Trash2, CheckCircle2, Shield } from 'lucide-react';
+import { StoryFormat, GenerateStoryRequest, GenerationMode } from '../types';
+import { Sliders, RefreshCw, AlertCircle, Dices, Eye, EyeOff, KeyRound, Trash2, CheckCircle2, Shield, Camera, Video, Sparkles } from 'lucide-react';
 
 interface GeneratorFormProps {
   onSubmit: (data: GenerateStoryRequest) => void;
@@ -83,18 +83,36 @@ const LONG_DURATIONS: DropdownOption[] = [
   { value: 'custom', label: 'Custom', sublabel: 'Specify exact minutes' },
 ];
 
+const VIDEO_DURATIONS: DropdownOption[] = [
+  { value: '5', label: '5 seconds', sublabel: 'Kling / Runway / Luma / Haiper standard' },
+  { value: '6', label: '6 seconds', sublabel: 'Standard AI clip duration' },
+  { value: '7', label: '7 seconds', sublabel: 'Extended shot' },
+  { value: '8', label: '8 seconds', sublabel: 'Extended shot' },
+  { value: '9', label: '9 seconds', sublabel: 'Extended shot' },
+  { value: '10', label: '10 seconds', sublabel: 'Sora / Kling 10s generation' },
+  { value: '11', label: '11 seconds', sublabel: 'Long cinematic sequence' },
+  { value: '12', label: '12 seconds', sublabel: 'Long cinematic sequence' },
+  { value: '13', label: '13 seconds', sublabel: 'Long cinematic sequence' },
+  { value: '14', label: '14 seconds', sublabel: 'Long cinematic sequence' },
+  { value: '15', label: '15 seconds', sublabel: 'Maximum single-clip generation' },
+  { value: 'custom', label: 'Custom seconds', sublabel: 'Specify exact seconds' },
+];
+
 export default function GeneratorForm({
   onSubmit,
   isLoading,
   errorMessage,
 }: GeneratorFormProps) {
   const { apiKey, hasCustomKey, rememberInSession, setCustomApiKey, clearCustomApiKey } = useApiKey();
+  const [generationMode, setGenerationMode] = useState<GenerationMode>('image');
   const [story, setStory] = useState('');
   const [characterStyle, setCharacterStyle] = useState('');
   const [format, setFormat] = useState<StoryFormat>('short');
   const [platform, setPlatform] = useState('TikTok');
   const [durationValue, setDurationValue] = useState('automatic');
+  const [videoDurationValue, setVideoDurationValue] = useState('5');
   const [customNumeric, setCustomNumeric] = useState('');
+  const [customVideoSeconds, setCustomVideoSeconds] = useState('');
   const [modelQuality, setModelQuality] = useState<'standard' | 'high'>('standard');
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -174,18 +192,30 @@ export default function GeneratorForm({
 
     let durationMode: 'automatic' | 'preset' | 'custom' = 'automatic';
     let durationSeconds: number | undefined;
+    let targetVideoDuration: number | undefined;
 
-    if (durationValue === 'automatic') {
-      durationMode = 'automatic';
-    } else if (durationValue === 'custom') {
-      durationMode = 'custom';
-      const num = parseFloat(customNumeric);
-      if (num && num > 0) {
-        durationSeconds = format === 'long' ? Math.round(num * 60) : Math.round(num);
+    if (generationMode === 'video') {
+      if (videoDurationValue === 'custom') {
+        const num = parseFloat(customVideoSeconds);
+        targetVideoDuration = num && num > 0 ? Math.round(num) : 5;
+      } else {
+        targetVideoDuration = parseInt(videoDurationValue, 10) || 5;
       }
-    } else {
       durationMode = 'preset';
-      durationSeconds = parseInt(durationValue, 10);
+      durationSeconds = targetVideoDuration;
+    } else {
+      if (durationValue === 'automatic') {
+        durationMode = 'automatic';
+      } else if (durationValue === 'custom') {
+        durationMode = 'custom';
+        const num = parseFloat(customNumeric);
+        if (num && num > 0) {
+          durationSeconds = format === 'long' ? Math.round(num * 60) : Math.round(num);
+        }
+      } else {
+        durationMode = 'preset';
+        durationSeconds = parseInt(durationValue, 10);
+      }
     }
 
     onSubmit({
@@ -196,18 +226,22 @@ export default function GeneratorForm({
       durationMode,
       durationSeconds,
       modelQuality,
+      generationMode,
+      targetVideoDuration,
     });
   };
 
   return (
     <div className="w-full max-w-4xl mx-auto">
       {/* Intro header centered */}
-      <div className="mb-6 sm:mb-10 text-center px-1">
+      <div className="mb-6 sm:mb-8 text-center px-1">
         <h1 className="text-3xl sm:text-4xl lg:text-5xl font-normal font-display tracking-tight text-white mb-2.5 sm:mb-3 leading-tight" style={{ fontSize: 'clamp(1.85rem, 5.5vw, 3.35rem)' }}>
-          Story to Image Prompt and Narrator Script Generator
+          {generationMode === 'video' ? 'Story to Video Prompt & Production Script Generator' : 'Story to Image Prompt and Narrator Script Generator'}
         </h1>
         <p className="text-sm sm:text-base md:text-lg text-[#9C9C96] leading-relaxed max-w-3xl mx-auto font-narrative">
-          Convert any narrative idea into a scene by scene production plan. Receive precise visual prompts formatted for your chosen platform alongside a complete, copyable narrator script.
+          {generationMode === 'video'
+            ? 'Convert any narrative idea into a scene by scene video generation plan. Receive structured 8-part video prompts with temporal actions, continuity anchors, and pacing beat analysis.'
+            : 'Convert any narrative idea into a scene by scene production plan. Receive precise visual prompts formatted for your chosen platform alongside a complete, copyable narrator script.'}
         </p>
       </div>
 
@@ -240,6 +274,57 @@ export default function GeneratorForm({
       )}
 
       <form onSubmit={handleSubmit} id="story-generator-form" className="space-y-6 sm:space-y-8 font-narrative">
+        {/* Prominent Mode Toggle: Text to Image vs Text to Video */}
+        <div className="bg-[#121211] border border-white/15 p-2.5 sm:p-3 space-y-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-2 border-b border-white/10 pb-2.5 sm:pb-2">
+            <div className="text-center sm:text-left">
+              <span className="font-editorial-meta text-[10px] sm:text-[11px] text-[#C4C4C0] font-semibold block">
+                GENERATION MODE
+              </span>
+            </div>
+
+            <div
+              id="mode-toggle-group"
+              className="flex p-1 bg-[#0A0A09] border border-white/15 w-full sm:w-auto self-center sm:self-auto min-w-[280px] max-w-sm sm:max-w-none mx-auto sm:mx-0"
+              role="tablist"
+              aria-label="Story Generation Mode"
+            >
+              <button
+                type="button"
+                id="mode-image-btn"
+                role="tab"
+                aria-selected={generationMode === 'image'}
+                onClick={() => setGenerationMode('image')}
+                disabled={isLoading}
+                className={`flex-1 px-3 py-1.5 sm:py-2 text-xs transition-all font-display flex items-center justify-center space-x-1.5 whitespace-nowrap min-h-[34px] ${
+                  generationMode === 'image'
+                    ? 'bg-white text-black font-semibold shadow-sm'
+                    : 'text-[#9C9C96] hover:text-white'
+                }`}
+              >
+                <Camera size={13} className="shrink-0" />
+                <span>Text to Image</span>
+              </button>
+              <button
+                type="button"
+                id="mode-video-btn"
+                role="tab"
+                aria-selected={generationMode === 'video'}
+                onClick={() => setGenerationMode('video')}
+                disabled={isLoading}
+                className={`flex-1 px-3 py-1.5 sm:py-2 text-xs transition-all font-display flex items-center justify-center space-x-1.5 whitespace-nowrap min-h-[34px] ${
+                  generationMode === 'video'
+                    ? 'bg-white text-black font-semibold shadow-sm'
+                    : 'text-[#9C9C96] hover:text-white'
+                }`}
+              >
+                <Video size={13} className="shrink-0" />
+                <span>Text to Video</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* Story Textarea Container */}
         <div className="space-y-1.5 sm:space-y-2">
           <div className="flex items-center justify-between">
@@ -356,38 +441,76 @@ export default function GeneratorForm({
             />
           </div>
 
-          {/* Target Duration Dropdown */}
+          {/* Duration Selector: Dynamic based on Generation Mode */}
           <div className="col-span-1 md:col-span-4 space-y-1.5 sm:space-y-2">
-            <CustomDropdown
-              id="duration-select"
-              label="Target Duration"
-              options={format === 'short' ? SHORT_DURATIONS : LONG_DURATIONS}
-              selectedValue={durationValue}
-              onSelect={setDurationValue}
-              disabled={isLoading}
-            />
-
-            {durationValue === 'custom' && (
-              <div className="pt-1.5 sm:pt-2">
-                <label
-                  htmlFor="custom-numeric-input"
-                  className="block text-xs text-[#A0A0A0] mb-1 font-serif"
-                >
-                  {format === 'long' ? 'Enter minutes:' : 'Enter seconds:'}
-                </label>
-                <input
-                  type="number"
-                  min="5"
-                  max={format === 'long' ? '120' : '600'}
-                  id="custom-numeric-input"
-                  value={customNumeric}
-                  onChange={(e) => setCustomNumeric(e.target.value)}
+            {generationMode === 'video' ? (
+              <>
+                <CustomDropdown
+                  id="video-duration-select"
+                  label="Clip Duration"
+                  options={VIDEO_DURATIONS}
+                  selectedValue={videoDurationValue}
+                  onSelect={setVideoDurationValue}
                   disabled={isLoading}
-                  placeholder={format === 'long' ? 'e.g. 7' : 'e.g. 35'}
-                  className="w-full px-3 sm:px-4 py-1.5 sm:py-2 bg-[#111111] text-white placeholder:text-[#666666] border border-neutral-800 rounded-md focus:outline-none focus:border-white text-xs sm:text-sm"
-                  required
                 />
-              </div>
+
+                {videoDurationValue === 'custom' && (
+                  <div className="pt-1.5 sm:pt-2">
+                    <label
+                      htmlFor="custom-video-numeric-input"
+                      className="block text-xs text-[#A0A0A0] mb-1 font-serif"
+                    >
+                      Enter clip seconds (3 - 60):
+                    </label>
+                    <input
+                      type="number"
+                      min="3"
+                      max="60"
+                      id="custom-video-numeric-input"
+                      value={customVideoSeconds}
+                      onChange={(e) => setCustomVideoSeconds(e.target.value)}
+                      disabled={isLoading}
+                      placeholder="e.g. 8"
+                      className="w-full px-3 sm:px-4 py-1.5 sm:py-2 bg-[#111111] text-white placeholder:text-[#666666] border border-neutral-800 rounded-md focus:outline-none focus:border-white text-xs sm:text-sm"
+                      required
+                    />
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <CustomDropdown
+                  id="duration-select"
+                  label="Target Duration"
+                  options={format === 'short' ? SHORT_DURATIONS : LONG_DURATIONS}
+                  selectedValue={durationValue}
+                  onSelect={setDurationValue}
+                  disabled={isLoading}
+                />
+
+                {durationValue === 'custom' && (
+                  <div className="pt-1.5 sm:pt-2">
+                    <label
+                      htmlFor="custom-numeric-input"
+                      className="block text-xs text-[#A0A0A0] mb-1 font-serif"
+                    >
+                      {format === 'long' ? 'Enter minutes:' : 'Enter seconds:'}
+                    </label>
+                    <input
+                      type="number"
+                      min="5"
+                      max={format === 'long' ? '120' : '600'}
+                      id="custom-numeric-input"
+                      value={customNumeric}
+                      onChange={(e) => setCustomNumeric(e.target.value)}
+                      disabled={isLoading}
+                      placeholder={format === 'long' ? 'e.g. 7' : 'e.g. 35'}
+                      className="w-full px-3 sm:px-4 py-1.5 sm:py-2 bg-[#111111] text-white placeholder:text-[#666666] border border-neutral-800 rounded-md focus:outline-none focus:border-white text-xs sm:text-sm"
+                      required
+                    />
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -403,10 +526,10 @@ export default function GeneratorForm({
             {isLoading ? (
               <>
                 <RefreshCw size={16} className="animate-spin sm:w-[18px] sm:h-[18px]" />
-                <span>Generating Breakdown...</span>
+                <span>Generating {generationMode === 'video' ? 'Video' : 'Storyboard'} Breakdown...</span>
               </>
             ) : (
-              <span>Generate Breakdown</span>
+              <span>{generationMode === 'video' ? 'Generate Video Breakdown' : 'Generate Breakdown'}</span>
             )}
           </button>
         </div>
@@ -457,121 +580,113 @@ export default function GeneratorForm({
                         : 'border-neutral-800 text-neutral-400 hover:text-white'
                     }`}
                   >
-                    <p className="text-xs sm:text-sm font-medium">Pro Tier (gemini-3.1-pro)</p>
+                    <p className="text-xs sm:text-sm font-medium">High Quality (gemini-3.1-pro-preview)</p>
                     <p className="text-[11px] sm:text-xs text-[#A0A0A0] mt-0.5">
-                      Pro: higher-quality narrative structuring
+                      High: nuanced cinematic direction
                     </p>
                   </button>
                 </div>
               </div>
 
               {/* Bring Your Own Key (BYOK) Section */}
-              <div className="pt-3 border-t border-neutral-800/80 space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
-                  <div className="flex items-center space-x-2">
-                    <KeyRound size={14} className="text-white shrink-0 sm:w-[15px] sm:h-[15px]" />
-                    <span className="text-[11px] sm:text-xs uppercase tracking-wider text-white font-serif font-medium">
-                      Bring Your Own Key (BYOK)
+              <div className="space-y-3 pt-2 border-t border-neutral-800">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-1.5">
+                    <KeyRound size={13} className="text-[#A0A0A0]" />
+                    <span className="text-[10px] sm:text-xs uppercase tracking-wider text-[#A0A0A0]">
+                      Your Gemini API Key (BYOK)
                     </span>
                   </div>
-
-                  {hasCustomKey ? (
-                    <span className="inline-flex items-center text-[9px] sm:text-[10px] uppercase tracking-wider px-1.5 sm:px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-800/60 font-medium">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5 animate-pulse" />
-                      Gemini API Key Active (Direct Browser Execution)
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center text-[9px] sm:text-[10px] uppercase tracking-wider px-1.5 sm:px-2 py-0.5 rounded bg-amber-950/60 text-amber-300 border border-amber-800/60 font-medium">
-                      Gemini API Key Required (BYOK)
+                  {hasCustomKey && (
+                    <span className="inline-flex items-center text-[10px] text-emerald-400 font-medium">
+                      <CheckCircle2 size={11} className="mr-1" />
+                      Active
                     </span>
                   )}
                 </div>
 
-                <p className="text-xs text-[#A0A0A0] leading-relaxed">
-                  Provide your own Google Gemini API key to execute generation requests straight from your browser. Our application runs fully client-side and never stores your key on any remote server.
-                </p>
-
-                {/* API Key Input & Action Buttons */}
-                <div className="space-y-2.5 sm:space-y-3">
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                    {/* Password Masked Input with Show/Hide Toggle */}
-                    <div className="relative flex-1">
-                      <input
-                        type={showKeyText ? 'text' : 'password'}
-                        id="byok-api-key-input"
-                        value={keyInput}
-                        onChange={(e) => setKeyInput(e.target.value)}
-                        placeholder="Paste your Gemini API key (AIzaSy...)"
-                        autoComplete="off"
-                        spellCheck="false"
-                        className="w-full pl-3 pr-10 py-2 sm:py-2.5 bg-[#0a0a0a] text-white placeholder:text-neutral-600 border border-neutral-700/80 rounded focus:outline-none focus:border-white text-xs font-mono transition-colors"
-                      />
+                <div className="space-y-2">
+                  <div className="relative">
+                    <input
+                      type={showKeyText ? 'text' : 'password'}
+                      id="gemini-api-key-input"
+                      value={keyInput}
+                      onChange={(e) => setKeyInput(e.target.value)}
+                      placeholder="AIzaSy..."
+                      className="w-full pl-3.5 pr-20 py-2 bg-[#0d0d0d] text-white placeholder:text-[#555555] border border-neutral-700 rounded-md focus:outline-none focus:border-white text-xs sm:text-sm font-mono"
+                    />
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center space-x-1">
                       <button
                         type="button"
-                        id="toggle-show-key-btn"
+                        id="toggle-key-visibility-btn"
                         onClick={() => setShowKeyText(!showKeyText)}
-                        aria-label={showKeyText ? 'Hide API key' : 'Show API key'}
+                        className="p-1 text-[#888888] hover:text-white transition-colors"
                         title={showKeyText ? 'Hide API key' : 'Show API key'}
-                        className="absolute right-1 top-1/2 -translate-y-1/2 p-1.5 text-neutral-400 hover:text-white rounded hover:bg-neutral-800 transition-colors min-h-[32px] min-w-[32px] flex items-center justify-center"
+                        aria-label="Toggle API key visibility"
                       >
-                        {showKeyText ? <EyeOff size={14} /> : <Eye size={14} />}
+                        {showKeyText ? <EyeOff size={13} /> : <Eye size={13} />}
                       </button>
                     </div>
+                  </div>
 
-                    {/* Apply & Clear Buttons: Utility buttons */}
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        id="byok-apply-btn"
-                        onClick={handleApplyKey}
-                        className="flex-1 sm:flex-initial px-3 sm:px-4 py-1.5 sm:py-2 bg-white text-black hover:bg-neutral-200 active:bg-neutral-300 text-xs font-serif font-semibold rounded transition-colors min-h-[34px] sm:min-h-[36px] flex items-center justify-center space-x-1.5 shadow-sm"
-                      >
-                        <CheckCircle2 size={12} className="sm:w-[13px] sm:h-[13px]" />
-                        <span>Apply</span>
-                      </button>
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                    <label className="flex items-center space-x-2 text-[11px] text-[#A0A0A0] cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        id="remember-key-checkbox"
+                        checked={rememberOptIn}
+                        onChange={(e) => setRememberOptIn(e.target.checked)}
+                        className="rounded border-neutral-700 bg-neutral-900 text-white focus:ring-0 focus:ring-offset-0"
+                      />
+                      <span>Remember in this browser session (sessionStorage)</span>
+                    </label>
 
-                      {(hasCustomKey || keyInput) && (
+                    <div className="flex items-center space-x-2">
+                      {hasCustomKey && (
                         <button
                           type="button"
-                          id="byok-clear-btn"
+                          id="clear-key-button"
                           onClick={handleClearKey}
-                          title="Forget and remove key"
-                          className="px-2.5 sm:px-3 py-1.5 sm:py-2 text-neutral-400 hover:text-white bg-[#1a1a1a] hover:bg-[#242424] border border-neutral-700 rounded text-xs font-serif transition-colors min-h-[34px] sm:min-h-[36px] flex items-center justify-center space-x-1"
+                          className="inline-flex items-center text-[11px] text-red-400 hover:text-red-300 transition-colors py-1 px-2"
                         >
-                          <Trash2 size={12} className="sm:w-[13px] sm:h-[13px]" />
-                          <span className="sm:inline">Forget</span>
+                          <Trash2 size={11} className="mr-1" />
+                          Remove
                         </button>
                       )}
+                      <button
+                        type="button"
+                        id="apply-key-button"
+                        onClick={handleApplyKey}
+                        className="inline-flex items-center text-xs px-3 py-1.5 bg-white text-black font-medium hover:bg-neutral-200 transition-colors rounded-sm"
+                      >
+                        Apply Key
+                      </button>
                     </div>
                   </div>
 
-                  {/* Opt-in "Remember on this device" Checkbox */}
-                  <div className="flex items-start space-x-2 pt-0.5">
-                    <input
-                      type="checkbox"
-                      id="byok-remember-checkbox"
-                      checked={rememberOptIn}
-                      onChange={(e) => setRememberOptIn(e.target.checked)}
-                      className="mt-0.5 w-3.5 h-3.5 sm:w-4 sm:h-4 rounded border-neutral-700 bg-black text-white accent-white focus:ring-1 focus:ring-white cursor-pointer shrink-0"
-                    />
-                    <label
-                      htmlFor="byok-remember-checkbox"
-                      className="text-xs text-neutral-300 font-serif cursor-pointer select-none leading-tight"
-                    >
-                      <span>Remember on this device </span>
-                      <span className="text-neutral-400 text-[10px] sm:text-[11px] block sm:inline">
-                        (held in sessionStorage for this browser session only, not localStorage)
-                      </span>
-                    </label>
-                  </div>
-
-                  {/* Dynamic Feedback Notification */}
                   {keyFeedback && (
-                    <div className="p-2 sm:p-2.5 bg-[#181818] border border-neutral-700 rounded text-[11px] sm:text-xs text-neutral-200 flex items-center space-x-2 animate-in fade-in duration-150">
-                      <Shield size={13} className="text-white shrink-0 sm:w-3.5 sm:h-3.5" />
-                      <span>{keyFeedback}</span>
-                    </div>
+                    <p className="text-[11px] text-emerald-400 font-narrative mt-1 animate-in fade-in duration-150">
+                      {keyFeedback}
+                    </p>
                   )}
+
+                  <div className="p-2.5 bg-[#0a0a0a] border border-neutral-800 rounded text-[11px] text-[#888888] space-y-1">
+                    <div className="flex items-center space-x-1.5 text-neutral-300 font-medium">
+                      <Shield size={11} className="text-emerald-400" />
+                      <span>Direct-to-Google Privacy</span>
+                    </div>
+                    <p>
+                      Your key is held strictly in your browser and used only to directly query Google Gemini servers. It is never logged or stored on external servers.
+                    </p>
+                    <a
+                      href="https://aistudio.google.com/app/apikey"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-block text-neutral-200 hover:text-white underline underline-offset-2 pt-0.5"
+                    >
+                      Get an API key from Google AI Studio &rarr;
+                    </a>
+                  </div>
                 </div>
               </div>
             </div>
@@ -579,7 +694,7 @@ export default function GeneratorForm({
         </div>
       </form>
 
-      {/* Consent Modal on Apply */}
+      {/* BYOK Security & Consent Modal */}
       <KeyConsentModal
         isOpen={isConsentModalOpen}
         onClose={() => setIsConsentModalOpen(false)}

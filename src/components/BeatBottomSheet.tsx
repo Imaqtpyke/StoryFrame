@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Beat } from '../types';
+import { Beat, GenerationMode } from '../types';
 import { 
   X, 
   Copy, 
@@ -10,7 +10,8 @@ import {
   ChevronLeft, 
   ChevronRight, 
   Clock,
-  Sparkles
+  Sparkles,
+  Clapperboard
 } from 'lucide-react';
 
 interface BeatBottomSheetProps {
@@ -23,6 +24,7 @@ interface BeatBottomSheetProps {
   onNavigateBeat: (nextBeat: Beat) => void;
   copiedIndex: string | null;
   onCopy: (text: string, identifier: string) => void;
+  generationMode?: GenerationMode;
 }
 
 export default function BeatBottomSheet({
@@ -35,6 +37,7 @@ export default function BeatBottomSheet({
   onNavigateBeat,
   copiedIndex,
   onCopy,
+  generationMode = 'image',
 }: BeatBottomSheetProps) {
   // Lock body scroll when bottom sheet is open
   useEffect(() => {
@@ -61,6 +64,7 @@ export default function BeatBottomSheet({
 
   if (!isOpen || !beat) return null;
 
+  const isVideoMode = generationMode === 'video';
   const currentIndex = allBeatsInScene.findIndex((b) => b.beatIndex === beat.beatIndex);
   const prevBeat = currentIndex > 0 ? allBeatsInScene[currentIndex - 1] : null;
   const nextBeat = currentIndex < allBeatsInScene.length - 1 ? allBeatsInScene[currentIndex + 1] : null;
@@ -101,6 +105,11 @@ export default function BeatBottomSheet({
             <span className="font-editorial-meta text-[9px] text-[#7D7D76]">
               ({currentIndex + 1} of {allBeatsInScene.length})
             </span>
+            {isVideoMode && (
+              <span className="stamp-chip bg-amber-950/70 text-amber-300 border-amber-800/80 text-[8px] py-0 px-1">
+                VIDEO
+              </span>
+            )}
           </div>
 
           <button
@@ -166,12 +175,21 @@ export default function BeatBottomSheet({
             </div>
           </div>
 
-          {/* Structured Visual Prompt */}
+          {/* Structured Visual / Video Prompt */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <span className="font-editorial-meta text-[9px] text-[#9C9C96] tracking-wider uppercase flex items-center gap-1">
-                <Sparkles size={10} className="text-white/70" />
-                Complete Visual Prompt
+                {isVideoMode ? (
+                  <>
+                    <Clapperboard size={10} className="text-amber-400" />
+                    Text to Video Prompt
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={10} className="text-white/70" />
+                    Complete Visual Prompt
+                  </>
+                )}
               </span>
               <button
                 type="button"
@@ -187,12 +205,14 @@ export default function BeatBottomSheet({
                 ) : (
                   <>
                     <Copy size={10} />
-                    <span>COPY PROMPT</span>
+                    <span>{isVideoMode ? 'COPY VIDEO PROMPT' : 'COPY PROMPT'}</span>
                   </>
                 )}
               </button>
             </div>
-            <div className="text-xs text-[#E6E6E1] leading-relaxed bg-[#080808] p-3 border border-white/10 rounded selection:bg-white selection:text-black">
+            <div className={`text-xs text-[#E6E6E1] leading-relaxed p-3 border rounded selection:bg-white selection:text-black ${
+              isVideoMode ? 'bg-[#080807] border-amber-900/40 font-mono' : 'bg-[#080808] border-white/10'
+            }`}>
               {beat.imagePrompt}
             </div>
           </div>

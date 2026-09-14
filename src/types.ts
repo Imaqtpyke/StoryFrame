@@ -1,10 +1,12 @@
 export type StoryFormat = 'short' | 'long';
+export type GenerationMode = 'image' | 'video';
 
 export interface StyleProfile {
   artStyle: string;
   colorPalette: string;
   lighting: string;
   eraAndSetting: string;
+  lensAndFilmStock?: string;
 }
 
 export interface Beat {
@@ -21,6 +23,11 @@ export interface Scene {
   narratorLine: string;
   estimatedSeconds: number;
   beats: Beat[];
+  videoPrompt?: string;
+  startFramePrompt?: string;
+  establishedCharacters?: string[];
+  establishedSettings?: string[];
+  isAnchorScene?: boolean;
 }
 
 export interface StoryGenerationResult {
@@ -28,6 +35,8 @@ export interface StoryGenerationResult {
   styleProfile: StyleProfile;
   characterSheet: Record<string, string>;
   scenes: Scene[];
+  generationMode?: GenerationMode;
+  targetVideoDuration?: number;
 }
 
 export interface GenerateStoryRequest {
@@ -38,6 +47,8 @@ export interface GenerateStoryRequest {
   durationMode: 'preset' | 'custom' | 'automatic';
   durationSeconds?: number;
   modelQuality?: 'standard' | 'high';
+  generationMode: GenerationMode;
+  targetVideoDuration?: number;
 }
 
 export interface HistoryItem {

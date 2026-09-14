@@ -22,7 +22,9 @@ import {
   Video,
   Clock,
   ChevronsUpDown,
-  Table
+  Table,
+  Clapperboard,
+  Image as ImageIcon,
 } from 'lucide-react';
 
 interface ResultsViewProps {
@@ -88,13 +90,16 @@ export default function ResultsView({
     allBeats: Beat[];
   } | null>(null);
 
-  // Normalize scenes with hard beat ceilings (ensuring no beat exceeds 2s or 8 words)
+  // Normalize scenes with hard beat ceilings
   const normalizedScenes = useMemo(() => {
     return result.scenes.map((scene) => ({
       ...scene,
-      beats: enforceBeatCeilings(scene.beats || [], scene.index),
+      beats: enforceBeatCeilings(scene.beats || [], scene.index, {
+        isVideoMode: result.generationMode === 'video',
+        targetVideoDuration: result.targetVideoDuration || 5,
+      }),
     }));
-  }, [result.scenes]);
+  }, [result.scenes, result.generationMode, result.targetVideoDuration]);
 
   // Scene collapse state (default: all expanded)
   const [expandedScenes, setExpandedScenes] = useState<Record<number, boolean>>(() => {
@@ -229,6 +234,7 @@ export default function ResultsView({
   const fullScript = normalizedScenes.map((s) => s.narratorLine).join(' ');
   const totalBeatsCount = normalizedScenes.reduce((acc, s) => acc + (s.beats?.length || 0), 0);
   const characterEntries = Object.entries(result.characterSheet || {});
+  const isVideoMode = result.generationMode === 'video';
 
   // Calculate timeline ranges
   let accumulatedSeconds = 0;
@@ -281,13 +287,16 @@ export default function ResultsView({
 
   const downloadCsvExport = () => {
     setIsExportMenuOpen(false);
-    const rows: string[][] = [
-      ['Scene', 'Roman Scene', 'Beat', 'Estimated Seconds', 'Shot Type', 'Camera Movement', 'Spoken Narration', 'Visual Image Prompt'],
-    ];
+    const hasVideo = result.generationMode === 'video' || normalizedScenes.some((s) => s.videoPrompt);
+    const headers = ['Scene', 'Roman Scene', 'Beat', 'Estimated Seconds', 'Shot Type', 'Camera Movement', 'Spoken Narration', 'Visual Image Prompt'];
+    if (hasVideo) {
+      headers.push('Scene Video Prompt (8-Part)', 'Start Frame Keyframe Prompt');
+    }
+    const rows: string[][] = [headers];
 
     normalizedScenes.forEach((scene) => {
-      (scene.beats || []).forEach((beat) => {
-        rows.push([
+      (scene.beats || []).forEach((beat, bIdx) => {
+        const row = [
           `Scene ${scene.index}`,
           `SCENE ${toRomanNumeral(scene.index)}`,
           `Beat ${beat.beatIndex}`,
@@ -296,7 +305,14 @@ export default function ResultsView({
           beat.cameraMovement || 'Static',
           `"${beat.textSpan.replace(/"/g, '""')}"`,
           `"${beat.imagePrompt.replace(/"/g, '""')}"`,
-        ]);
+        ];
+        if (hasVideo) {
+          row.push(
+            bIdx === 0 ? `"${(scene.videoPrompt || '').replace(/"/g, '""')}"` : '""',
+            bIdx === 0 ? `"${(scene.startFramePrompt || '').replace(/"/g, '""')}"` : '""'
+          );
+        }
+        rows.push(row);
       });
     });
 
@@ -313,6 +329,7 @@ export default function ResultsView({
     setIsExportMenuOpen(false);
     let md = `# Production Storyboard & Shot List\n\n`;
     md += `**Platform**: ${platform} (${format === 'long' ? '16:9 Widescreen' : '9:16 Vertical'})\n`;
+    md += `**Generation Mode**: ${result.generationMode === 'video' ? `Text to Video (~${result.targetVideoDuration || 5}s clips)` : 'Text to Image'}\n`;
     md += `**Estimated Duration**: ~${formatSecondsToMinutes(result.totalDurationSeconds)}\n`;
     md += `**Total Scenes**: ${normalizedScenes.length} | **Total Visual Beats**: ${totalBeatsCount}\n\n`;
 
@@ -321,7 +338,11 @@ export default function ResultsView({
       md += `- **Art Style**: ${result.styleProfile.artStyle}\n`;
       md += `- **Color Palette**: ${result.styleProfile.colorPalette}\n`;
       md += `- **Lighting**: ${result.styleProfile.lighting}\n`;
-      md += `- **Era & Setting**: ${result.styleProfile.eraAndSetting}\n\n`;
+      md += `- **Era & Setting**: ${result.styleProfile.eraAndSetting}\n`;
+      if (result.styleProfile.lensAndFilmStock) {
+        md += `- **Lens & Film Stock**: ${result.styleProfile.lensAndFilmStock}\n`;
+      }
+      md += `\n`;
     }
 
     if (characterEntries.length > 0) {
@@ -338,6 +359,14 @@ export default function ResultsView({
     normalizedScenes.forEach((scene) => {
       md += `### SCENE ${toRomanNumeral(scene.index)} (~${scene.estimatedSeconds}s)\n`;
       md += `**Narrator Line**:\n"${scene.narratorLine}"\n\n`;
+
+      if (scene.videoPrompt) {
+        md += `#### AI Video Generation Prompt (~${result.targetVideoDuration || 5}s Clip)\n\`\`\`text\n${scene.videoPrompt}\n\`\`\`\n\n`;
+      }
+      if (scene.startFramePrompt) {
+        md += `#### Start Frame Keyframe Prompt (Image Ingredient)\n\`\`\`text\n${scene.startFramePrompt}\n\`\`\`\n\n`;
+      }
+
       md += `| Beat | Duration | Shot Type | Camera Motion | Spoken Words | Visual Image Prompt |\n`;
       md += `| :--- | :--- | :--- | :--- | :--- | :--- |\n`;
       (scene.beats || []).forEach((b) => {
@@ -384,6 +413,17 @@ export default function ResultsView({
 
         {/* Technical Production Metadata Chips */}
         <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+          {result.generationMode === 'video' ? (
+            <span className="stamp-chip bg-amber-950/70 text-amber-300 border-amber-800/80 font-semibold">
+              <Clapperboard size={9} className="mr-1 inline" />
+              TEXT TO VIDEO ({result.targetVideoDuration || 5}S CLIPS)
+            </span>
+          ) : (
+            <span className="stamp-chip">
+              <ImageIcon size={9} className="mr-1 inline" />
+              TEXT TO IMAGE
+            </span>
+          )}
           <span className="stamp-chip stamp-chip-primary">
             {result.scenes.length} SCENES
           </span>
@@ -471,7 +511,7 @@ export default function ResultsView({
             id="batch-copy-prompts-btn"
             onClick={handleCopyAllPrompts}
             className="inline-flex items-center space-x-1 sm:space-x-1.5 px-2.5 sm:px-3.5 py-1 sm:py-1.5 bg-[#181816] hover:bg-[#242422] text-[#F5F5F0] hover:text-white border border-white/20 text-[9px] sm:text-[10px] font-editorial-meta transition-colors min-h-[28px] sm:min-h-[32px]"
-            title="Copy all beat image prompts sequentially into clipboard"
+            title={isVideoMode ? 'Copy all beat video prompts into clipboard' : 'Copy all beat image prompts into clipboard'}
           >
             {copiedIndex === 'all-prompts' ? (
               <>
@@ -481,7 +521,7 @@ export default function ResultsView({
             ) : (
               <>
                 <Copy size={10} className="text-[#9C9C96] sm:w-3 sm:h-3" />
-                <span>COPY ALL PROMPTS</span>
+                <span>{isVideoMode ? 'COPY ALL VIDEO PROMPTS' : 'COPY ALL PROMPTS'}</span>
               </>
             )}
           </button>
@@ -612,19 +652,36 @@ export default function ResultsView({
                     </div>
                   </div>
 
-                  {/* Beats Breakdown Section */}
+                  {/* Beats Breakdown Section (Cinematography & Visual Beats in Image Mode / Cinematography & Video Beats in Video Mode) */}
                   <div className="space-y-3.5 sm:space-y-4 pt-1 sm:pt-2">
                     <div className="flex items-center justify-between border-t border-white/10 pt-3 sm:pt-4">
                       <div className="flex items-center space-x-1.5 sm:space-x-2">
-                        <Layers size={12} className="text-[#9C9C96] sm:w-3.5 sm:h-3.5" />
-                        <span className="font-editorial-meta text-[9px] sm:text-[10px] text-[#C4C4C0]">
-                          CINEMATOGRAPHY &amp; VISUAL BEATS
-                        </span>
+                        {isVideoMode ? (
+                          <>
+                            <Clapperboard size={12} className="text-amber-400 sm:w-3.5 sm:h-3.5" />
+                            <span className="font-editorial-meta text-[9px] sm:text-[10px] text-amber-300 font-medium">
+                              CINEMATOGRAPHY &amp; VIDEO BEATS
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <Layers size={12} className="text-[#9C9C96] sm:w-3.5 sm:h-3.5" />
+                            <span className="font-editorial-meta text-[9px] sm:text-[10px] text-[#C4C4C0]">
+                              CINEMATOGRAPHY &amp; VISUAL BEATS
+                            </span>
+                          </>
+                        )}
                       </div>
                       <div className="flex items-center space-x-2">
-                        <span className="font-editorial-meta text-[9px] sm:text-[10px] text-[#7D7D76]">
-                          {beats.length} SETUPS
-                        </span>
+                        {isVideoMode ? (
+                          <span className="stamp-chip bg-amber-950/70 text-amber-300 border-amber-800/80 text-[8px] sm:text-[9px]">
+                            {beats.length} VIDEO SHOTS (~{result.targetVideoDuration || scene.estimatedSeconds || 5}S TOTAL)
+                          </span>
+                        ) : (
+                          <span className="font-editorial-meta text-[9px] sm:text-[10px] text-[#7D7D76]">
+                            {beats.length} SETUPS
+                          </span>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleToggleAllBeatsInScene(scene.index, beats)}
@@ -645,10 +702,12 @@ export default function ResultsView({
                             key={beat.beatIndex}
                             id={`mobile-beat-card-${scene.index}-${beat.beatIndex}`}
                             onClick={() => handleBeatClick(scene.index, romanScene, beat, beats)}
-                            className="flex-none w-[160px] xs:w-[175px] snap-start bg-[#161614] border border-white/10 active:border-white/40 active:bg-[#1E1E1C] p-2.5 flex flex-col justify-between min-h-[96px] cursor-pointer transition-all rounded-[2px]"
+                            className={`flex-none w-[160px] xs:w-[175px] snap-start border active:bg-[#1E1E1C] p-2.5 flex flex-col justify-between min-h-[96px] cursor-pointer transition-all rounded-[2px] ${
+                              isVideoMode ? 'bg-[#141310] border-amber-900/30 active:border-amber-400/50' : 'bg-[#161614] border-white/10 active:border-white/40'
+                            }`}
                           >
                             <div className="flex items-center justify-between gap-1 border-b border-white/5 pb-1">
-                              <span className="stamp-chip stamp-chip-primary font-bold text-[8px]">
+                              <span className={`stamp-chip font-bold text-[8px] ${isVideoMode ? 'bg-amber-950/70 text-amber-300 border-amber-800/80' : 'stamp-chip-primary'}`}>
                                 B{String(beat.beatIndex).padStart(2, '0')}
                               </span>
                               <span className="font-editorial-meta text-[8px] text-emerald-400/90">
@@ -678,7 +737,9 @@ export default function ResultsView({
                         ))}
                       </div>
                       <p className="text-[8px] text-[#7D7D76] font-editorial-meta text-center tracking-wider">
-                        TAP ANY BEAT TO SLIDE UP COMPLETE VISUAL PROMPT &amp; SCRIPT
+                        {isVideoMode
+                          ? 'TAP ANY BEAT TO SLIDE UP COMPLETE VIDEO PROMPT & SCRIPT'
+                          : 'TAP ANY BEAT TO SLIDE UP COMPLETE VISUAL PROMPT & SCRIPT'}
                       </p>
                     </div>
 
@@ -697,11 +758,15 @@ export default function ResultsView({
                               key={beat.beatIndex}
                               id={`desktop-beat-chip-${scene.index}-${beat.beatIndex}`}
                               onClick={() => handleBeatClick(scene.index, romanScene, beat, beats)}
-                              className="bg-[#161614] border border-white/10 hover:border-white/30 hover:bg-[#1C1C1A] p-3 flex flex-col justify-between min-h-[112px] cursor-pointer transition-all group select-none rounded-[2px]"
-                              title="Click to expand full beat breakdown"
+                              className={`border p-3 flex flex-col justify-between min-h-[112px] cursor-pointer transition-all group select-none rounded-[2px] ${
+                                isVideoMode
+                                  ? 'bg-[#141310] border-amber-900/30 hover:border-amber-700/60 hover:bg-[#1A1813]'
+                                  : 'bg-[#161614] border-white/10 hover:border-white/30 hover:bg-[#1C1C1A]'
+                              }`}
+                              title={isVideoMode ? 'Click to expand video prompt breakdown' : 'Click to expand visual prompt breakdown'}
                             >
                               <div className="flex items-center justify-between gap-1 border-b border-white/5 pb-1.5">
-                                <span className="stamp-chip stamp-chip-primary font-bold text-[9px]">
+                                <span className={`stamp-chip font-bold text-[9px] ${isVideoMode ? 'bg-amber-950/70 text-amber-300 border-amber-800/80' : 'stamp-chip-primary'}`}>
                                   BEAT {String(beat.beatIndex).padStart(2, '0')}
                                 </span>
                                 <span className="font-editorial-meta text-[9px] text-emerald-400/90">
@@ -737,11 +802,13 @@ export default function ResultsView({
                           <div
                             key={beat.beatIndex}
                             id={`desktop-beat-card-expanded-${scene.index}-${beat.beatIndex}`}
-                            className="col-span-full bg-[#181816] border border-white/25 p-4 sm:p-5 md:p-6 space-y-3.5 shadow-xl transition-all rounded-[2px]"
+                            className={`col-span-full border p-4 sm:p-5 md:p-6 space-y-3.5 shadow-xl transition-all rounded-[2px] ${
+                              isVideoMode ? 'bg-[#151411] border-amber-900/50' : 'bg-[#181816] border-white/25'
+                            }`}
                           >
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-2.5 sm:pb-3">
                               <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="stamp-chip stamp-chip-primary font-bold">
+                                <span className={`stamp-chip font-bold ${isVideoMode ? 'bg-amber-950/70 text-amber-300 border-amber-800/80' : 'stamp-chip-primary'}`}>
                                   BEAT {String(beat.beatIndex).padStart(2, '0')}
                                 </span>
                                 {beat.shotType && (
@@ -766,17 +833,21 @@ export default function ResultsView({
                                   type="button"
                                   id={`copy-beat-prompt-btn-${scene.index}-${beat.beatIndex}`}
                                   onClick={() => copyToClipboard(beat.imagePrompt, `prompt-${beatKey}`)}
-                                  className="inline-flex items-center justify-center font-editorial-meta text-[9px] sm:text-[10px] px-2.5 sm:px-3 py-1 text-white bg-[#222220] hover:bg-[#2e2e2a] border border-white/20 transition-colors whitespace-nowrap min-h-[28px]"
+                                  className={`inline-flex items-center justify-center font-editorial-meta text-[9px] sm:text-[10px] px-2.5 sm:px-3 py-1 transition-colors whitespace-nowrap min-h-[28px] ${
+                                    isVideoMode
+                                      ? 'bg-amber-400 text-black hover:bg-amber-300 font-semibold'
+                                      : 'text-white bg-[#222220] hover:bg-[#2e2e2a] border border-white/20'
+                                  }`}
                                 >
                                   {isCopiedPrompt ? (
                                     <>
-                                      <Check size={10} className="mr-1 text-white shrink-0 sm:w-3 sm:h-3" />
-                                      <span className="text-white font-semibold">COPIED</span>
+                                      <Check size={10} className={`mr-1 shrink-0 sm:w-3 sm:h-3 ${isVideoMode ? 'text-black' : 'text-white'}`} />
+                                      <span className="font-semibold">COPIED</span>
                                     </>
                                   ) : (
                                     <>
-                                      <Copy size={10} className="mr-1 shrink-0 text-[#9C9C96] sm:w-3 sm:h-3" />
-                                      <span>COPY PROMPT</span>
+                                      <Copy size={10} className={`mr-1 shrink-0 sm:w-3 sm:h-3 ${isVideoMode ? 'text-black' : 'text-[#9C9C96]'}`} />
+                                      <span>{isVideoMode ? 'COPY VIDEO PROMPT' : 'COPY PROMPT'}</span>
                                     </>
                                   )}
                                 </button>
@@ -797,7 +868,7 @@ export default function ResultsView({
                             <div className="space-y-1">
                               <div className="flex items-center justify-between">
                                 <span className="font-editorial-meta text-[9px] sm:text-[10px] text-[#9C9C96]">
-                                  SPOKEN PHRASE (MAX 8 WORDS)
+                                  {isVideoMode ? 'SPOKEN ACTION CLAUSE' : 'SPOKEN PHRASE (MAX 8 WORDS)'}
                                 </span>
                                 <button
                                   type="button"
@@ -812,12 +883,24 @@ export default function ResultsView({
                               </div>
                             </div>
 
-                            {/* Visual Image Prompt for this Beat */}
+                            {/* Prompt for this Beat (Video Prompt in video mode, Visual Image Prompt in image mode) */}
                             <div className="space-y-1">
-                              <span className="font-editorial-meta text-[9px] sm:text-[10px] text-[#9C9C96]">
-                                STRUCTURED VISUAL PROMPT
+                              <span className="font-editorial-meta text-[9px] sm:text-[10px] text-[#9C9C96] flex items-center gap-1.5">
+                                {isVideoMode ? (
+                                  <>
+                                    <Clapperboard size={11} className="text-amber-400" />
+                                    <span>TEXT TO VIDEO PROMPT</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Sparkles size={11} className="text-white/70" />
+                                    <span>STRUCTURED VISUAL PROMPT</span>
+                                  </>
+                                )}
                               </span>
-                              <div className="text-xs sm:text-sm text-[#E6E6E1] leading-relaxed font-narrative bg-[#080808] p-2.5 sm:p-3.5 border border-white/10 selection:bg-white selection:text-black">
+                              <div className={`text-xs sm:text-sm leading-relaxed p-2.5 sm:p-3.5 border selection:bg-white selection:text-black ${
+                                isVideoMode ? 'bg-[#0A0A08] border-amber-900/40 font-mono text-[#F0EFEA]' : 'bg-[#080808] border-white/10 font-narrative text-[#E6E6E1]'
+                              }`}>
                                 {beat.imagePrompt}
                               </div>
                             </div>
@@ -1033,6 +1116,7 @@ export default function ResultsView({
         }}
         copiedIndex={copiedIndex}
         onCopy={copyToClipboard}
+        generationMode={result.generationMode || 'image'}
       />
     </div>
   );

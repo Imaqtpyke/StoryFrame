@@ -62,7 +62,7 @@ export function getPreviewText(text: string, maxWords: number = 4): string {
  * Cleanly extract sub-phrases from a broad phrase using punctuation,
  * conjunctions, prepositions, and grammatical clauses.
  */
-export function splitPhraseIntoSubBeats(phrase: string): string[] {
+export function splitPhraseIntoSubBeats(phrase: string, maxWordsPerBeat: number = MAX_BEAT_WORDS): string[] {
   const clean = phrase.trim().replace(/\s+/g, ' ');
   if (!clean) return [];
 
@@ -74,8 +74,8 @@ export function splitPhraseIntoSubBeats(phrase: string): string[] {
   for (const part of rawPunctParts) {
     const words = part.split(/\s+/).filter(Boolean);
 
-    // If already small enough (<= 8 words), keep as is
-    if (words.length <= MAX_BEAT_WORDS) {
+    // If already small enough (<= maxWordsPerBeat), keep as is
+    if (words.length <= maxWordsPerBeat) {
       clauseChunks.push(part);
       continue;
     }
@@ -87,12 +87,8 @@ export function splitPhraseIntoSubBeats(phrase: string): string[] {
       const word = words[i];
       const lowerCleanWord = word.toLowerCase().replace(/[^a-z]/g, '');
 
-      // Check if we should split at this boundary:
-      // Condition: we already have accumulated at least 2 words AND
-      // (a) this word is a split connector, OR
-      // (b) current chunk is reaching the max words limit (>= 6 words)
       const isConnector = SPLIT_CONNECTORS.has(lowerCleanWord);
-      const isReachingMax = currentChunk.length >= 6;
+      const isReachingMax = currentChunk.length >= Math.max(4, Math.floor(maxWordsPerBeat * 0.75));
       const remainingWords = words.length - i;
 
       if (currentChunk.length >= 2 && (isConnector || isReachingMax) && remainingWords >= 2) {
@@ -100,7 +96,7 @@ export function splitPhraseIntoSubBeats(phrase: string): string[] {
         currentChunk = [word];
       } else {
         currentChunk.push(word);
-        if (currentChunk.length >= MAX_BEAT_WORDS) {
+        if (currentChunk.length >= maxWordsPerBeat) {
           clauseChunks.push(currentChunk.join(' '));
           currentChunk = [];
         }
@@ -112,15 +108,16 @@ export function splitPhraseIntoSubBeats(phrase: string): string[] {
     }
   }
 
-  // Final check: if any chunk is still > MAX_BEAT_WORDS, forcefully cut into chunks of 5-6 words
+  // Final check: if any chunk is still > maxWordsPerBeat, forcefully cut into smaller chunks
   const resultChunks: string[] = [];
+  const fallbackChunkSize = Math.max(4, Math.floor(maxWordsPerBeat * 0.75));
   for (const chunk of clauseChunks) {
     const words = chunk.split(/\s+/).filter(Boolean);
-    if (words.length <= MAX_BEAT_WORDS) {
+    if (words.length <= maxWordsPerBeat) {
       resultChunks.push(chunk);
     } else {
-      for (let i = 0; i < words.length; i += 5) {
-        resultChunks.push(words.slice(i, i + 5).join(' '));
+      for (let i = 0; i < words.length; i += fallbackChunkSize) {
+        resultChunks.push(words.slice(i, i + fallbackChunkSize).join(' '));
       }
     }
   }
@@ -129,11 +126,26 @@ export function splitPhraseIntoSubBeats(phrase: string): string[] {
 }
 
 /**
- * Validate and enforce hard ceiling on all beats in a scene.
- * Ceiling: estimatedSeconds <= 2.0 AND wordCount <= 8.
- * Automatically splits any beat that exceeds either ceiling into sub-beats.
+ * Validate and enforce duration and word ceilings on all beats in a scene.
+ * For Image mode: strict 2.0s ceiling, max 8 words.
+ * For Video mode: smart duration calibration spanning targetVideoDuration (e.g. 5s, 10s, 15s).
  */
-export function enforceBeatCeilings(beats: Beat[], sceneIndex: number): Beat[] {
+export function enforceBeatCeilings(
+  beats: Beat[],
+  sceneIndex: number,
+  options?: { isVideoMode?: boolean; targetVideoDuration?: number }
+): Beat[] {
+  const isVideoMode = !!options?.isVideoMode;
+  const targetVideoDuration = options?.targetVideoDuration || 5;
+
+  // In video mode, adapt the beat ceiling and word thresholds to comfortably span target clip length
+  const maxBeatSeconds = isVideoMode
+    ? (targetVideoDuration <= 5 ? 2.5 : targetVideoDuration <= 10 ? 3.5 : 4.5)
+    : MAX_BEAT_SECONDS;
+  const maxBeatWords = isVideoMode
+    ? (targetVideoDuration <= 5 ? 10 : targetVideoDuration <= 10 ? 14 : 18)
+    : MAX_BEAT_WORDS;
+
   const validatedBeats: Beat[] = [];
   let globalBeatCounter = 1;
 
@@ -143,24 +155,24 @@ export function enforceBeatCeilings(beats: Beat[], sceneIndex: number): Beat[] {
     const wordCount = getWordCount(text);
     const seconds = typeof originalBeat.estimatedSeconds === 'number' && originalBeat.estimatedSeconds > 0
       ? originalBeat.estimatedSeconds
-      : Math.max(1.0, Math.min(2.0, Math.round(wordCount * 0.35 * 10) / 10));
+      : Math.max(1.0, Math.min(maxBeatSeconds, Math.round(wordCount * 0.35 * 10) / 10));
 
-    // Check if this beat violates the hard ceiling:
-    const exceedsWords = wordCount > MAX_BEAT_WORDS;
-    const exceedsSeconds = seconds > MAX_BEAT_SECONDS;
+    // Check if this beat violates the ceiling:
+    const exceedsWords = wordCount > maxBeatWords;
+    const exceedsSeconds = seconds > maxBeatSeconds;
 
     if (!exceedsWords && !exceedsSeconds) {
       // Valid beat within ceiling
       validatedBeats.push({
         ...originalBeat,
         beatIndex: globalBeatCounter++,
-        estimatedSeconds: Math.min(MAX_BEAT_SECONDS, Math.max(0.8, Math.round(seconds * 10) / 10)),
+        estimatedSeconds: Math.min(maxBeatSeconds, Math.max(0.8, Math.round(seconds * 10) / 10)),
       });
       continue;
     }
 
     // Split this beat into micro-beats
-    const subPhrases = splitPhraseIntoSubBeats(text);
+    const subPhrases = splitPhraseIntoSubBeats(text, maxBeatWords);
 
     // If splitting produced multiple sub-phrases:
     if (subPhrases.length > 1) {
@@ -168,9 +180,8 @@ export function enforceBeatCeilings(beats: Beat[], sceneIndex: number): Beat[] {
 
       subPhrases.forEach((subPhrase, subIdx) => {
         const subWords = getWordCount(subPhrase);
-        // Estimate 1.0 - 2.0s per sub-beat
         const subSeconds = Math.min(
-          MAX_BEAT_SECONDS,
+          maxBeatSeconds,
           Math.max(0.8, Math.round((subWords * 0.35 + 0.3) * 10) / 10)
         );
 
@@ -186,10 +197,9 @@ export function enforceBeatCeilings(beats: Beat[], sceneIndex: number): Beat[] {
           ? originalBeat.cameraMovement
           : DYNAMIC_MOVEMENT_CYCLE[moveCycleIndex];
 
-        // Adapt the image prompt to emphasize this sub-beat's visual focus
+        // Adapt the prompt to emphasize this sub-beat's visual focus
         let adaptedPrompt = basePrompt;
         if (subIdx > 0) {
-          // Replace or prefix the shot type in the prompt
           adaptedPrompt = `[${subShotType}, ${subCameraMove}] Focusing on "${subPhrase}": ` +
             basePrompt.replace(/^\[.*?\]\s*/, '');
         }
@@ -204,14 +214,34 @@ export function enforceBeatCeilings(beats: Beat[], sceneIndex: number): Beat[] {
         });
       });
     } else {
-      // Could not sub-split phrase further, but seconds exceeded ceiling: clamp seconds
+      // Could not sub-split phrase further, clamp seconds
       validatedBeats.push({
         ...originalBeat,
         beatIndex: globalBeatCounter++,
-        estimatedSeconds: Math.min(MAX_BEAT_SECONDS, seconds),
+        estimatedSeconds: Math.min(maxBeatSeconds, seconds),
       });
+    }
+  }
+
+  // In Video mode: smartly balance the sum of beat durations to cover the target clip duration
+  if (isVideoMode && validatedBeats.length > 0 && targetVideoDuration > 0) {
+    const totalRaw = validatedBeats.reduce((acc, b) => acc + (b.estimatedSeconds || 1.5), 0);
+    if (totalRaw > 0) {
+      const scale = targetVideoDuration / totalRaw;
+      let runningSum = 0;
+      for (let i = 0; i < validatedBeats.length; i++) {
+        if (i === validatedBeats.length - 1) {
+          // Final beat absorbs any rounding difference
+          validatedBeats[i].estimatedSeconds = Math.max(0.8, Math.round((targetVideoDuration - runningSum) * 10) / 10);
+        } else {
+          const scaled = Math.max(0.8, Math.round(validatedBeats[i].estimatedSeconds * scale * 10) / 10);
+          validatedBeats[i].estimatedSeconds = scaled;
+          runningSum += scaled;
+        }
+      }
     }
   }
 
   return validatedBeats;
 }
+
