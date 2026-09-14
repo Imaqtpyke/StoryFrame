@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { StoryGenerationResult, StoryFormat, Beat } from '../types';
 import StyleAndCharactersSection from './StyleAndCharactersSection';
 import BeatBottomSheet from './BeatBottomSheet';
@@ -956,7 +957,7 @@ export default function ResultsView({
       </div>
 
       {/* Mobile Slide-in Drawer / Modal for Visual Style & Character Sheet */}
-      {isMobileStyleModalOpen && (
+      {isMobileStyleModalOpen && createPortal(
         <div
           id="mobile-style-modal-overlay"
           role="dialog"
@@ -1010,7 +1011,8 @@ export default function ResultsView({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Mobile Beat Expansion Bottom Sheet */}

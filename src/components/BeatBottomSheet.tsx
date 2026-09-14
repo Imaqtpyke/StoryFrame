@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Beat } from '../types';
 import { 
   X, 
@@ -68,7 +69,7 @@ export default function BeatBottomSheet({
   const isCopiedPrompt = copiedIndex === `prompt-${beatKey}`;
   const isCopiedText = copiedIndex === `text-${beatKey}`;
 
-  return (
+  return createPortal(
     <div
       id="mobile-beat-bottom-sheet-overlay"
       role="dialog"
@@ -236,6 +237,7 @@ export default function BeatBottomSheet({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

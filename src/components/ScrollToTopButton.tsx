@@ -38,7 +38,7 @@ export default function ScrollToTopButton() {
       id="scroll-to-top-button"
       onClick={scrollToTop}
       aria-label="Scroll to top of page"
-      className="fixed bottom-5 right-5 sm:bottom-6 sm:right-6 z-50 p-2.5 min-w-[40px] min-h-[40px] bg-[#141412]/90 hover:bg-[#1E1E1C] active:bg-[#282826] text-white border border-white/20 hover:border-white transition-all shadow-xl backdrop-blur-sm group flex items-center justify-center focus:outline-none focus:ring-1 focus:ring-white"
+      className="fixed bottom-5 right-5 sm:bottom-6 sm:right-6 z-20 p-2.5 min-w-[40px] min-h-[40px] bg-[#141412]/90 hover:bg-[#1E1E1C] active:bg-[#282826] text-white border border-white/20 hover:border-white transition-all shadow-xl backdrop-blur-sm group flex items-center justify-center focus:outline-none focus:ring-1 focus:ring-white"
     >
       <ChevronUp size={20} className="transition-transform duration-200 group-hover:-translate-y-0.5" />
     </button>
