@@ -25,7 +25,6 @@ import {
   Clapperboard,
   Image as ImageIcon,
   Zap,
-  Calendar,
 } from 'lucide-react';
 
 interface ResultsViewProps {
@@ -275,7 +274,7 @@ export default function ResultsView({
   const downloadCsvExport = () => {
     setIsExportMenuOpen(false);
     const hasVideo = result.generationMode === 'video' || normalizedScenes.some((s) => s.videoPrompt);
-    const headers = ['Scene', 'Roman Scene', 'Beat', 'Estimated Seconds', 'Temporal Anchor', 'Shot Type', 'Camera Angle', 'Camera Movement', 'Spoken Narration', 'Visual Image Prompt'];
+    const headers = ['Scene', 'Roman Scene', 'Beat', 'Estimated Seconds', 'Shot Type', 'Camera Angle', 'Camera Movement', 'Spoken Narration', 'Visual Image Prompt'];
     if (hasVideo) {
       headers.push('Scene Video Prompt (8-Part)', 'Start Frame Keyframe Prompt');
     }
@@ -740,12 +739,6 @@ export default function ResultsView({
                                     <span className="truncate">{beat.cameraMovement}</span>
                                   </div>
                                 )}
-                                {beat.temporalAnchor && (
-                                  <div className="flex items-center gap-1 text-[8px] font-editorial-meta font-semibold text-amber-300">
-                                    <Calendar size={8} className="text-amber-400 shrink-0" />
-                                    <span className="truncate">{beat.temporalAnchor}</span>
-                                  </div>
-                                )}
                                 {beat.visualSoundEffect && (
                                   <div className="flex items-center gap-1 text-[8px] font-editorial-meta font-bold text-purple-300">
                                     <Zap size={8} className="text-purple-400 shrink-0" />
@@ -794,12 +787,6 @@ export default function ResultsView({
                                   <span className="stamp-chip">
                                     <Video size={9} className="mr-1 text-[#9C9C96] shrink-0 sm:w-2.5 sm:h-2.5" />
                                     {beat.cameraMovement}
-                                  </span>
-                                )}
-                                {beat.temporalAnchor && (
-                                  <span className="stamp-chip bg-amber-950/60 text-amber-300 border-amber-800/60 font-medium">
-                                    <Calendar size={9} className="mr-1 text-amber-400 shrink-0 sm:w-2.5 sm:h-2.5" />
-                                    {beat.temporalAnchor}
                                   </span>
                                 )}
                                 {beat.visualSoundEffect && (

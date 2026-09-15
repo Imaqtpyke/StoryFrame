@@ -214,7 +214,14 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
 4. Mandatory 8-Part Master Scene "videoPrompt" Structure:
    For EACH scene, construct "videoPrompt" adhering strictly to these exact 8 components:
    - subject: (from characterSheet for recurring characters. First scene uses full visual description; subsequent scenes state "matching established look from Scene [X]").
-   - action: described in temporal order across the shot. CRITICAL ACTION & POSE SPECIFICITY: Always explicitly state (1) what the hands/arms are doing, (2) which direction the torso and body are facing, and (3) where the eyes are looking (e.g. "Facing left toward the horizon, right arm raised pointing toward the erupting peak, eyes wide and tracking the smoke" instead of "a person standing").
+   - action: described in temporal order across the shot with FULL ANATOMICAL & KINEMATIC SPECIFICITY:
+     * BODY ANGLE & ORIENTATION: Exact torso and hip angle relative to the lens (e.g. "torso angled three-quarters profile to screen-left", "full frontal square stance facing camera", "turned away in sharp dorsal three-quarter view").
+     * GAZE & FACING DIRECTION: Precise head turn and eye gaze vector (e.g. "head tilted 15 degrees downward with gaze fixed sharply on the object on the desk", "eyes darting toward off-screen right").
+     * HAND & ARM GESTURES: Specific finger, hand, and arm posture (e.g. "trembling right fingers clutching a frayed parchment while left arm hangs rigidly at hip level", "both palms pressed flat against the glass surface, fingers splayed").
+     * MAIN VS. SIDE CHARACTER POSITIONING & COMPOSITION: When multiple characters appear in the frame:
+       - MAIN CHARACTER: Centered or commanding the golden-ratio third of the frame, foreground or midground priority, dominant lighting and eye-lead.
+       - SIDE CHARACTER: Placed in the secondary plane (flanking screen-right/left, over-the-shoulder foreground anchor, or subordinate background depth), oriented facing or reacting toward the main character to guide viewer eye-path.
+     * PACING & MOTION VELOCITY: Explicit velocity and progression tempo (e.g. "measured, slow-burn deliberate motion transitioning over 3 seconds into a sudden burst of frantic stumbling", "frenetic high-cadence sprint", "slow breathing chest rise and fall at restful pace").
    - camera: exactly ONE shot type, exactly ONE camera angle, and exactly ONE movement, NEVER stacked movements (e.g., "Medium shot, low-angle, slow forward push-in").
    - lighting and environment: atmospheric lighting and environment details from styleProfile and locationSheet.
    - style: styleProfile artStyle plus the lens/film-stock descriptor.
@@ -265,10 +272,11 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    The opening beat of the whole story (Scene 1, Beat 1) MUST NOT be pure atmosphere, fog, smoke, an empty landscape/environment, an empty establishing shot, or a slow fade, UNLESS the story's actual first sentence is genuinely and explicitly about that atmospheric element.
    Scene 1 Beat 1 MUST show something concrete and visually arresting: the main character, a striking action already in motion, or the single most compelling visual subject/element the story possesses. A weak, abstract, or empty opening loses short-form viewers in the first two seconds.
 
- 10. TEMPORAL ANCHOR & HISTORICAL ACCURACY RULE (YEARS, DATES, AND DURATIONS):
+ 10. TEMPORAL ANCHOR & ON-SCREEN DATE/YEAR DISPLAY RULE (IMAGE & VIDEO PROMPT):
    If the narrator line, story sentence, or beat phrase mentions a date, year, century, decade, or time duration (e.g. "in 1945", "December 24, 1971", "for 29 years", "in the 1920s", "300 BC"):
    - You MUST populate "temporalAnchor" on that beat with the exact date/year/duration phrase (e.g. "1945", "December 24, 1971", "for 29 years").
-   - In the beat's prompt ("imagePrompt" / text-to-video prompt), you MUST explicitly describe and display that era/year/date in the visual description (e.g. "1945 era military gear, authentic World War II period attire", or "displaying 29 years of weathering, aged weathered attire representing 29 years elapsed"). This guarantees historical and temporal accuracy.
+   - MANDATORY ON-SCREEN VISUAL TEXT DISPLAY: The year, date, or duration MUST be visibly displayed and legible in the actual image or video! In the beat's prompt ("imagePrompt"), you MUST explicitly instruct the generator to display the text positioned at the top/above with a moderately large, clear font that is easily visible to the naked eye, stylized to seamlessly match the character style and art medium (e.g. "Featuring large clear legible text overlay reading '1945' displayed above at the top center in a bold font matching the scene's aesthetic style and color palette, clearly legible to the naked eye", or "Featuring bold stylized on-screen typography reading 'FOR 29 YEARS' displayed prominently above in the upper portion in matching art style").
+   - In addition, reflect the historical era/weathering in the subject and setting (e.g. "1945 era military gear, authentic period details").
 
 5. Start Frame Ingredients (Text to Image Prompt):
    For each scene, provide "startFramePrompt": a pristine text-to-image prompt to generate the initial reference keyframe image for image-to-video tools (Kling, Runway, Luma, Sora). Formatted as:
@@ -284,7 +292,12 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - "cameraAngle": explicit camera angle (e.g., "eye-level", "high-angle", "low-angle", "birds-eye", "worms-eye", "dutch-tilt")
    - "cameraMovement": cinematic camera motion cue (e.g., "Slow forward push-in", "Smooth lateral tracking", "Gentle crane tilt down")
    - "temporalAnchor": optional string for explicit year, date, or elapsed duration (e.g. "1945", "December 24, 1971", "for 29 years")
-   - "imagePrompt": A complete, standalone, production-ready TEXT TO VIDEO PROMPT formatted for AI video generators capturing this specific beat's action, shot framing, camera angle, motion, physics, lighting, and audio: "no dialogue, ambient sound only". If temporalAnchor is present, explicitly reflect that era/date and weathering in the visual description. Aspect ratio: ${defaultAspectRatio}.
+   - "imagePrompt": A complete, standalone, production-ready TEXT TO VIDEO PROMPT formatted for AI video generators capturing this specific beat's action with high-precision cinematography:
+     * EXACT BODY ANGLE & GAZE: Torso orientation (e.g. 3/4 profile screen-left, frontal, dorsal), head direction, and eye gaze line.
+     * PRECISE GESTURES: Exact hand, arm, and posture kinematics (e.g. clenched fists, reaching fingers, slumped shoulders).
+     * CHARACTER STAGING (MAIN VS. SIDE): Main character anchoring the focal point; side character positioned in secondary depth/flanking plane reacting toward the protagonist.
+     * PACING & TEMPO: Explicit kinetic speed (e.g. sudden snap, deliberate crawl, rapid cadence).
+     * AUDIO & ON-SCREEN ANCHORS: "no dialogue, ambient sound only". If temporalAnchor is present, the prompt MUST explicitly instruct the generator to display that year/date/duration prominently above with a moderately large legible font rendered in the same design/medium as the character style. Aspect ratio: ${defaultAspectRatio}.
 
 STRICT CONSTRAINTS:
 1. DO NOT use em dashes anywhere (do not use "\\u2014", "\\u2013", or "--"). Use commas, periods, or parentheses instead.
@@ -388,6 +401,16 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - Beat 2 ("two miles through open air"): ISOLATED MID-AIR FREEFALL — High altitude, NO plane in sight. Endless turbulent clouds and vast empty troposphere rushing past, disorientation, freezing wind whipping hair and clothing, still strapped to the seats.
    - Beat 3 ("strapped to three airplane seats, and survived"): AFTERMATH & IMPACT RESOLUTION — The row of seats has crashed through the thick Amazon canopy and rests on the jungle floor among broken ferns and vines. The survivor is bruised and breathing, grounded in the foliage.
 
+   ANATOMICAL ORIENTATION, GESTURES, PACING, & CHARACTER STAGING (MANDATORY IN EVERY BEAT):
+   For every beat prompt (both main and side characters):
+   1. BODY ANGLE & TORSO ORIENTATION: Explicitly state the angle of the character's torso relative to the camera lens (e.g. "torso angled in 3/4 profile facing screen-left", "standing in wide frontal stance squared directly to lens", "back turned in sharp dorsal silhouette looking back over left shoulder"). Never state "a character stands" without torso angle.
+   2. GAZE & HEAD DIRECTION: Specify exact head turn angle and eye line direction (e.g. "head tilted 20 degrees upward gazing at the storm clouds", "eyes locked in intense downward stare at the glowing console").
+   3. GESTURES & HANDS: Specify what the hands, fingers, and limbs are doing down to the fingertips (e.g. "fingers white-knuckled around the steering wheel", "right hand outstretched palm-forward in defensive posture while left arm braces against the wall", "arms limp at sides in utter exhaustion").
+   4. MAIN VS. SIDE CHARACTER STAGING & POSITIONING:
+      - When two or more characters share a scene: The MAIN CHARACTER must occupy the primary focal position (dominant Rule-of-Thirds line, foreground or strong midground, front-lit).
+      - The SIDE CHARACTER must be placed in a deliberate supporting spatial plane (subordinate depth, flanking at screen edge, or over-the-shoulder foreground silhouette) with body/gestures oriented toward the main character to reinforce narrative hierarchy and visual balance.
+   5. KINETIC PACING & MOTION INTENSITY: Define the pacing and physical momentum of the shot (e.g. "explosive sudden sprint", "slow hypnotic drifting cadence", "tense frozen standstill", "staccato hurried heartbeat tempo").
+
    SINGLE VISUAL FOCUS PER BEAT (NO CONFUSED HYBRID COMPOSITIONS):
    Every beat MUST focus on exactly ONE clear visual subject or action.
    NEVER combine two competing framing requests into a single beat (e.g. DO NOT write one prompt trying to frame a close-up on an object AND a character's reaction in the same image). Trying to show both in one prompt produces confused hybrid compositions with oversized foreground objects and floating background characters.
@@ -414,10 +437,11 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    The opening beat of the whole story (Scene 1, Beat 1) MUST NOT be pure atmosphere, fog, smoke, an empty landscape/environment, an empty establishing shot, or a slow fade, UNLESS the story's actual first sentence is genuinely and explicitly about that atmospheric element.
    Scene 1 Beat 1 MUST show something concrete and visually arresting: the main character, a striking action already in motion, or the single most compelling visual subject/element the story possesses. A weak, abstract, or empty opening loses short-form viewers in the first two seconds.
 
-   TEMPORAL ANCHOR & HISTORICAL ACCURACY RULE (YEARS, DATES, AND DURATIONS):
+   TEMPORAL ANCHOR & ON-SCREEN DATE/YEAR DISPLAY RULE (IMAGE & VIDEO PROMPT):
    If the narrator line, story sentence, or beat phrase mentions a date, year, century, decade, or time duration (e.g. "in 1945", "December 24, 1971", "for 29 years", "in the 1920s", "300 BC"):
    - You MUST populate "temporalAnchor" on that beat with the exact date/year/duration phrase (e.g. "1945", "December 24, 1971", "for 29 years").
-   - In the beat's prompt ("imagePrompt"), you MUST explicitly describe and display that era/year/date in the visual description (e.g. "1945 era military gear, authentic World War II period attire", or "displaying 29 years of weathering, aged weathered attire representing 29 years elapsed"). This guarantees historical and temporal accuracy.
+   - MANDATORY ON-SCREEN VISUAL TEXT DISPLAY: The year, date, or duration MUST be visibly displayed in the actual generated image or video! In the beat's prompt ("imagePrompt"), you MUST explicitly include instructions to display this text positioned above (in the upper portion of the frame) with a moderately large, clear font that is easily readable by the naked eye, with typography styled in the exact same art medium and aesthetic design as the character style (e.g. "Featuring large clear legible on-screen text reading '1945' displayed above at the top center in a bold stylized font that matches the artwork medium and character style", or "Featuring prominent stylized title text reading 'FOR 29 YEARS' displayed in the upper frame matching the scene's artistic aesthetic").
+   - In addition, describe the period-accurate attire, setting, or weathering corresponding to that year or elapsed time.
 
    VISUAL SOUND EFFECT RULE (IMAGE MODE ONLY):
    Check styleProfile.artStyle and characterStyle input.
@@ -436,7 +460,7 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - "visualSoundEffect": optional string for comic-style bold sound effect lettering (e.g. "CRASH!", "SPLASH!") for illustrated styles on impact beats only. Omit for photorealistic style.
    - "temporalAnchor": optional string for explicit year, date, or elapsed duration (e.g. "1945", "December 24, 1971", "for 29 years").
    - "imagePrompt": a structured cinematic prompt formatted according to the formula:
-     [Shot Type & Camera Angle] of [Subject with exact character appearance details word-for-word from characterSheet], [Key Action/Beat with specific hands, torso facing direction, and eye gaze], [Integrated bold comic sound effect lettering if visualSoundEffect is present] in [Exact Location Details word-for-word from locationSheet], [Lighting & Color Grade]. [Aspect ratio and style anchors: ${defaultAspectRatio}, ${characterStyle || 'cinematic rendering'}].
+     [Shot Type & Camera Angle] of [Subject with exact character appearance details word-for-word from characterSheet], [Key Action & Staging: exact body angle (e.g. 3/4 screen-left, profile, frontal), gaze vector, hand/finger gestures, character staging (main character commanding focal thirds, side characters placed flanking or in depth reacting toward them), and kinetic pacing/tempo], [Integrated bold comic sound effect lettering if visualSoundEffect is present] in [Exact Location Details word-for-word from locationSheet], [Lighting & Color Grade]. [Aspect ratio and style anchors: ${defaultAspectRatio}, ${characterStyle || 'cinematic rendering'}].
    - "estimatedSeconds": estimated spoken narration duration in seconds (HARD CEILING: MAXIMUM 2.0 SECONDS, typically 1.0 to 1.8 seconds).
 
 5. Duration and Pacing:
@@ -753,15 +777,14 @@ ${durationInstruction}${customBeatsPrompt}`;
         }
       }
 
-      // Ensure that if a temporal anchor exists, it is also explicitly reflected in the image/video prompt
+      // Ensure that if a temporal anchor exists, it is explicitly displayed on-screen above with a large font in matching character style
       if (temporalAnchor) {
-        const anchorLower = temporalAnchor.toLowerCase();
-        if (!finalImagePrompt.toLowerCase().includes(anchorLower)) {
-          if (/\d{4}/.test(temporalAnchor) || /century|decade|bc|bce|ad|ce/i.test(temporalAnchor)) {
-            finalImagePrompt += ` Historical setting/era: ${temporalAnchor}.`;
-          } else {
-            finalImagePrompt += ` Temporal anchor: ${temporalAnchor}.`;
-          }
+        const anchorUpper = temporalAnchor.toUpperCase();
+        // Check if prompt already directs on-screen text display of this anchor
+        const hasOnScreenText = /text|title|typography|lettering/i.test(finalImagePrompt) && finalImagePrompt.toUpperCase().includes(anchorUpper);
+        if (!hasOnScreenText) {
+          const styleRef = sanitizedStyleProfile.artStyle || characterStyle || 'the visual aesthetic';
+          finalImagePrompt += ` Featuring large clear legible on-screen text reading "${anchorUpper}" displayed above at the upper portion of the frame in a bold typography stylized to match ${styleRef}, clearly visible to the naked eye.`;
         }
       }
 
