@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { StoryGenerationResult, StoryFormat, Beat } from '../types';
-import StyleAndCharactersSection from './StyleAndCharactersSection';
 import BeatBottomSheet from './BeatBottomSheet';
 import { enforceBeatCeilings, getPreviewText } from '../services/beatSplitting';
 import {
@@ -76,7 +75,6 @@ export default function ResultsView({
   onReset,
 }: ResultsViewProps) {
   const [copiedIndex, setCopiedIndex] = useState<string | null>(null);
-  const [isMobileStyleModalOpen, setIsMobileStyleModalOpen] = useState(false);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const exportMenuRef = useRef<HTMLDivElement>(null);
 
@@ -124,29 +122,16 @@ export default function ResultsView({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isExportMenuOpen]);
 
-  // Close modal on escape key
+  // Close export menu on escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (isMobileStyleModalOpen) setIsMobileStyleModalOpen(false);
         if (isExportMenuOpen) setIsExportMenuOpen(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isMobileStyleModalOpen, isExportMenuOpen]);
-
-  // Lock body scroll when mobile modal is open
-  useEffect(() => {
-    if (isMobileStyleModalOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [isMobileStyleModalOpen]);
+  }, [isExportMenuOpen]);
 
   const formatSecondsToMinutes = (seconds: number) => {
     if (seconds < 60) return `${seconds}s`;
@@ -537,55 +522,6 @@ export default function ResultsView({
             )}
           </button>
         </div>
-      </div>
-
-      {/* Mobile Style Drawer Button */}
-      {(result.styleProfile || characterEntries.length > 0) && (
-        <div className="block md:hidden">
-          <button
-            type="button"
-            id="mobile-view-style-btn"
-            onClick={() => setIsMobileStyleModalOpen(true)}
-            className="w-full flex items-center justify-between p-3 bg-[#141412] hover:bg-[#1a1a18] active:bg-[#222220] border border-white/10 transition-all text-left shadow-sm min-h-[40px] group"
-          >
-            <div className="flex items-center space-x-2.5 min-w-0">
-              <div className="w-6 h-6 border border-white/30 bg-[#1e1e1c] flex items-center justify-center text-white shrink-0 group-hover:border-white">
-                <Sparkles size={12} />
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center space-x-1.5">
-                  <span className="font-editorial-meta text-[10px] sm:text-[11px] font-semibold text-white">
-                    STYLE &amp; CHARACTERS
-                  </span>
-                  <span className="stamp-chip stamp-chip-primary text-[9px] py-0.5 px-1.5">
-                    SHEET
-                  </span>
-                </div>
-                <p className="text-[10px] text-[#9C9C96] truncate mt-0.5 font-narrative">
-                  {result.styleProfile ? result.styleProfile.artStyle : ''}
-                  {characterEntries.length > 0 ? ` • ${characterEntries.length} characters` : ''}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center space-x-1 font-editorial-meta text-[9px] text-white pl-2 shrink-0">
-              <span>VIEW</span>
-              <SlidersHorizontal size={10} className="text-[#9C9C96]" />
-            </div>
-          </button>
-        </div>
-      )}
-
-      {/* Desktop Style & Character Section with Corner Accent Brackets */}
-      <div className="hidden md:block space-y-6 corner-bracket-container" id="desktop-style-character-container">
-        <StyleAndCharactersSection
-          styleProfile={result.styleProfile}
-          characterSheet={result.characterSheet}
-          locationSheet={result.locationSheet}
-          copiedIndex={copiedIndex}
-          onCopy={copyToClipboard}
-          isModal={false}
-        />
       </div>
 
       {/* STORYBOARD CARDS VIEW */}
@@ -1087,65 +1023,6 @@ export default function ResultsView({
           )}
         </div>
       </div>
-
-      {/* Mobile Slide-in Drawer / Modal for Visual Style & Character Sheet */}
-      {isMobileStyleModalOpen && createPortal(
-        <div
-          id="mobile-style-modal-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="mobile-modal-title"
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-200"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setIsMobileStyleModalOpen(false);
-          }}
-        >
-          <div className="w-full sm:max-w-xl max-h-[85vh] sm:max-h-[90vh] bg-[#0E0E0D] border-t sm:border border-white/15 shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-6 sm:zoom-in-95 duration-200">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between px-4 sm:px-5 py-3.5 border-b border-white/10 bg-[#141412] shrink-0">
-              <div className="flex items-center space-x-2.5">
-                <Sparkles size={15} className="text-white shrink-0 sm:w-4 sm:h-4" />
-                <h3 id="mobile-modal-title" className="font-editorial-meta text-xs font-semibold text-white">
-                  STYLE &amp; CHARACTERS
-                </h3>
-              </div>
-              <button
-                type="button"
-                id="close-mobile-style-modal-btn"
-                onClick={() => setIsMobileStyleModalOpen(false)}
-                aria-label="Close modal"
-                className="p-2 -mr-1 text-[#9C9C96] hover:text-white hover:bg-white/5 transition-colors min-h-[40px] min-w-[40px] flex items-center justify-center"
-              >
-                <X size={16} className="sm:w-[18px] sm:h-[18px]" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-4 sm:p-5 overflow-y-auto overscroll-contain space-y-4">
-              <StyleAndCharactersSection
-                styleProfile={result.styleProfile}
-                characterSheet={result.characterSheet}
-                copiedIndex={copiedIndex}
-                onCopy={copyToClipboard}
-                isModal={true}
-              />
-            </div>
-
-            {/* Modal Footer */}
-            <div className="p-3 sm:p-4 border-t border-white/10 bg-[#141412] shrink-0">
-              <button
-                type="button"
-                id="dismiss-mobile-style-modal-btn"
-                onClick={() => setIsMobileStyleModalOpen(false)}
-                className="w-full py-2.5 bg-white text-black hover:bg-neutral-200 font-editorial-meta text-xs font-semibold transition-colors min-h-[42px] flex items-center justify-center"
-              >
-                DONE / RETURN TO BEATS
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
 
       {/* Mobile Beat Expansion Bottom Sheet */}
       <BeatBottomSheet
