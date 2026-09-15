@@ -2,8 +2,8 @@ import { useState, FormEvent, MouseEvent, useEffect } from 'react';
 import CustomDropdown, { DropdownOption } from './CustomDropdown';
 import KeyConsentModal from './KeyConsentModal';
 import { useApiKey } from '../context/ApiKeyContext';
-import { StoryFormat, GenerateStoryRequest, GenerationMode } from '../types';
-import { Sliders, RefreshCw, AlertCircle, Dices, Eye, EyeOff, KeyRound, Trash2, CheckCircle2, Shield, Camera, Video, Sparkles } from 'lucide-react';
+import { StoryFormat, GenerateStoryRequest, GenerationMode, CustomSceneDefinition, CustomBeatDefinition } from '../types';
+import { Sliders, RefreshCw, AlertCircle, Dices, Eye, EyeOff, KeyRound, Trash2, CheckCircle2, Shield, Camera, Video, Sparkles, Scissors } from 'lucide-react';
 
 interface GeneratorFormProps {
   onSubmit: (data: GenerateStoryRequest) => void;
@@ -79,6 +79,8 @@ export default function GeneratorForm({
 }: GeneratorFormProps) {
   const { apiKey, hasCustomKey, rememberInSession, setCustomApiKey, clearCustomApiKey } = useApiKey();
   const [generationMode, setGenerationMode] = useState<GenerationMode>('image');
+  const [beatMode, setBeatMode] = useState<'automatic' | 'custom'>('automatic');
+  const [customScenes, setCustomScenes] = useState<CustomSceneDefinition[]>([]);
   const [story, setStory] = useState('');
   const [characterStyle, setCharacterStyle] = useState('');
   const [format, setFormat] = useState<StoryFormat>('short');
@@ -151,6 +153,70 @@ export default function GeneratorForm({
     }
   };
 
+  const partitionStoryIntoScenes = (sourceText: string): CustomSceneDefinition[] => {
+    const cleaned = sourceText.trim();
+    if (!cleaned) return [];
+
+    // Split sentences using punctuation
+    const rawSentences = cleaned
+      .split(/(?<=[.?!])\s+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    const sentences = rawSentences.length > 0 ? rawSentences : [cleaned];
+
+    return sentences.map((sentence, sIdx) => {
+      // Split each sentence into phrase beats using commas, semicolons, conjunctions
+      const phrases = sentence
+        .split(/(?<=[,;])\s+|\s+(?=and\s+|but\s+|while\s+|as\s+|when\s+|strapped\s+to\s+)/i)
+        .map((p) => p.trim())
+        .filter(Boolean);
+
+      const beatPhrases = phrases.length > 0 ? phrases : [sentence];
+
+      return {
+        id: `scene-${Date.now()}-${sIdx}`,
+        sceneIndex: sIdx + 1,
+        narratorLine: sentence,
+        beats: beatPhrases.map((phrase, bIdx) => ({
+          id: `beat-${Date.now()}-${sIdx}-${bIdx}`,
+          textSpan: phrase,
+          userGuidance: '',
+          shotType: bIdx === 0 ? 'Wide Shot' : bIdx === 1 ? 'Medium Shot' : 'Close-Up',
+        })),
+      };
+    });
+  };
+
+  const handleToggleBeatMode = (mode: 'automatic' | 'custom') => {
+    setBeatMode(mode);
+    if (mode === 'custom') {
+      if (story.trim()) {
+        setCustomScenes(partitionStoryIntoScenes(story));
+      }
+    } else {
+      if (customScenes.length > 0) {
+        const reconstructed = customScenes
+          .map((s) => s.narratorLine || s.beats.map((b) => b.textSpan).join(' '))
+          .filter(Boolean)
+          .join(' ');
+        if (reconstructed.trim()) {
+          setStory(reconstructed.trim());
+        }
+      }
+    }
+  };
+
+  const syncStoryFromCustomScenes = (scenes: CustomSceneDefinition[]) => {
+    const text = scenes
+      .map((s) => s.beats.map((b) => b.textSpan.trim()).filter(Boolean).join(' '))
+      .filter(Boolean)
+      .join(' ');
+    if (text) {
+      setStory(text);
+    }
+  };
+
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (!story.trim() || isLoading) return;
@@ -191,6 +257,52 @@ export default function GeneratorForm({
       }
     }
 
+    // Extract manual parenthetical beats (e.g. She fell (beat 1) two miles (beat 2)...)
+    let parsedCustomScenes: CustomSceneDefinition[] | undefined = undefined;
+    const inlineMatches = story.match(/\((?:beat\s*)?\d+\)|\[(?:beat\s*)?\d+\]/gi);
+
+    if (beatMode === 'custom' || (inlineMatches && inlineMatches.length > 0)) {
+      const tokens = story.split(/(\((?:beat\s*)?\d+\)|\[(?:beat\s*)?\d+\])/gi);
+      const parsedBeats: { text: string; beatIndex: number }[] = [];
+      let currentText = '';
+      let markerCount = 1;
+
+      for (const token of tokens) {
+        const match = token.match(/\((?:beat\s*)?(\d+)\)|\[(?:beat\s*)?(\d+)\]/i);
+        if (match) {
+          const beatNum = parseInt(match[1] || match[2] || String(markerCount), 10);
+          if (currentText.trim()) {
+            parsedBeats.push({ text: currentText.trim(), beatIndex: beatNum });
+            currentText = '';
+          }
+          markerCount++;
+        } else {
+          currentText += token;
+        }
+      }
+      if (currentText.trim()) {
+        parsedBeats.push({ text: currentText.trim(), beatIndex: markerCount });
+      }
+
+      if (parsedBeats.length > 0) {
+        parsedCustomScenes = [
+          {
+            id: 'scene-1',
+            sceneIndex: 1,
+            narratorLine: story.replace(/\((?:beat\s*)?\d+\)|\[(?:beat\s*)?\d+\]/gi, '').replace(/\s+/g, ' ').trim(),
+            beats: parsedBeats.map((pb, idx) => ({
+              id: `beat-${idx + 1}`,
+              textSpan: pb.text,
+              shotType: idx === 0 ? 'Establishing Shot' : idx % 2 === 0 ? 'Close-Up' : 'Medium Shot',
+              userGuidance: `Camera shot dedicated exclusively to this clause: "${pb.text}"`,
+            })),
+          },
+        ];
+      }
+    }
+
+    const effectiveBeatMode = parsedCustomScenes ? 'custom' : beatMode;
+
     onSubmit({
       story: story.trim(),
       characterStyle: characterStyle.trim(),
@@ -201,6 +313,8 @@ export default function GeneratorForm({
       modelQuality,
       generationMode,
       targetVideoDuration,
+      beatMode: effectiveBeatMode,
+      customScenes: parsedCustomScenes,
     });
   };
 
@@ -307,25 +421,11 @@ export default function GeneratorForm({
             >
               STORY IDEA
             </label>
-            <span className="font-editorial-meta text-[9px] sm:text-[10px] text-[#7D7D76]">
-              {story.trim().split(/\s+/).filter(Boolean).length} WORDS
-            </span>
-          </div>
 
-          <div className="relative">
-            <textarea
-              id="story-input-box"
-              rows={6}
-              value={story}
-              onChange={(e) => setStory(e.target.value)}
-              disabled={isLoading}
-              placeholder="Type your story, synopsis, or sequence of events here. Describe what happens from beginning to end."
-              className="w-full p-3 sm:p-4 pb-10 sm:pb-10 bg-[#121211] hover:bg-[#161614] focus:bg-[#121211] text-[#F5F5F0] placeholder:text-[#666660] border border-white/10 transition-colors focus:outline-none focus:border-white text-sm sm:text-base leading-relaxed resize-y story-textarea-scroll"
-              required
-            />
-
-            {/* Random story dice button positioned at bottom right of the container */}
-            <div className="absolute right-2.5 bottom-3 flex items-center z-10">
+            <div className="flex items-center space-x-2">
+              <span className="font-editorial-meta text-[9px] sm:text-[10px] text-[#7D7D76]">
+                {story.trim().split(/\s+/).filter(Boolean).length} WORDS
+              </span>
               <button
                 type="button"
                 id="random-story-dice-btn"
@@ -335,10 +435,41 @@ export default function GeneratorForm({
                 aria-label="Pick random story idea"
                 className="p-1 sm:p-1.5 bg-[#1C1C1A] hover:bg-[#282826] active:bg-[#333330] text-[#9C9C96] hover:text-white border border-white/15 transition-all shadow-sm group focus:outline-none focus:ring-1 focus:ring-white"
               >
-                <Dices size={14} className="transition-transform duration-300 group-hover:rotate-45 sm:w-[15px] sm:h-[15px]" />
+                <Dices size={13} className="transition-transform duration-300 group-hover:rotate-45" />
               </button>
             </div>
           </div>
+
+          {/* Exact, single Story Idea textarea with (beat 1), (beat 2) parenthetical syntax */}
+          <div className="relative">
+            <textarea
+              id="story-input-box"
+              rows={6}
+              value={story}
+              onChange={(e) => setStory(e.target.value)}
+              disabled={isLoading}
+              placeholder={
+                beatMode === 'custom'
+                  ? 'e.g. She fell (beat 1) two miles through open air (beat 2), strapped to three airplane seats, and survived (beat 3).'
+                  : 'Type your story, synopsis, or sequence of events here. Describe what happens from beginning to end.'
+              }
+              className={`w-full p-3 sm:p-4 bg-[#121211] hover:bg-[#161614] focus:bg-[#121211] text-[#F5F5F0] placeholder:text-[#666660] border transition-colors focus:outline-none text-sm sm:text-base leading-relaxed resize-y story-textarea-scroll ${
+                beatMode === 'custom' ? 'border-amber-400/50 focus:border-amber-400' : 'border-white/10 focus:border-white'
+              }`}
+              required
+            />
+          </div>
+
+          {beatMode === 'custom' && (
+            <div className="text-[11px] text-amber-300/90 flex flex-wrap items-center justify-between gap-1 px-1 py-1 bg-[#18160E] border border-amber-400/20">
+              <span>
+                Manual Beats: place <strong>(beat 1)</strong>, <strong>(beat 2)</strong>, <strong>(beat 3)</strong> right after each line or phrase.
+              </span>
+              <span className="font-mono text-amber-400 font-semibold">
+                {(story.match(/\((?:beat\s*)?\d+\)|\[(?:beat\s*)?\d+\]/gi) || []).length} beats detected
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Character Style Input Box */}
@@ -360,10 +491,10 @@ export default function GeneratorForm({
           />
         </div>
 
-        {/* Aspect Ratio Format, Distribution Platform & Target/Clip Duration */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4 md:gap-5 items-start">
-          {/* Format Toggle */}
-          <div className="sm:col-span-2 md:col-span-1 space-y-1.5 sm:space-y-2">
+        {/* Format, Distribution Platform, Target Duration, and Beat Pacing Controls */}
+        <div className="space-y-3">
+          {/* Aspect Ratio Format Full Width or Responsive Grid */}
+          <div className="space-y-1.5 sm:space-y-2">
             <span className="block font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96]">
               ASPECT RATIO FORMAT
             </span>
@@ -402,89 +533,133 @@ export default function GeneratorForm({
             </div>
           </div>
 
-          {/* Platform Dropdown */}
-          <div className="col-span-1">
-            <CustomDropdown
-              id="platform-select"
-              label="Distribution Platform"
-              options={format === 'short' ? SHORT_PLATFORMS : LONG_PLATFORMS}
-              selectedValue={platform}
-              onSelect={setPlatform}
-              disabled={isLoading}
-            />
-          </div>
+          {/* Responsive row: Distribution Platform | Target Duration | Automatic / Manual Beats */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 items-start">
+            {/* 1. Distribution Platform */}
+            <div className="col-span-1">
+              <CustomDropdown
+                id="platform-select"
+                label="Distribution Platform"
+                options={format === 'short' ? SHORT_PLATFORMS : LONG_PLATFORMS}
+                selectedValue={platform}
+                onSelect={setPlatform}
+                disabled={isLoading}
+              />
+            </div>
 
-          {/* Duration Selector: Dynamic based on Generation Mode */}
-          <div className="col-span-1 space-y-1.5 sm:space-y-2">
-            {generationMode === 'video' ? (
-              <>
-                <CustomDropdown
-                  id="video-duration-select"
-                  label="Clip Duration"
-                  options={VIDEO_DURATIONS}
-                  selectedValue={videoDurationValue}
-                  onSelect={setVideoDurationValue}
+            {/* 2. Target / Clip Duration */}
+            <div className="col-span-1 space-y-1.5 sm:space-y-2">
+              {generationMode === 'video' ? (
+                <>
+                  <CustomDropdown
+                    id="video-duration-select"
+                    label="Clip Duration"
+                    options={VIDEO_DURATIONS}
+                    selectedValue={videoDurationValue}
+                    onSelect={setVideoDurationValue}
+                    disabled={isLoading}
+                  />
+
+                  {videoDurationValue === 'custom' && (
+                    <div className="pt-1.5 sm:pt-2">
+                      <label
+                        htmlFor="custom-video-numeric-input"
+                        className="block font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96] mb-1.5"
+                      >
+                        CUSTOM CLIP DURATION (3 - 60 SECONDS)
+                      </label>
+                      <input
+                        type="number"
+                        min="3"
+                        max="60"
+                        id="custom-video-numeric-input"
+                        value={customVideoSeconds}
+                        onChange={(e) => setCustomVideoSeconds(e.target.value)}
+                        disabled={isLoading}
+                        placeholder="e.g. 8"
+                        className="w-full px-3 sm:px-4 h-[42px] sm:h-[46px] bg-[#121211] text-[#F5F5F0] placeholder:text-[#666660] border border-white/10 focus:border-white rounded-[2px] focus:outline-none text-xs sm:text-sm font-mono transition-colors"
+                        required
+                      />
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <CustomDropdown
+                    id="duration-select"
+                    label="Target Duration"
+                    options={format === 'short' ? SHORT_DURATIONS : LONG_DURATIONS}
+                    selectedValue={durationValue}
+                    onSelect={setDurationValue}
+                    disabled={isLoading}
+                  />
+
+                  {durationValue === 'custom' && (
+                    <div className="pt-1.5 sm:pt-2">
+                      <label
+                        htmlFor="custom-numeric-input"
+                        className="block font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96] mb-1.5"
+                      >
+                        {format === 'long' ? 'CUSTOM MINUTES (1 - 120)' : 'CUSTOM SECONDS (5 - 600)'}
+                      </label>
+                      <input
+                        type="number"
+                        min="5"
+                        max={format === 'long' ? '120' : '600'}
+                        id="custom-numeric-input"
+                        value={customNumeric}
+                        onChange={(e) => setCustomNumeric(e.target.value)}
+                        disabled={isLoading}
+                        placeholder={format === 'long' ? 'e.g. 7' : 'e.g. 35'}
+                        className="w-full px-3 sm:px-4 h-[42px] sm:h-[46px] bg-[#121211] text-[#F5F5F0] placeholder:text-[#666660] border border-white/10 focus:border-white rounded-[2px] focus:outline-none text-xs sm:text-sm font-mono transition-colors"
+                        required
+                      />
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* 3. Automatic vs Manual Beats (Right side of Target Duration) */}
+            <div className="col-span-1 space-y-1.5 sm:space-y-2">
+              <span className="block font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96]">
+                BEAT PACING MODE
+              </span>
+              <div
+                id="beat-mode-toggle-group"
+                className="w-full flex p-1 bg-[#121211] border border-white/10 h-[42px] sm:h-[46px] items-center"
+                role="group"
+                aria-label="Beat pacing mode selection"
+              >
+                <button
+                  type="button"
+                  id="beat-mode-auto-btn"
                   disabled={isLoading}
-                />
-
-                {videoDurationValue === 'custom' && (
-                  <div className="pt-1.5 sm:pt-2">
-                    <label
-                      htmlFor="custom-video-numeric-input"
-                      className="block font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96] mb-1.5"
-                    >
-                      CUSTOM CLIP DURATION (3 - 60 SECONDS)
-                    </label>
-                    <input
-                      type="number"
-                      min="3"
-                      max="60"
-                      id="custom-video-numeric-input"
-                      value={customVideoSeconds}
-                      onChange={(e) => setCustomVideoSeconds(e.target.value)}
-                      disabled={isLoading}
-                      placeholder="e.g. 8"
-                      className="w-full px-3 sm:px-4 h-[42px] sm:h-[46px] bg-[#121211] text-[#F5F5F0] placeholder:text-[#666660] border border-white/10 focus:border-white rounded-[2px] focus:outline-none text-xs sm:text-sm font-mono transition-colors"
-                      required
-                    />
-                  </div>
-                )}
-              </>
-            ) : (
-              <>
-                <CustomDropdown
-                  id="duration-select"
-                  label="Target Duration"
-                  options={format === 'short' ? SHORT_DURATIONS : LONG_DURATIONS}
-                  selectedValue={durationValue}
-                  onSelect={setDurationValue}
+                  onClick={() => handleToggleBeatMode('automatic')}
+                  className={`flex-1 h-full px-2 sm:px-3 text-xs sm:text-sm transition-all font-display text-center whitespace-nowrap flex items-center justify-center ${
+                    beatMode === 'automatic'
+                      ? 'bg-white text-black font-semibold shadow-sm'
+                      : 'text-[#9C9C96] hover:text-white'
+                  }`}
+                >
+                  Automatic
+                </button>
+                <button
+                  type="button"
+                  id="beat-mode-custom-btn"
                   disabled={isLoading}
-                />
-
-                {durationValue === 'custom' && (
-                  <div className="pt-1.5 sm:pt-2">
-                    <label
-                      htmlFor="custom-numeric-input"
-                      className="block font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96] mb-1.5"
-                    >
-                      {format === 'long' ? 'CUSTOM MINUTES (1 - 120)' : 'CUSTOM SECONDS (5 - 600)'}
-                    </label>
-                    <input
-                      type="number"
-                      min="5"
-                      max={format === 'long' ? '120' : '600'}
-                      id="custom-numeric-input"
-                      value={customNumeric}
-                      onChange={(e) => setCustomNumeric(e.target.value)}
-                      disabled={isLoading}
-                      placeholder={format === 'long' ? 'e.g. 7' : 'e.g. 35'}
-                      className="w-full px-3 sm:px-4 h-[42px] sm:h-[46px] bg-[#121211] text-[#F5F5F0] placeholder:text-[#666660] border border-white/10 focus:border-white rounded-[2px] focus:outline-none text-xs sm:text-sm font-mono transition-colors"
-                      required
-                    />
-                  </div>
-                )}
-              </>
-            )}
+                  onClick={() => handleToggleBeatMode('custom')}
+                  className={`flex-1 h-full px-2 sm:px-3 text-xs sm:text-sm transition-all font-display text-center whitespace-nowrap flex items-center justify-center space-x-1.5 ${
+                    beatMode === 'custom'
+                      ? 'bg-amber-400 text-black font-semibold shadow-sm'
+                      : 'text-[#9C9C96] hover:text-white'
+                  }`}
+                >
+                  <Scissors size={12} className={beatMode === 'custom' ? 'text-black' : 'text-amber-400'} />
+                  <span>Manual Beats</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 

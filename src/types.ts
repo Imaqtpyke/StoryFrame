@@ -42,6 +42,20 @@ export interface StoryGenerationResult {
   targetVideoDuration?: number;
 }
 
+export interface CustomBeatDefinition {
+  id: string;
+  textSpan: string;
+  userGuidance?: string;
+  shotType?: string;
+}
+
+export interface CustomSceneDefinition {
+  id: string;
+  sceneIndex: number;
+  narratorLine: string;
+  beats: CustomBeatDefinition[];
+}
+
 export interface GenerateStoryRequest {
   story: string;
   characterStyle: string;
@@ -52,6 +66,8 @@ export interface GenerateStoryRequest {
   modelQuality?: 'standard' | 'high';
   generationMode: GenerationMode;
   targetVideoDuration?: number;
+  beatMode?: 'automatic' | 'custom';
+  customScenes?: CustomSceneDefinition[];
 }
 
 export interface HistoryItem {

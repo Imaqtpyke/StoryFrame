@@ -111,9 +111,12 @@ export async function generateStoryDirectly(
     modelQuality,
     generationMode = 'image',
     targetVideoDuration: reqTargetVideoDuration,
+    beatMode = 'automatic',
+    customScenes,
   } = req;
 
   const isVideoMode = generationMode === 'video';
+  const isCustomBeats = beatMode === 'custom' && Array.isArray(customScenes) && customScenes.length > 0;
   const targetVideoDuration = reqTargetVideoDuration || (typeof durationSeconds === 'number' && durationSeconds <= 15 ? durationSeconds : 5);
 
   const isLongForm = format === 'long';
@@ -183,6 +186,21 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - EVERY BEAT MUST BE VISUALLY DISTINCT: Each beat must show something its neighbor does not (a different focal detail, framing distance, moment in the action, or emotional shift in pose/expression). If two adjacent phrase splits would render as the same picture, merge them into ONE beat instead of generating redundant near-duplicates.
    - STRICT SHOT TYPE & PROSE ALIGNMENT (TIGHT SHOTS): When a beat's shotType is close-up, macro, extreme-close-up, or detail shot, its prompt prose MUST actually describe that tight framing and specific focal detail (e.g. extreme close-up on buckled seatbelt straps, frayed nylon, water droplets, wide eyes), NOT the same full-body or wide environmental description used in a wider beat nearby. The camera framing tag and the prompt prose MUST strictly match.
 
+   CRITICAL FEW-SHOT LESSON: CONTINUITY ANCHOR VS. PROGRESSION VARIABLE
+   When a story moment spans multiple sequential beats, analyze every beat through two lenses:
+   1. CONTINUITY ANCHOR (What stays consistent): e.g., the subject identity and their key equipment (a girl strapped to a row of three airplane seats).
+   2. PROGRESSION VARIABLE (What MUST change each beat): phase of motion, altitude/environment, framing distance, or physical aftermath.
+   
+   ❌ UNACCEPTABLE (Near-Duplicate Slop):
+   - Beat 1 ("She fell"): Wide shot of girl strapped to 3 airplane seats falling through sky.
+   - Beat 2 ("two miles through open air"): Same wide shot of girl falling through sky, reworded.
+   - Beat 3 ("and survived"): Same wide shot of girl falling through sky, slightly different angle.
+   
+   ✅ MANDATORY PROGRESSION (Gold Standard):
+   - Beat 1 ("She fell"): INCITING MOMENT / DEPARTURE — Breaching out of the fractured aircraft fuselage into the void, sparks and debris tumbling away, strapped securely into the row of three seats.
+   - Beat 2 ("two miles through open air"): ISOLATED MID-AIR FREEFALL — High altitude, NO plane in sight. Endless turbulent clouds and vast empty troposphere rushing past, disorientation, freezing wind whipping hair and clothing, still strapped to the seats.
+   - Beat 3 ("strapped to three airplane seats, and survived"): AFTERMATH & IMPACT RESOLUTION — The row of seats has crashed through the thick Amazon canopy and rests on the jungle floor among broken ferns and vines. The survivor is bruised and breathing, grounded in the foliage.
+
 6. Strict Narrative Faithfulness (NO UNSTATED FACTUAL INVENTIONS):
    Do NOT invent fictitious specific story facts, character names, senders, or plot details that are NOT present in the narration or already locked in characterSheet/locationSheet.
    If the narration mentions "a voice message" without naming who sent it, describe it neutrally as "an audio playback device emitting sound" — NEVER invent a named sender or backstory fact absent from the original story text.
@@ -199,6 +217,10 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    characterSheet keys MUST be generic role labels (e.g. "the teenage survivor"), NEVER proper names of real people.
    MYTHOLOGICAL & LEGENDARY EXCEPTION: Mythological, legendary, and folkloric figures (e.g., Hercules, Zeus, King Arthur, Robin Hood, Thor, Gilgamesh) are EXEMPT. Name them normally in characterSheet and visual prompts since they have no real-world photographic existence and function as fictional archetypes. When a figure is part real and part legend (e.g. King Arthur, Vlad the Impaler / Dracula), treat them as the legendary version and name them freely.
    IMPORTANT EXCEPTION: This restriction ONLY applies to visual prompt fields (characterSheet, imagePrompt, videoPrompt, startFramePrompt). The narratorLine spoken script CAN and SHOULD still state real names, historical facts, dates, and context since it is purely the voiceover script and not fed into an image or video generator.
+
+ 9. OPENING BEAT VISUAL HOOK RULE (SCENE 1, BEAT 1):
+   The opening beat of the whole story (Scene 1, Beat 1) MUST NOT be pure atmosphere, fog, smoke, an empty landscape/environment, an empty establishing shot, or a slow fade, UNLESS the story's actual first sentence is genuinely and explicitly about that atmospheric element.
+   Scene 1 Beat 1 MUST show something concrete and visually arresting: the main character, a striking action already in motion, or the single most compelling visual subject/element the story possesses. A weak, abstract, or empty opening loses short-form viewers in the first two seconds.
 
 5. Start Frame Ingredients (Text to Image Prompt):
    For each scene, provide "startFramePrompt": a pristine text-to-image prompt to generate the initial reference keyframe image for image-to-video tools (Kling, Runway, Luma, Sora). Formatted as:
@@ -301,6 +323,21 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    CRITICAL ACTION AND POSE SPECIFICITY:
    For all character action and pose descriptions in imagePrompt, ALWAYS explicitly include: (1) what the hands/arms are doing, (2) which direction the body and torso are facing, and (3) where the eyes are looking, not just a generic pose. For example: "Facing left toward the horizon, right arm raised, pointing at the volcano, eyes following the gesture" instead of "a person standing there."
 
+   CRITICAL FEW-SHOT LESSON: CONTINUITY ANCHOR VS. PROGRESSION VARIABLE
+   When a story moment spans multiple sequential beats, analyze every beat through two lenses:
+   1. CONTINUITY ANCHOR (What stays consistent): e.g., the subject identity and their key equipment (a girl strapped to a row of three airplane seats).
+   2. PROGRESSION VARIABLE (What MUST change each beat): phase of motion, altitude/environment, framing distance, or physical aftermath.
+   
+   ❌ UNACCEPTABLE (Near-Duplicate Slop):
+   - Beat 1 ("She fell"): Wide shot of girl strapped to 3 airplane seats falling through sky.
+   - Beat 2 ("two miles through open air"): Same wide shot of girl falling through sky, reworded.
+   - Beat 3 ("and survived"): Same wide shot of girl falling through sky, slightly different angle.
+   
+   ✅ MANDATORY PROGRESSION (Gold Standard):
+   - Beat 1 ("She fell"): INCITING MOMENT / DEPARTURE — Breaching out of the fractured aircraft fuselage into the void, sparks and debris tumbling away, strapped securely into the row of three seats.
+   - Beat 2 ("two miles through open air"): ISOLATED MID-AIR FREEFALL — High altitude, NO plane in sight. Endless turbulent clouds and vast empty troposphere rushing past, disorientation, freezing wind whipping hair and clothing, still strapped to the seats.
+   - Beat 3 ("strapped to three airplane seats, and survived"): AFTERMATH & IMPACT RESOLUTION — The row of seats has crashed through the thick Amazon canopy and rests on the jungle floor among broken ferns and vines. The survivor is bruised and breathing, grounded in the foliage.
+
    SINGLE VISUAL FOCUS PER BEAT (NO CONFUSED HYBRID COMPOSITIONS):
    Every beat MUST focus on exactly ONE clear visual subject or action.
    NEVER combine two competing framing requests into a single beat (e.g. DO NOT write one prompt trying to frame a close-up on an object AND a character's reaction in the same image). Trying to show both in one prompt produces confused hybrid compositions with oversized foreground objects and floating background characters.
@@ -322,6 +359,10 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    characterSheet keys for real people MUST be generic role labels (e.g. "the teenage survivor"), NEVER proper names of real individuals.
    MYTHOLOGICAL & LEGENDARY EXCEPTION: Mythological, legendary, and folkloric figures (e.g., Hercules, Zeus, King Arthur, Robin Hood, Thor, Gilgamesh) are EXEMPT. Name them normally in characterSheet and visual prompts since they have no real-world photographic existence and function as fictional archetypes. When a figure is part real and part legend (e.g. King Arthur, Vlad the Impaler / Dracula), treat them as the legendary version and name them freely.
    IMPORTANT EXCEPTION: This restriction ONLY applies to visual prompt fields (characterSheet, imagePrompt, videoPrompt, startFramePrompt). The narratorLine spoken script CAN and SHOULD still state real names, historical facts, dates, and context since it is purely the voiceover script and not fed into an image or video generator.
+
+   OPENING BEAT VISUAL HOOK RULE (SCENE 1, BEAT 1):
+   The opening beat of the whole story (Scene 1, Beat 1) MUST NOT be pure atmosphere, fog, smoke, an empty landscape/environment, an empty establishing shot, or a slow fade, UNLESS the story's actual first sentence is genuinely and explicitly about that atmospheric element.
+   Scene 1 Beat 1 MUST show something concrete and visually arresting: the main character, a striking action already in motion, or the single most compelling visual subject/element the story possesses. A weak, abstract, or empty opening loses short-form viewers in the first two seconds.
 
    VISUAL SOUND EFFECT RULE (IMAGE MODE ONLY):
    Check styleProfile.artStyle and characterStyle input.
@@ -386,6 +427,15 @@ STRICT CONSTRAINTS:
 }
 Do not include markdown code fences or backticks, just the raw JSON object.`;
 
+  let customBeatsPrompt = '';
+  if (isCustomBeats && customScenes) {
+    customBeatsPrompt = `\n\nCRITICAL USER-SPECIFIED SCENE AND BEAT SEGMENTATION:
+The user has explicitly segmented the story into exact scenes and custom visual beats. You MUST follow this exact scene breakdown and phrase assignment. For each beat, follow the user's specific visual guidance and shot suggestions while ensuring NO near-duplicate frames and strict visual progression:
+${customScenes.map((cs, sIdx) => `Scene ${sIdx + 1} narration: "${cs.narratorLine}"
+Beats:
+${cs.beats.map((b, bIdx) => `  - Beat ${bIdx + 1} phrase: "${b.textSpan}"${b.userGuidance ? ` | Director's Visual Note: "${b.userGuidance}"` : ''}${b.shotType ? ` | Preferred Shot: "${b.shotType}"` : ''}`).join('\n')}`).join('\n\n')}`;
+  }
+
   const userPrompt = `Story Idea:
 ${story}
 
@@ -394,7 +444,7 @@ ${characterStyle || 'Consistent style specified by scene context.'}
 
 Format: ${isLongForm ? 'Long form (16:9)' : 'Short form (9:16)'}
 Platform: ${platform}
-${durationInstruction}`;
+${durationInstruction}${customBeatsPrompt}`;
 
   const candidateModels = modelQuality === 'high'
     ? ['gemini-3.1-pro-preview', 'gemini-3.8-flash', 'gemini-flash-latest', 'gemini-2.5-flash']
