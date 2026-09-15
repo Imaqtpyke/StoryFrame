@@ -3,7 +3,7 @@
 // API keys are strictly kept in browser memory / sessionStorage and never sent to any remote backend.
 
 import { GenerateStoryRequest, StoryGenerationResult, StyleProfile } from '../types';
-import { enforceBeatCeilings } from './beatSplitting';
+import { enforceBeatCeilings, extractTemporalAnchor, cleanRedundantOnScreenText } from './beatSplitting';
 
 function removeEmDashes(text: string): string {
   if (!text) return text;
@@ -97,48 +97,7 @@ function inferCameraMovement(imagePrompt: string, beatIndex: number): string {
   return DEFAULT_CAMERA_MOVEMENTS[(beatIndex - 1) % DEFAULT_CAMERA_MOVEMENTS.length];
 }
 
-/**
- * Detects whether a beat's text span or spoken phrase contains a date, year, century, decade, or elapsed time anchor.
- * Examples: "in 1945", "1945", "for 29 years", "in 1974", "October 14, 1962", "in the 1920s", "300 BC".
- */
-export function extractTemporalAnchor(text: string): string | null {
-  if (!text || !text.trim()) return null;
-  const clean = text.trim();
-
-  // Pattern 1: Exact 4-digit years or year ranges with optional 'in/by/around' (e.g. "in 1945", "1945", "1939-1945", "1800s", "the 1920s")
-  const yearMatch = clean.match(/\b(?:in|by|around|during|circa|c\.)?\s*([12]\d{3}s?|[5-9]\d{2}(?:\s*(?:BC|AD|BCE|CE))?)\b/i);
-  if (yearMatch && yearMatch[1]) {
-    const yr = yearMatch[1].trim();
-    // Verify it's a plausible year number (not just a generic 4-digit number like 1000 meters)
-    const num = parseInt(yr.replace(/\D/g, ''), 10);
-    if ((num >= 1000 && num <= 2100) || /BC|BCE|AD|CE/i.test(yr)) {
-      return yr;
-    }
-  }
-
-  // Pattern 2: Specific calendar dates (e.g. "December 24, 1971", "July 4th", "August 1945", "June 6, 1944")
-  const dateMatch = clean.match(/\b((?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember))\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*[12]\d{3})?)\b/i);
-  if (dateMatch && dateMatch[1]) {
-    return dateMatch[1].trim();
-  }
-
-  // Pattern 3: Elapsed duration phrases (e.g. "for 29 years", "after 30 years", "over 10 decades", "over 50 years", "for nearly three decades")
-  const durationMatch = clean.match(/\b((?:for|after|nearly|over|past|across)\s+(?:\d+|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|forty|fifty)\s+(?:years|decades|centuries|months))\b/i);
-  if (durationMatch && durationMatch[1]) {
-    return durationMatch[1].trim();
-  }
-
-  // Pattern 4: Standalone year token like "1945" or "1974"
-  const standaloneYear = clean.match(/\b([12]\d{3})\b/);
-  if (standaloneYear && standaloneYear[1]) {
-    const num = parseInt(standaloneYear[1], 10);
-    if (num >= 1200 && num <= 2100) {
-      return standaloneYear[1];
-    }
-  }
-
-  return null;
-}
+export { extractTemporalAnchor, cleanRedundantOnScreenText };
 
 export async function generateStoryDirectly(
   req: GenerateStoryRequest,
@@ -272,10 +231,12 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    The opening beat of the whole story (Scene 1, Beat 1) MUST NOT be pure atmosphere, fog, smoke, an empty landscape/environment, an empty establishing shot, or a slow fade, UNLESS the story's actual first sentence is genuinely and explicitly about that atmospheric element.
    Scene 1 Beat 1 MUST show something concrete and visually arresting: the main character, a striking action already in motion, or the single most compelling visual subject/element the story possesses. A weak, abstract, or empty opening loses short-form viewers in the first two seconds.
 
- 10. TEMPORAL ANCHOR & ON-SCREEN DATE/YEAR DISPLAY RULE (IMAGE & VIDEO PROMPT):
-   If the narrator line, story sentence, or beat phrase mentions a date, year, century, decade, or time duration (e.g. "in 1945", "December 24, 1971", "for 29 years", "in the 1920s", "300 BC"):
-   - You MUST populate "temporalAnchor" on that beat with the exact date/year/duration phrase (e.g. "1945", "December 24, 1971", "for 29 years").
-   - MANDATORY ON-SCREEN VISUAL TEXT DISPLAY: The year, date, or duration MUST be visibly displayed and legible in the actual image or video! In the beat's prompt ("imagePrompt"), you MUST explicitly instruct the generator to display the text positioned at the top/above with a moderately large, clear font that is easily visible to the naked eye, stylized to seamlessly match the character style and art medium (e.g. "Featuring large clear legible text overlay reading '1945' displayed above at the top center in a bold font matching the scene's aesthetic style and color palette, clearly legible to the naked eye", or "Featuring bold stylized on-screen typography reading 'FOR 29 YEARS' displayed prominently above in the upper portion in matching art style").
+ 10. TEMPORAL ANCHOR & ON-SCREEN DATE/YEAR DISPLAY RULE (SINGLE BEAT ONLY):
+   If the narrator line, story sentence, or beat phrase mentions a date, year, century, decade, or elapsed time duration (e.g. "in 1945", "December 24, 1971", "for 29 years", "in the 1920s", "300 BC"):
+   - CRITICAL SINGLE-BEAT CONSTRAINT: The temporal anchor and on-screen date typography MUST ONLY appear in the prompt of the EXACT SINGLE BEAT whose spoken phrase ("textSpan") actually introduces or mentions that date/year. NEVER repeat or duplicate the year/date on other beats in the scene or across subsequent scenes!
+   - You MUST populate "temporalAnchor" on that single beat ONLY with the exact date/year/duration phrase (e.g. "1945", "December 24, 1971", "for 29 years"). All other beats in the scene MUST have "temporalAnchor" omitted.
+   - MANDATORY ON-SCREEN VISUAL TEXT DISPLAY (FOR THAT SINGLE BEAT ONLY): In that specific beat's prompt ("imagePrompt"), you MUST explicitly instruct the generator to display the text positioned at the top/above with a moderately large, clear font that is easily visible to the naked eye, stylized to seamlessly match the character style and art medium (e.g. "Featuring large clear legible text overlay reading '1945' displayed above at the top center in a bold font matching the scene's aesthetic style and color palette, clearly legible to the naked eye", or "Featuring bold stylized on-screen typography reading 'FOR 29 YEARS' displayed prominently above in the upper portion in matching art style").
+   - For all other beats in the scene (where no date is spoken), DO NOT include any date or year text overlay instructions in their prompts.
    - In addition, reflect the historical era/weathering in the subject and setting (e.g. "1945 era military gear, authentic period details").
 
 5. Start Frame Ingredients (Text to Image Prompt):
@@ -437,10 +398,12 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    The opening beat of the whole story (Scene 1, Beat 1) MUST NOT be pure atmosphere, fog, smoke, an empty landscape/environment, an empty establishing shot, or a slow fade, UNLESS the story's actual first sentence is genuinely and explicitly about that atmospheric element.
    Scene 1 Beat 1 MUST show something concrete and visually arresting: the main character, a striking action already in motion, or the single most compelling visual subject/element the story possesses. A weak, abstract, or empty opening loses short-form viewers in the first two seconds.
 
-   TEMPORAL ANCHOR & ON-SCREEN DATE/YEAR DISPLAY RULE (IMAGE & VIDEO PROMPT):
-   If the narrator line, story sentence, or beat phrase mentions a date, year, century, decade, or time duration (e.g. "in 1945", "December 24, 1971", "for 29 years", "in the 1920s", "300 BC"):
-   - You MUST populate "temporalAnchor" on that beat with the exact date/year/duration phrase (e.g. "1945", "December 24, 1971", "for 29 years").
-   - MANDATORY ON-SCREEN VISUAL TEXT DISPLAY: The year, date, or duration MUST be visibly displayed in the actual generated image or video! In the beat's prompt ("imagePrompt"), you MUST explicitly include instructions to display this text positioned above (in the upper portion of the frame) with a moderately large, clear font that is easily readable by the naked eye, with typography styled in the exact same art medium and aesthetic design as the character style (e.g. "Featuring large clear legible on-screen text reading '1945' displayed above at the top center in a bold stylized font that matches the artwork medium and character style", or "Featuring prominent stylized title text reading 'FOR 29 YEARS' displayed in the upper frame matching the scene's artistic aesthetic").
+   TEMPORAL ANCHOR & ON-SCREEN DATE/YEAR DISPLAY RULE (SINGLE BEAT ONLY):
+   If the narrator line, story sentence, or beat phrase mentions a date, year, century, decade, or elapsed time duration (e.g. "in 1945", "December 24, 1971", "for 29 years", "in the 1920s", "300 BC"):
+   - CRITICAL SINGLE-BEAT CONSTRAINT: The temporal anchor and on-screen date typography MUST ONLY appear in the prompt of the EXACT SINGLE BEAT whose spoken phrase ("textSpan") actually introduces or mentions that date/year. NEVER repeat or duplicate the year/date on other beats in the scene or across subsequent scenes!
+   - You MUST populate "temporalAnchor" on that single beat ONLY with the exact date/year/duration phrase (e.g. "1945", "December 24, 1971", "for 29 years"). All other beats in the scene MUST have "temporalAnchor" omitted.
+   - MANDATORY ON-SCREEN VISUAL TEXT DISPLAY (FOR THAT SINGLE BEAT ONLY): In that specific beat's prompt ("imagePrompt"), you MUST explicitly include instructions to display this text positioned above (in the upper portion of the frame) with a moderately large, clear font that is easily readable by the naked eye, with typography styled in the exact same art medium and aesthetic design as the character style (e.g. "Featuring large clear legible on-screen text reading '1945' displayed above at the top center in a bold stylized font that matches the artwork medium and character style", or "Featuring prominent stylized title text reading 'FOR 29 YEARS' displayed in the upper frame matching the scene's artistic aesthetic").
+   - For all other beats in the scene (where no date is spoken), DO NOT include any date or year text overlay instructions in their prompts.
    - In addition, describe the period-accurate attire, setting, or weathering corresponding to that year or elapsed time.
 
    VISUAL SOUND EFFECT RULE (IMAGE MODE ONLY):
@@ -703,6 +666,33 @@ ${durationInstruction}${customBeatsPrompt}`;
       }
     }
 
+    // Resolve single-beat temporal anchor assignment for this scene:
+    const beatSpanAnchors = rawBeats.map((b: any) => {
+      const span = removeEmDashes(b.textSpan || b.text_span || '');
+      return extractTemporalAnchor(span);
+    });
+    const sceneNarratorAnchor = extractTemporalAnchor(narratorLine);
+
+    // Track which beat index is assigned a temporal anchor
+    const assignedBeatAnchorMap = new Map<number, string>();
+    beatSpanAnchors.forEach((anchor, bIdx) => {
+      if (anchor) {
+        assignedBeatAnchorMap.set(bIdx, anchor);
+      }
+    });
+
+    // If no individual beat textSpan directly contained a date:
+    if (assignedBeatAnchorMap.size === 0) {
+      // Check if Gemini explicitly set a temporalAnchor on a specific beat
+      const gBeatIdx = rawBeats.findIndex((b: any) => typeof b.temporalAnchor === 'string' && b.temporalAnchor.trim().length > 0);
+      if (gBeatIdx !== -1) {
+        assignedBeatAnchorMap.set(gBeatIdx, rawBeats[gBeatIdx].temporalAnchor.trim());
+      } else if (sceneNarratorAnchor) {
+        // Fallback: If the scene narration has a date, assign it strictly to the first beat (bIdx 0), NEVER all beats
+        assignedBeatAnchorMap.set(0, sceneNarratorAnchor);
+      }
+    }
+
     const sanitizedBeats = rawBeats.map((beat: any, bIdx: number) => {
       const beatIndex = typeof beat.beatIndex === 'number' ? beat.beatIndex : bIdx + 1;
       const textSpan = removeEmDashes(beat.textSpan || beat.text_span || '');
@@ -766,16 +756,8 @@ ${durationInstruction}${customBeatsPrompt}`;
         }
       }
 
-      // Extract or preserve temporal anchor (e.g. "1945", "December 24, 1971", "for 29 years")
-      let temporalAnchor: string | undefined = undefined;
-      if (typeof beat.temporalAnchor === 'string' && beat.temporalAnchor.trim().length > 0) {
-        temporalAnchor = beat.temporalAnchor.trim();
-      } else {
-        const detected = extractTemporalAnchor(textSpan) || extractTemporalAnchor(narratorLine);
-        if (detected) {
-          temporalAnchor = detected;
-        }
-      }
+      // Extract or preserve temporal anchor ONLY if this beat is the designated single owner
+      const temporalAnchor = assignedBeatAnchorMap.get(bIdx);
 
       // Ensure that if a temporal anchor exists, it is explicitly displayed on-screen above with a large font in matching character style
       if (temporalAnchor) {
@@ -786,6 +768,9 @@ ${durationInstruction}${customBeatsPrompt}`;
           const styleRef = sanitizedStyleProfile.artStyle || characterStyle || 'the visual aesthetic';
           finalImagePrompt += ` Featuring large clear legible on-screen text reading "${anchorUpper}" displayed above at the upper portion of the frame in a bold typography stylized to match ${styleRef}, clearly visible to the naked eye.`;
         }
+      } else {
+        // For beats WITHOUT a temporal anchor, strip any accidental or repeated date text overlay instructions
+        finalImagePrompt = cleanRedundantOnScreenText(finalImagePrompt, sceneNarratorAnchor || undefined);
       }
 
       return {

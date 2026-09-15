@@ -3,6 +3,67 @@ import { Beat } from '../types';
 export const MAX_BEAT_SECONDS = 2.0;
 export const MAX_BEAT_WORDS = 8;
 
+/**
+ * Detects whether a beat's text span or spoken phrase contains a date, year, century, decade, or elapsed time anchor.
+ * Examples: "in 1945", "1945", "for 29 years", "in 1974", "October 14, 1962", "in the 1920s", "300 BC".
+ */
+export function extractTemporalAnchor(text: string): string | null {
+  if (!text || !text.trim()) return null;
+  const clean = text.trim();
+
+  // Pattern 1: Exact 4-digit years or year ranges with optional 'in/by/around' (e.g. "in 1945", "1945", "1939-1945", "1800s", "the 1920s")
+  const yearMatch = clean.match(/\b(?:in|by|around|during|circa|c\.)?\s*([12]\d{3}s?|[5-9]\d{2}(?:\s*(?:BC|AD|BCE|CE))?)\b/i);
+  if (yearMatch && yearMatch[1]) {
+    const yr = yearMatch[1].trim();
+    // Verify it's a plausible year number (not just a generic 4-digit number like 1000 meters)
+    const num = parseInt(yr.replace(/\D/g, ''), 10);
+    if ((num >= 1000 && num <= 2100) || /BC|BCE|AD|CE/i.test(yr)) {
+      return yr;
+    }
+  }
+
+  // Pattern 2: Specific calendar dates (e.g. "December 24, 1971", "July 4th", "August 1945", "June 6, 1944")
+  const dateMatch = clean.match(/\b((?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember))\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*[12]\d{3})?)\b/i);
+  if (dateMatch && dateMatch[1]) {
+    return dateMatch[1].trim();
+  }
+
+  // Pattern 3: Elapsed duration phrases (e.g. "for 29 years", "after 30 years", "over 10 decades", "over 50 years", "for nearly three decades")
+  const durationMatch = clean.match(/\b((?:for|after|nearly|over|past|across)\s+(?:\d+|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|forty|fifty)\s+(?:years|decades|centuries|months))\b/i);
+  if (durationMatch && durationMatch[1]) {
+    return durationMatch[1].trim();
+  }
+
+  // Pattern 4: Standalone year token like "1945" or "1974"
+  const standaloneYear = clean.match(/\b([12]\d{3})\b/);
+  if (standaloneYear && standaloneYear[1]) {
+    const num = parseInt(standaloneYear[1], 10);
+    if (num >= 1200 && num <= 2100) {
+      return standaloneYear[1];
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Strips redundant or accidental on-screen text overlay instructions regarding a date/year
+ * from prompts of beats that do NOT introduce that date.
+ */
+export function cleanRedundantOnScreenText(prompt: string, anchor?: string): string {
+  if (!prompt) return '';
+  let cleaned = prompt;
+  if (anchor && anchor.trim()) {
+    const escaped = anchor.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const specificRegex = new RegExp(`\\s*(?:Featuring|With|Includes?|Displaying)?\\s*(?:large\\s+clear\\s+legible|bold\\s+stylized|prominent\\s+stylized|clear\\s+legible|bold)?\\s*(?:on-screen\\s+text|text\\s+overlay|title\\s+text|typography|lettering)\\s*(?:overlay)?\\s*reading\\s*["']?${escaped}["']?[^.]*\\.?`, 'gi');
+    cleaned = cleaned.replace(specificRegex, '');
+  }
+  // Remove generic on-screen year/date text overlay instructions
+  const genericDateRegex = /\s*(?:Featuring|With|Includes?|Displaying)\s+(?:large\\s+clear\\s+legible|bold\\s+stylized|prominent\\s+stylized|clear\\s+legible|bold)?\s*(?:on-screen\\s+text|text\\s+overlay|title\\s+text|typography)\s*(?:overlay)?\s*reading\s*["']?(?:[12]\d{3}s?|FOR\s+\d+\s+YEARS|DECEMBER\s+\d+|OCTOBER\s+\d+|JANUARY\s+\d+|AUGUST\s+\d+|JULY\s+\d+|JUNE\s+\d+|IN\s+\d{4})["']?[^.]*\.?/gi;
+  cleaned = cleaned.replace(genericDateRegex, '');
+  return cleaned.replace(/\s{2,}/g, ' ').trim();
+}
+
 // Natural pause and clause split patterns:
 // 1. Punctuation boundaries: commas, semicolons, colons, dashes, ellipses
 // 2. Conjunctions & transition words: and, but, or, so, yet, because, although, while, as, if, when, where, that, which
@@ -349,7 +410,22 @@ export function enforceBeatCeilings(
         }
 
         const subSFX = subIdx === 0 ? originalBeat.visualSoundEffect : undefined;
-        const subTemporal = subIdx === 0 ? originalBeat.temporalAnchor : undefined;
+
+        // SINGLE-BEAT TEMPORAL ANCHOR RULE:
+        // Only assign temporalAnchor to the specific sub-beat whose phrase actually contains the date
+        const directSubAnchor = extractTemporalAnchor(subPhrase);
+        let subTemporal: string | undefined = undefined;
+        if (directSubAnchor) {
+          subTemporal = directSubAnchor;
+        } else if (subIdx === 0 && originalBeat.temporalAnchor && !subPhrases.some((sp, idx) => idx > 0 && !!extractTemporalAnchor(sp))) {
+          // If the original beat had a temporal anchor and no other sub-phrase matched directly, assign solely to the first sub-beat
+          subTemporal = originalBeat.temporalAnchor;
+        }
+
+        // If this sub-beat does NOT have the temporal anchor, strip any copied/leftover date text overlay instructions
+        if (!subTemporal && originalBeat.temporalAnchor) {
+          adaptedPrompt = cleanRedundantOnScreenText(adaptedPrompt, originalBeat.temporalAnchor);
+        }
 
         validatedBeats.push(alignProseWithShotType({
           beatIndex: globalBeatCounter++,
