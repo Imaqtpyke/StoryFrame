@@ -753,15 +753,31 @@ export default function GeneratorForm({
                   </span>
                 </div>
 
-                {/* 3. Luminous Leading Edge Beam & Trailing Ambient Light */}
+                {/* 3. Luminous Animated Leading Edge with Traveling Light Wave & Forward Flare */}
                 {progress > 0.5 && progress < 99.5 && (
                   <>
+                    {/* Primary pulsating vertical laser beam */}
                     <div
-                      className="absolute top-0 bottom-0 w-[2px] bg-white shadow-[0_0_14px_4px_rgba(255,255,255,0.95)] pointer-events-none z-20"
+                      className="absolute top-0 bottom-0 w-[2.5px] bg-white animate-edge-beam pointer-events-none z-20"
+                      style={{ left: `${progress}%` }}
+                    >
+                      {/* Vertical traveling light photon pulse scanning down the edge */}
+                      <div className="absolute left-[-2px] right-[-2px] h-6 bg-gradient-to-b from-transparent via-white to-transparent shadow-[0_0_12px_4px_rgba(255,255,255,1)] animate-beam-scan pointer-events-none" />
+
+                      {/* Top & bottom precision micro-points */}
+                      <div className="absolute top-0 left-[-1.5px] w-1.5 h-1.5 rounded-full bg-white shadow-[0_0_8px_white] pointer-events-none" />
+                      <div className="absolute bottom-0 left-[-1.5px] w-1.5 h-1.5 rounded-full bg-white shadow-[0_0_8px_white] pointer-events-none" />
+                    </div>
+
+                    {/* Forward-facing ambient projector flare casting into unlit dark area */}
+                    <div
+                      className="absolute top-0 bottom-0 w-8 bg-gradient-to-r from-white/30 via-white/10 to-transparent animate-forward-light pointer-events-none z-15"
                       style={{ left: `${progress}%` }}
                     />
+
+                    {/* Subtle trailing light tail */}
                     <div
-                      className="absolute top-0 bottom-0 w-6 -ml-6 bg-gradient-to-r from-transparent to-white/25 pointer-events-none z-15"
+                      className="absolute top-0 bottom-0 w-4 -ml-4 bg-gradient-to-r from-transparent to-white/20 pointer-events-none z-15"
                       style={{ left: `${progress}%` }}
                     />
                   </>
