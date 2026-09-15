@@ -168,13 +168,28 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
 4. Mandatory 8-Part Master Scene "videoPrompt" Structure:
    For EACH scene, construct "videoPrompt" adhering strictly to these exact 8 components:
    - subject: (from characterSheet for recurring characters. First scene uses full visual description; subsequent scenes state "matching established look from Scene [X]").
-   - action: described in temporal order across the shot.
+   - action: described in temporal order across the shot. CRITICAL ACTION & POSE SPECIFICITY: Always explicitly state (1) what the hands/arms are doing, (2) which direction the torso and body are facing, and (3) where the eyes are looking (e.g. "Facing left toward the horizon, right arm raised pointing toward the erupting peak, eyes wide and tracking the smoke" instead of "a person standing").
    - camera: exactly ONE shot type, exactly ONE camera angle, and exactly ONE movement, NEVER stacked movements (e.g., "Medium shot, low-angle, slow forward push-in").
    - lighting and environment: atmospheric lighting and environment details from styleProfile and locationSheet.
    - style: styleProfile artStyle plus the lens/film-stock descriptor.
    - physics: concrete physical dynamics (e.g. "cloth trailing in wind", "embers drifting upward", "waves crashing against rocks").
    - audio: ALWAYS state "no dialogue, ambient sound only" or "silent".
    - duration: in seconds matching ${targetVideoDuration} seconds.
+
+5. Single Visual Focus Per Beat (NO CONFUSED HYBRID COMPOSITIONS):
+   Every beat MUST focus on exactly ONE clear visual subject or action.
+   NEVER combine two competing framing requests into a single beat (e.g. DO NOT write one prompt trying to frame a close-up on an object AND a character's reaction in the same image). Trying to show both in one prompt produces confused hybrid compositions.
+   If a story moment involves both an object/detail AND a character's reaction, split it into two separate sequential beats: Beat A (close-up on object) and Beat B (character reaction).
+
+6. Strict Narrative Faithfulness (NO UNSTATED FACTUAL INVENTIONS):
+   Do NOT invent fictitious specific story facts, character names, senders, or plot details that are NOT present in the narration or already locked in characterSheet/locationSheet.
+   If the narration mentions "a voice message" without naming who sent it, describe it neutrally as "an audio playback device emitting sound" — NEVER invent a named sender or backstory fact absent from the original story text.
+
+7. Unified Stylistic Register (CONSISTENT ART MEDIUM VOCABULARY):
+   When a specific art style or medium is requested (e.g. "low-poly PS1 graphics", "90s anime cel", "stop-motion felt", "8-bit pixel art", "oil painting"):
+   You MUST apply that art style's specific descriptive vocabulary consistently across ALL parts of the prompt, including characterSheet, locationSheet, subject descriptions, lighting, textures, and backgrounds.
+   DO NOT allow competing descriptive registers (such as realistic photographic skin textures, subsurface scattering, or painterly brushstrokes) to compete with a low-poly or stylized medium.
+   For example, for "low-poly PS1 graphics": describe characters as "flat-shaded 32-bit low-polygon 3D character models with blocky geometric shoulders, low-resolution pixelated face textures, retro flat lighting", NOT "a realistically detailed person with lifelike skin".
 
 5. Start Frame Ingredients (Text to Image Prompt):
    For each scene, provide "startFramePrompt": a pristine text-to-image prompt to generate the initial reference keyframe image for image-to-video tools (Kling, Runway, Luma, Sora). Formatted as:
@@ -273,14 +288,41 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    CRITICAL CINEMATIC SHOT VARIETY:
    Vary camera sizes and angles across sequential beats to ensure rhythmic dynamic pacing. Do not default every beat to eye-level medium static shots. Vary size, angle, and movement deliberately based on what's happening in that beat.
 
+   CRITICAL ACTION AND POSE SPECIFICITY:
+   For all character action and pose descriptions in imagePrompt, ALWAYS explicitly include: (1) what the hands/arms are doing, (2) which direction the body and torso are facing, and (3) where the eyes are looking, not just a generic pose. For example: "Facing left toward the horizon, right arm raised, pointing at the volcano, eyes following the gesture" instead of "a person standing there."
+
+   SINGLE VISUAL FOCUS PER BEAT (NO CONFUSED HYBRID COMPOSITIONS):
+   Every beat MUST focus on exactly ONE clear visual subject or action.
+   NEVER combine two competing framing requests into a single beat (e.g. DO NOT write one prompt trying to frame a close-up on an object AND a character's reaction in the same image). Trying to show both in one prompt produces confused hybrid compositions with oversized foreground objects and floating background characters.
+   If a story moment involves both an object/detail AND a character's reaction, split it into two separate sequential beats: Beat A (extreme close-up on object) and Beat B (close-up character reaction).
+
+   STRICT NARRATIVE FAITHFULNESS (NO UNSTATED FACTUAL INVENTIONS):
+   Do NOT invent fictitious specific story facts, character names, senders, or plot details that are NOT present in the narration or already locked in characterSheet/locationSheet.
+   If the narration mentions "a voice message" or "a mysterious phone call" without stating who sent or made it, describe it neutrally as "an audio playback device emitting a recorded voice" — NEVER invent a named sender, fictitious relative, or arbitrary backstory fact absent from the original story text.
+
+   UNIFIED STYLISTIC REGISTER (CONSISTENT ART MEDIUM VOCABULARY):
+   When a specific art style or medium is requested (e.g. "low-poly PS1 graphics", "90s anime cel animation", "stop-motion felt", "8-bit pixel art", "claymation", "oil painting"):
+   You MUST apply that art style's specific descriptive vocabulary consistently across ALL parts of the prompt — including characterSheet, locationSheet, subject descriptions, lighting, textures, and backgrounds.
+   DO NOT allow competing descriptive registers (such as realistic photographic skin textures, subsurface scattering, or painterly brushwork) to compete with a low-poly or stylized medium.
+   For example, for "low-poly PS1 graphics": describe characters as "flat-shaded 32-bit low-polygon 3D character models with blocky geometric shoulders, low-resolution pixelated face textures, flat retro 90s lighting", NOT "a realistically detailed person with lifelike skin".
+
+   VISUAL SOUND EFFECT RULE (IMAGE MODE ONLY):
+   Check styleProfile.artStyle and characterStyle input.
+   IF AND ONLY IF the visual style is illustrated or comic-adjacent (e.g. stickman, anime, manga, comic book, cartoon, pop-art, graphic novel, line illustration — NOT photorealistic film / 3D realistic rendering):
+   - You MAY optionally add a "visualSoundEffect" string field (e.g. "CRASH!", "SPLASH!", "BAM!", "ZAP!", "WHAM!", "BOOM!", "THUD!") to beats representing sudden high-impact action or physical collisions.
+   - USE SPARINGLY! Only populate on genuine impact moments, not every beat.
+   - When "visualSoundEffect" is populated, the "imagePrompt" MUST describe this sound effect as bold lettering integrated into the scene artwork, styled to match the illustration (e.g. 'integrated bold stylized comic lettering reading "CRASH!" in the artwork background with dynamic action lines'), NOT a caption appended outside the image.
+   - IF the style is photorealistic or realistic film, "visualSoundEffect" MUST be omitted.
+
    Each beat must specify:
    - "beatIndex": integer (1, 2, 3...)
    - "textSpan": the exact words from the scene's narratorLine that this visual beat covers (MAX 8 WORDS).
    - "shotType": explicit cinematography shot size (e.g., "extreme-wide", "wide", "medium", "close-up", "extreme-close-up")
    - "cameraAngle": explicit camera angle (e.g., "eye-level", "high-angle", "low-angle", "birds-eye", "worms-eye", "dutch-tilt")
    - "cameraMovement": cinematic motion cue (e.g., "Slow Push-In", "Static Frame", "Tracking Subject", "Smooth Pan", "Low Dolly Glide", "Aerial Drift")
+   - "visualSoundEffect": optional string for comic-style bold sound effect lettering (e.g. "CRASH!", "SPLASH!") for illustrated styles on impact beats only. Omit for photorealistic style.
    - "imagePrompt": a structured cinematic prompt formatted according to the formula:
-     [Shot Type & Camera Angle] of [Subject with exact character appearance details word-for-word from characterSheet], [Key Action/Beat] in [Exact Location Details word-for-word from locationSheet], [Lighting & Color Grade]. [Aspect ratio and style anchors: ${defaultAspectRatio}, ${characterStyle || 'cinematic rendering'}].
+     [Shot Type & Camera Angle] of [Subject with exact character appearance details word-for-word from characterSheet], [Key Action/Beat with specific hands, torso facing direction, and eye gaze], [Integrated bold comic sound effect lettering if visualSoundEffect is present] in [Exact Location Details word-for-word from locationSheet], [Lighting & Color Grade]. [Aspect ratio and style anchors: ${defaultAspectRatio}, ${characterStyle || 'cinematic rendering'}].
    - "estimatedSeconds": estimated spoken narration duration in seconds (HARD CEILING: MAXIMUM 2.0 SECONDS, typically 1.0 to 1.8 seconds).
 
 5. Duration and Pacing:
@@ -559,12 +601,29 @@ ${durationInstruction}`;
         finalImagePrompt += ` ${styleProfileWording}`;
       }
 
+      // Sanitize visualSoundEffect (Image mode only; illustrated / comic styles only)
+      let visualSoundEffect: string | undefined = undefined;
+      const lowerArtStyle = (sanitizedStyleProfile.artStyle + ' ' + (characterStyle || '')).toLowerCase();
+      const isIllustratedStyle = /(comic|cartoon|anime|manga|illustrated|illustration|stickman|pop-art|sketch|graphic novel|drawing|cel-animation|risograph|chibi|doodle|toon)/.test(lowerArtStyle);
+
+      const rawSFX = removeEmDashes(beat.visualSoundEffect || beat.visual_sound_effect || '');
+      if (isIllustratedStyle && !isVideoMode && rawSFX && rawSFX.trim().length > 0) {
+        const cleanSFX = rawSFX.trim().toUpperCase().replace(/[^A-Z0-9!?-]/g, '');
+        if (cleanSFX.length > 0) {
+          visualSoundEffect = cleanSFX.endsWith('!') ? cleanSFX : `${cleanSFX}!`;
+          if (!finalImagePrompt.toUpperCase().includes(visualSoundEffect)) {
+            finalImagePrompt += ` Integrated bold stylized comic lettering reading "${visualSoundEffect}" in the artwork background with dynamic action lines.`;
+          }
+        }
+      }
+
       return {
         beatIndex,
         textSpan,
         shotType,
         cameraAngle,
         cameraMovement,
+        visualSoundEffect,
         imagePrompt: removeEmDashes(finalImagePrompt),
         estimatedSeconds: typeof beat.estimatedSeconds === 'number' && beat.estimatedSeconds > 0
           ? beat.estimatedSeconds

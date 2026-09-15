@@ -25,6 +25,7 @@ import {
   Table,
   Clapperboard,
   Image as ImageIcon,
+  Zap,
 } from 'lucide-react';
 
 interface ResultsViewProps {
@@ -802,6 +803,12 @@ export default function ResultsView({
                                     <span className="truncate">{beat.cameraMovement}</span>
                                   </div>
                                 )}
+                                {beat.visualSoundEffect && (
+                                  <div className="flex items-center gap-1 text-[8px] font-editorial-meta font-bold text-purple-300">
+                                    <Zap size={8} className="text-purple-400 shrink-0" />
+                                    <span className="truncate">SFX: {beat.visualSoundEffect}</span>
+                                  </div>
+                                )}
                               </div>
 
                               <div className="pt-1.5 border-t border-white/5 flex items-center justify-between gap-1">
@@ -844,6 +851,12 @@ export default function ResultsView({
                                   <span className="stamp-chip">
                                     <Video size={9} className="mr-1 text-[#9C9C96] shrink-0 sm:w-2.5 sm:h-2.5" />
                                     {beat.cameraMovement}
+                                  </span>
+                                )}
+                                {beat.visualSoundEffect && (
+                                  <span className="stamp-chip bg-purple-950/60 text-purple-300 border-purple-800/50 font-bold">
+                                    <Zap size={9} className="mr-1 text-purple-400 shrink-0 sm:w-2.5 sm:h-2.5" />
+                                    SFX: {beat.visualSoundEffect}
                                   </span>
                                 )}
                                 <span className="font-editorial-meta text-[9px] sm:text-[10px] text-emerald-400">
@@ -905,6 +918,19 @@ export default function ResultsView({
                                 &ldquo;{beat.textSpan}&rdquo;
                               </div>
                             </div>
+
+                            {beat.visualSoundEffect && (
+                              <div className="p-2.5 bg-purple-950/20 border border-purple-800/40 rounded flex items-center justify-between">
+                                <div className="flex items-center space-x-2">
+                                  <Zap size={14} className="text-purple-400 shrink-0" />
+                                  <div>
+                                    <span className="font-editorial-meta text-[9px] text-purple-300 tracking-wider uppercase block">Visual Sound Effect (Comic Lettering)</span>
+                                    <span className="font-bold text-xs text-purple-200 tracking-wide">{beat.visualSoundEffect}</span>
+                                  </div>
+                                </div>
+                                <span className="text-[9px] font-editorial-meta text-purple-400/80 italic">Integrated into image artwork</span>
+                              </div>
+                            )}
 
                             {/* Prompt for this Beat (Video Prompt in video mode, Visual Image Prompt in image mode) */}
                             <div className="space-y-1">

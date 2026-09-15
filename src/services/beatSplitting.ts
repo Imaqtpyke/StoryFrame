@@ -218,6 +218,8 @@ export function enforceBeatCeilings(
             basePrompt.replace(/^\[.*?\]\s*/, '');
         }
 
+        const subSFX = subIdx === 0 ? originalBeat.visualSoundEffect : undefined;
+
         validatedBeats.push({
           beatIndex: globalBeatCounter++,
           textSpan: subPhrase,
@@ -226,6 +228,7 @@ export function enforceBeatCeilings(
           shotType: subShotType,
           cameraAngle: subCameraAngle,
           cameraMovement: subCameraMove,
+          visualSoundEffect: subSFX,
         });
       });
     } else {

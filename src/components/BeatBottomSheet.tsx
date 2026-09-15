@@ -12,7 +12,8 @@ import {
   Clock,
   Sparkles,
   Clapperboard,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Zap,
 } from 'lucide-react';
 
 interface BeatBottomSheetProps {
@@ -150,6 +151,12 @@ export default function BeatBottomSheet({
               {beat.cameraMovement}
             </span>
           )}
+          {beat.visualSoundEffect && (
+            <span className="stamp-chip text-[9px] bg-purple-950/60 text-purple-300 border-purple-800/50 font-bold">
+              <Zap size={9} className="mr-1 text-purple-400 shrink-0" />
+              SFX: {beat.visualSoundEffect}
+            </span>
+          )}
           <span className="font-editorial-meta text-[9px] text-emerald-400/90 ml-auto flex items-center gap-0.5">
             <Clock size={9} />
             ~{beat.estimatedSeconds}s
@@ -187,6 +194,19 @@ export default function BeatBottomSheet({
               &ldquo;{beat.textSpan}&rdquo;
             </div>
           </div>
+
+          {beat.visualSoundEffect && (
+            <div className="p-2.5 bg-purple-950/20 border border-purple-800/40 rounded flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Zap size={14} className="text-purple-400 shrink-0" />
+                <div>
+                  <span className="font-editorial-meta text-[9px] text-purple-300 tracking-wider uppercase block">Visual Sound Effect (Comic Lettering)</span>
+                  <span className="font-bold text-xs text-purple-200 tracking-wide">{beat.visualSoundEffect}</span>
+                </div>
+              </div>
+              <span className="text-[9px] font-editorial-meta text-purple-400/80 italic">Baked into image artwork</span>
+            </div>
+          )}
 
           {/* Structured Visual / Video Prompt */}
           <div className="space-y-1.5">
