@@ -100,6 +100,63 @@ export default function GeneratorForm({
   const [keyFeedback, setKeyFeedback] = useState<string | null>(null);
   const [formValidationNotice, setFormValidationNotice] = useState<string | null>(null);
 
+  // Progressive illumination and stage tracking for breakdown generation
+  const [progress, setProgress] = useState(0);
+  const [progressPhase, setProgressPhase] = useState('');
+
+  useEffect(() => {
+    let animationFrameId: number;
+    if (isLoading) {
+      setProgress(2);
+      setProgressPhase('Analyzing screenplay structure...');
+      const startTime = performance.now();
+
+      const animate = (currentTime: number) => {
+        const elapsed = (currentTime - startTime) / 1000;
+
+        let p = 0;
+        if (elapsed < 2.0) {
+          // Smooth ease-out entry: 2% to 28%
+          const t = elapsed / 2.0;
+          p = 2 + (1 - Math.pow(1 - t, 2)) * 26;
+          setProgressPhase('Analyzing screenplay structure...');
+        } else if (elapsed < 5.0) {
+          // Steady cinematic cruise: 28% to 58%
+          const t = (elapsed - 2.0) / 3.0;
+          p = 28 + t * 30;
+          setProgressPhase('Extracting character staging & locations...');
+        } else if (elapsed < 9.0) {
+          // Directing beats & camera staging: 58% to 82%
+          const t = (elapsed - 5.0) / 4.0;
+          p = 58 + t * 24;
+          setProgressPhase('Directing camera angles & kinematic staging...');
+        } else if (elapsed < 14.0) {
+          // Visual prompts & anchors: 82% to 93%
+          const t = (elapsed - 9.0) / 5.0;
+          p = 82 + (1 - Math.pow(1 - t, 2)) * 11;
+          setProgressPhase('Synthesizing visual prompts & anchors...');
+        } else {
+          // Asymptotic soft crawl approaching 96%
+          const extra = (1 - Math.exp(-(elapsed - 14.0) / 5.0)) * 3;
+          p = 93 + extra;
+          setProgressPhase('Finalizing production storyboard...');
+        }
+
+        setProgress(Math.min(96, Math.max(2, p)));
+        animationFrameId = requestAnimationFrame(animate);
+      };
+
+      animationFrameId = requestAnimationFrame(animate);
+    } else {
+      setProgress(0);
+      setProgressPhase('');
+    }
+
+    return () => {
+      if (animationFrameId) cancelAnimationFrame(animationFrameId);
+    };
+  }, [isLoading]);
+
   useEffect(() => {
     setKeyInput(apiKey);
     setRememberOptIn(rememberInSession);
@@ -663,23 +720,65 @@ export default function GeneratorForm({
           </div>
         </div>
 
-        {/* Generate Button: Primary scale ~38-42px mobile, ~46-48px desktop */}
-        <div className="pt-1 sm:pt-2 flex justify-center">
+        {/* Generate Button with progressive illumination bar */}
+        <div className="pt-1 sm:pt-2 flex flex-col items-center justify-center">
           <button
             type="submit"
             id="generate-scenes-button"
             disabled={isLoading || !story.trim()}
-            className="w-full sm:w-auto px-6 sm:px-10 py-2.5 sm:py-3.5 min-h-[42px] sm:min-h-[48px] bg-white text-black hover:bg-[#EAEAE6] active:bg-[#D4D4D0] disabled:opacity-40 disabled:cursor-not-allowed font-display text-sm sm:text-base font-medium tracking-tight rounded-[2px] transition-all flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl"
+            className={`relative w-full sm:w-auto min-w-[260px] sm:min-w-[340px] min-h-[44px] sm:min-h-[48px] font-display text-sm sm:text-base font-medium tracking-tight rounded-[2px] transition-all flex items-center justify-center overflow-hidden shadow-lg ${
+              isLoading
+                ? 'p-0 bg-[#141413] border border-white/25 cursor-wait shadow-[0_0_30px_rgba(0,0,0,0.85)]'
+                : 'px-6 sm:px-10 py-2.5 sm:py-3.5 bg-white text-black hover:bg-[#EAEAE6] active:bg-[#D4D4D0] disabled:opacity-40 disabled:cursor-not-allowed hover:shadow-xl'
+            }`}
           >
             {isLoading ? (
               <>
-                <RefreshCw size={16} className="animate-spin sm:w-[18px] sm:h-[18px]" />
-                <span>Generating {generationMode === 'video' ? 'Video' : 'Storyboard'} Breakdown...</span>
+                {/* 1. Base Dim Layer: dark obsidian background with crisp pure white text */}
+                <div className="w-full min-h-[44px] sm:min-h-[48px] px-6 sm:px-10 py-2.5 sm:py-3.5 flex items-center justify-center space-x-2.5 text-white select-none">
+                  <RefreshCw size={15} className="animate-spin text-white/80 shrink-0" />
+                  <span className="font-display text-xs sm:text-sm font-medium tracking-tight text-white">
+                    Generating {generationMode === 'video' ? 'Video' : 'Storyboard'} Breakdown...
+                  </span>
+                </div>
+
+                {/* 2. Light Progress Fill Layer: bright white illumination with crisp black text clipped to progress */}
+                <div
+                  className="absolute inset-0 bg-white text-black flex items-center justify-center space-x-2.5 px-6 sm:px-10 py-2.5 sm:py-3.5 select-none pointer-events-none z-10"
+                  style={{ clipPath: `inset(0 ${Math.max(0, 100 - progress)}% 0 0)` }}
+                >
+                  <RefreshCw size={15} className="animate-spin text-black shrink-0" />
+                  <span className="font-display text-xs sm:text-sm font-bold tracking-tight text-black">
+                    Generating {generationMode === 'video' ? 'Video' : 'Storyboard'} Breakdown...
+                  </span>
+                </div>
+
+                {/* 3. Luminous Leading Edge Beam & Trailing Ambient Light */}
+                {progress > 0.5 && progress < 99.5 && (
+                  <>
+                    <div
+                      className="absolute top-0 bottom-0 w-[2px] bg-white shadow-[0_0_14px_4px_rgba(255,255,255,0.95)] pointer-events-none z-20"
+                      style={{ left: `${progress}%` }}
+                    />
+                    <div
+                      className="absolute top-0 bottom-0 w-6 -ml-6 bg-gradient-to-r from-transparent to-white/25 pointer-events-none z-15"
+                      style={{ left: `${progress}%` }}
+                    />
+                  </>
+                )}
               </>
             ) : (
               <span>{generationMode === 'video' ? 'Generate Video Breakdown' : 'Generate Breakdown'}</span>
             )}
           </button>
+
+          {/* Real-time generation phase indicator while loading */}
+          {isLoading && (
+            <div className="mt-2.5 flex items-center justify-center space-x-2 text-[11px] font-editorial-meta text-[#A0A09A] tracking-wider animate-in fade-in duration-300">
+              <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse shrink-0 shadow-[0_0_6px_white]" />
+              <span className="truncate max-w-[300px] sm:max-w-none">{progressPhase}</span>
+            </div>
+          )}
         </div>
 
         {/* Configure Model Options Toggle */}
