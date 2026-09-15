@@ -191,6 +191,13 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    DO NOT allow competing descriptive registers (such as realistic photographic skin textures, subsurface scattering, or painterly brushstrokes) to compete with a low-poly or stylized medium.
    For example, for "low-poly PS1 graphics": describe characters as "flat-shaded 32-bit low-polygon 3D character models with blocky geometric shoulders, low-resolution pixelated face textures, retro flat lighting", NOT "a realistically detailed person with lifelike skin".
 
+ 8. NO REAL OR IDENTIFIABLE PERSON NAMES IN VISUAL PROMPTS:
+   NEVER use a real, identifiable person's actual proper name (e.g. "Juliane Koepcke", "Maria Koepcke", "Elon Musk", "Napoleon Bonaparte", "Albert Einstein") in characterSheet keys, imagePrompt, videoPrompt, or startFramePrompt — even when the story is clearly based on real historical or true events and you recognize exactly who it is describing. Multiple downstream AI image and video generators refuse to generate prompts containing real people's names.
+   Instead, describe people using generic role labels based on how the story describes them (e.g. "the 17-year-old female survivor", "her mother", "the 19th-century French general", "the theoretical physicist").
+   characterSheet keys MUST be generic role labels (e.g. "the teenage survivor"), NEVER proper names of real people.
+   MYTHOLOGICAL & LEGENDARY EXCEPTION: Mythological, legendary, and folkloric figures (e.g., Hercules, Zeus, King Arthur, Robin Hood, Thor, Gilgamesh) are EXEMPT. Name them normally in characterSheet and visual prompts since they have no real-world photographic existence and function as fictional archetypes. When a figure is part real and part legend (e.g. King Arthur, Vlad the Impaler / Dracula), treat them as the legendary version and name them freely.
+   IMPORTANT EXCEPTION: This restriction ONLY applies to visual prompt fields (characterSheet, imagePrompt, videoPrompt, startFramePrompt). The narratorLine spoken script CAN and SHOULD still state real names, historical facts, dates, and context since it is purely the voiceover script and not fed into an image or video generator.
+
 5. Start Frame Ingredients (Text to Image Prompt):
    For each scene, provide "startFramePrompt": a pristine text-to-image prompt to generate the initial reference keyframe image for image-to-video tools (Kling, Runway, Luma, Sora). Formatted as:
    [Shot framing and angle] of [Subject with exact character details], [Initial frame pose] in [Setting/Location Details], [Lighting & Color palette], ${defaultAspectRatio}, ${characterStyle || 'cinematic rendering'}.
@@ -209,7 +216,8 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
 STRICT CONSTRAINTS:
 1. DO NOT use em dashes anywhere (do not use "\\u2014", "\\u2013", or "--"). Use commas, periods, or parentheses instead.
 2. Platform and Framing: Target platform is "${platform || (isLongForm ? 'YouTube' : 'TikTok')}". Format is ${isLongForm ? '16:9 widescreen' : '9:16 vertical'}.
-3. You MUST respond with ONLY a valid JSON object matching this schema:
+3. NO REAL OR IDENTIFIABLE PERSON NAMES IN VISUAL PROMPTS: NEVER use real, identifiable people's actual proper names (historical figures, celebrities, private individuals) in characterSheet keys, imagePrompt, videoPrompt, or startFramePrompt — use generic role descriptions instead. Mythological, legendary, and folkloric figures (Hercules, Zeus, King Arthur, Robin Hood) are EXEMPT and should be named normally. Real names are permitted in narratorLine.
+4. You MUST respond with ONLY a valid JSON object matching this schema:
 {
   "styleProfile": {
     "artStyle": "...",
@@ -300,11 +308,18 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    Do NOT invent fictitious specific story facts, character names, senders, or plot details that are NOT present in the narration or already locked in characterSheet/locationSheet.
    If the narration mentions "a voice message" or "a mysterious phone call" without stating who sent or made it, describe it neutrally as "an audio playback device emitting a recorded voice" — NEVER invent a named sender, fictitious relative, or arbitrary backstory fact absent from the original story text.
 
-   UNIFIED STYLISTIC REGISTER (CONSISTENT ART MEDIUM VOCABULARY):
+    UNIFIED STYLISTIC REGISTER (CONSISTENT ART MEDIUM VOCABULARY):
    When a specific art style or medium is requested (e.g. "low-poly PS1 graphics", "90s anime cel animation", "stop-motion felt", "8-bit pixel art", "claymation", "oil painting"):
    You MUST apply that art style's specific descriptive vocabulary consistently across ALL parts of the prompt — including characterSheet, locationSheet, subject descriptions, lighting, textures, and backgrounds.
    DO NOT allow competing descriptive registers (such as realistic photographic skin textures, subsurface scattering, or painterly brushwork) to compete with a low-poly or stylized medium.
    For example, for "low-poly PS1 graphics": describe characters as "flat-shaded 32-bit low-polygon 3D character models with blocky geometric shoulders, low-resolution pixelated face textures, flat retro 90s lighting", NOT "a realistically detailed person with lifelike skin".
+
+   NO REAL OR IDENTIFIABLE PERSON NAMES IN VISUAL PROMPTS:
+   NEVER use a real, identifiable person's actual proper name (e.g. "Juliane Koepcke", "Maria Koepcke", "Elon Musk", "Napoleon Bonaparte", "Albert Einstein") in characterSheet keys, imagePrompt, videoPrompt, or startFramePrompt — even when the story is clearly based on real historical or true events and you recognize exactly who it is describing. Multiple downstream AI image and video generators refuse to generate prompts containing real people's names.
+   Instead, describe real people using generic role labels based on how the story describes them (e.g. "the 17-year-old female survivor", "her mother", "the 19th-century French general", "the theoretical physicist").
+   characterSheet keys for real people MUST be generic role labels (e.g. "the teenage survivor"), NEVER proper names of real individuals.
+   MYTHOLOGICAL & LEGENDARY EXCEPTION: Mythological, legendary, and folkloric figures (e.g., Hercules, Zeus, King Arthur, Robin Hood, Thor, Gilgamesh) are EXEMPT. Name them normally in characterSheet and visual prompts since they have no real-world photographic existence and function as fictional archetypes. When a figure is part real and part legend (e.g. King Arthur, Vlad the Impaler / Dracula), treat them as the legendary version and name them freely.
+   IMPORTANT EXCEPTION: This restriction ONLY applies to visual prompt fields (characterSheet, imagePrompt, videoPrompt, startFramePrompt). The narratorLine spoken script CAN and SHOULD still state real names, historical facts, dates, and context since it is purely the voiceover script and not fed into an image or video generator.
 
    VISUAL SOUND EFFECT RULE (IMAGE MODE ONLY):
    Check styleProfile.artStyle and characterStyle input.
@@ -332,7 +347,8 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
 STRICT CONSTRAINTS:
 1. DO NOT use em dashes anywhere (do not use "\\u2014", "\\u2013", or "--"). Use commas, periods, or parentheses instead.
 2. Platform and Framing: Target platform is "${platform || (isLongForm ? 'YouTube' : 'TikTok')}". Format is ${isLongForm ? '16:9 widescreen' : '9:16 vertical'}.
-3. You MUST respond with ONLY a valid JSON object matching this schema:
+3. NO REAL OR IDENTIFIABLE PERSON NAMES IN VISUAL PROMPTS: NEVER use real, identifiable people's actual proper names (historical figures, celebrities, private individuals) in characterSheet keys, imagePrompt, videoPrompt, or startFramePrompt — use generic role descriptions instead. Mythological, legendary, and folkloric figures (Hercules, Zeus, King Arthur, Robin Hood) are EXEMPT and should be named normally. Real names are permitted in narratorLine.
+4. You MUST respond with ONLY a valid JSON object matching this schema:
 {
   "styleProfile": {
     "artStyle": "Specific art medium or style...",
