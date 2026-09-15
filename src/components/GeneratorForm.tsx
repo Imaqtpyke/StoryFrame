@@ -114,35 +114,27 @@ export default function GeneratorForm({
       const animate = (currentTime: number) => {
         const elapsed = (currentTime - startTime) / 1000;
 
-        let p = 0;
-        if (elapsed < 2.0) {
-          // Smooth ease-out entry: 2% to 28%
-          const t = elapsed / 2.0;
-          p = 2 + (1 - Math.pow(1 - t, 2)) * 26;
+        // Smooth continuous exponential curve: 0 to ~96% with perfectly continuous velocity
+        // Phase 1 (0-3s): 2% -> 38%
+        // Phase 2 (3-7s): 38% -> 72%
+        // Phase 3 (7-12s): 72% -> 89%
+        // Phase 4 (12s+): 89% -> 95.5% asymptotic calm drift
+        const progressTarget = 96 * (1 - Math.exp(-elapsed / 4.5));
+        const p = Math.min(95.8, Math.max(2, progressTarget));
+
+        if (elapsed < 2.8) {
           setProgressPhase('Analyzing screenplay structure...');
-        } else if (elapsed < 5.0) {
-          // Steady cinematic cruise: 28% to 58%
-          const t = (elapsed - 2.0) / 3.0;
-          p = 28 + t * 30;
+        } else if (elapsed < 6.5) {
           setProgressPhase('Extracting character staging & locations...');
-        } else if (elapsed < 9.0) {
-          // Directing beats & camera staging: 58% to 82%
-          const t = (elapsed - 5.0) / 4.0;
-          p = 58 + t * 24;
+        } else if (elapsed < 11.0) {
           setProgressPhase('Directing camera angles & kinematic staging...');
-        } else if (elapsed < 14.0) {
-          // Visual prompts & anchors: 82% to 93%
-          const t = (elapsed - 9.0) / 5.0;
-          p = 82 + (1 - Math.pow(1 - t, 2)) * 11;
+        } else if (elapsed < 15.0) {
           setProgressPhase('Synthesizing visual prompts & anchors...');
         } else {
-          // Asymptotic soft crawl approaching 96%
-          const extra = (1 - Math.exp(-(elapsed - 14.0) / 5.0)) * 3;
-          p = 93 + extra;
           setProgressPhase('Finalizing production storyboard...');
         }
 
-        setProgress(Math.min(96, Math.max(2, p)));
+        setProgress(p);
         animationFrameId = requestAnimationFrame(animate);
       };
 
@@ -720,7 +712,7 @@ export default function GeneratorForm({
           </div>
         </div>
 
-        {/* Generate Button with progressive illumination bar */}
+        {/* Generate Button with progressive liquid illumination bar */}
         <div className="pt-1 sm:pt-2 flex flex-col items-center justify-center">
           <button
             type="submit"
@@ -734,7 +726,7 @@ export default function GeneratorForm({
           >
             {isLoading ? (
               <>
-                {/* 1. Base Dim Layer: dark obsidian background with crisp pure white text */}
+                {/* 1. Base Dim Track: dark obsidian background with crisp pure white text */}
                 <div className="w-full min-h-[44px] sm:min-h-[48px] px-6 sm:px-10 py-2.5 sm:py-3.5 flex items-center justify-center space-x-2.5 text-white select-none">
                   <RefreshCw size={15} className="animate-spin text-white/80 shrink-0" />
                   <span className="font-display text-xs sm:text-sm font-medium tracking-tight text-white">
@@ -747,40 +739,35 @@ export default function GeneratorForm({
                   className="absolute inset-0 bg-white text-black flex items-center justify-center space-x-2.5 px-6 sm:px-10 py-2.5 sm:py-3.5 select-none pointer-events-none z-10"
                   style={{ clipPath: `inset(0 ${Math.max(0, 100 - progress)}% 0 0)` }}
                 >
+                  {/* Subtle fluid surface shimmer reflection across filled white light */}
+                  <div className="absolute inset-0 w-1/3 bg-gradient-to-r from-transparent via-white/40 to-transparent pointer-events-none animate-liquid-shimmer" />
+
                   <RefreshCw size={15} className="animate-spin text-black shrink-0" />
                   <span className="font-display text-xs sm:text-sm font-bold tracking-tight text-black">
                     Generating {generationMode === 'video' ? 'Video' : 'Storyboard'} Breakdown...
                   </span>
                 </div>
 
-                {/* 3. Luminous Animated Leading Edge with Traveling Light Wave & Forward Flare */}
+                {/* 3. Liquid Light Wave Crest: seamless periodic sine wave leading edge */}
                 {progress > 0.5 && progress < 99.5 && (
-                  <>
-                    {/* Primary pulsating vertical laser beam */}
-                    <div
-                      className="absolute top-0 bottom-0 w-[2.5px] bg-white animate-edge-beam pointer-events-none z-20"
-                      style={{ left: `${progress}%` }}
-                    >
-                      {/* Vertical traveling light photon pulse scanning down the edge */}
-                      <div className="absolute left-[-2px] right-[-2px] h-6 bg-gradient-to-b from-transparent via-white to-transparent shadow-[0_0_12px_4px_rgba(255,255,255,1)] animate-beam-scan pointer-events-none" />
-
-                      {/* Top & bottom precision micro-points */}
-                      <div className="absolute top-0 left-[-1.5px] w-1.5 h-1.5 rounded-full bg-white shadow-[0_0_8px_white] pointer-events-none" />
-                      <div className="absolute bottom-0 left-[-1.5px] w-1.5 h-1.5 rounded-full bg-white shadow-[0_0_8px_white] pointer-events-none" />
+                  <div
+                    className="absolute -top-12 -bottom-12 w-6 pointer-events-none z-20 overflow-visible"
+                    style={{ left: `calc(${progress}% - 2px)` }}
+                  >
+                    {/* Secondary Wave Crest (Translucent Liquid Depth) */}
+                    <div className="absolute inset-0 w-full h-full animate-liquid-wave-back opacity-40">
+                      <svg viewBox="0 0 20 200" preserveAspectRatio="none" className="w-full h-full fill-white">
+                        <path d="M0,0 C8,25 16,50 8,75 C0,90 8,100 0,100 C8,125 16,150 8,175 C0,190 8,200 0,200 L0,0 Z" />
+                      </svg>
                     </div>
 
-                    {/* Forward-facing ambient projector flare casting into unlit dark area */}
-                    <div
-                      className="absolute top-0 bottom-0 w-8 bg-gradient-to-r from-white/30 via-white/10 to-transparent animate-forward-light pointer-events-none z-15"
-                      style={{ left: `${progress}%` }}
-                    />
-
-                    {/* Subtle trailing light tail */}
-                    <div
-                      className="absolute top-0 bottom-0 w-4 -ml-4 bg-gradient-to-r from-transparent to-white/20 pointer-events-none z-15"
-                      style={{ left: `${progress}%` }}
-                    />
-                  </>
+                    {/* Primary Wave Crest (Solid White Organic Wave with Ambient Glow) */}
+                    <div className="absolute inset-0 w-full h-full animate-liquid-wave-front animate-liquid-glow">
+                      <svg viewBox="0 0 20 200" preserveAspectRatio="none" className="w-full h-full fill-white">
+                        <path d="M0,0 C12,25 2,50 10,75 C14,88 4,100 0,100 C12,125 2,150 10,175 C14,188 4,200 0,200 L0,0 Z" />
+                      </svg>
+                    </div>
+                  </div>
                 )}
               </>
             ) : (
