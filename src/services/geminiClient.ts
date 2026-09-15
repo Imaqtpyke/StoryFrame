@@ -176,10 +176,12 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - audio: ALWAYS state "no dialogue, ambient sound only" or "silent".
    - duration: in seconds matching ${targetVideoDuration} seconds.
 
-5. Single Visual Focus Per Beat (NO CONFUSED HYBRID COMPOSITIONS):
-   Every beat MUST focus on exactly ONE clear visual subject or action.
-   NEVER combine two competing framing requests into a single beat (e.g. DO NOT write one prompt trying to frame a close-up on an object AND a character's reaction in the same image). Trying to show both in one prompt produces confused hybrid compositions.
-   If a story moment involves both an object/detail AND a character's reaction, split it into two separate sequential beats: Beat A (close-up on object) and Beat B (character reaction).
+5. Single Visual Focus & Distinct Beat Progression (NO CONFUSED HYBRID OR REDUNDANT BEATS):
+   Every beat MUST focus on exactly ONE clear visual subject or action, and EVERY beat MUST present a distinct visual progression that its neighbor does NOT.
+   - NO CONFUSED HYBRIDS: NEVER combine two competing framing requests into a single beat (e.g. DO NOT write one prompt trying to frame a close-up on an object AND a character's reaction in the same image). Split into Beat A (close-up on object) and Beat B (character reaction).
+   - BEAT CEILING IS A MAXIMUM, NOT A MANDATE: The beat duration/word ceiling is a MAXIMUM safety limit, NOT a mandate to force every sentence into extra beats. Do NOT split a sentence into extra phrase beats if adjacent splits would render as the exact same image.
+   - EVERY BEAT MUST BE VISUALLY DISTINCT: Each beat must show something its neighbor does not (a different focal detail, framing distance, moment in the action, or emotional shift in pose/expression). If two adjacent phrase splits would render as the same picture, merge them into ONE beat instead of generating redundant near-duplicates.
+   - STRICT SHOT TYPE & PROSE ALIGNMENT (TIGHT SHOTS): When a beat's shotType is close-up, macro, extreme-close-up, or detail shot, its prompt prose MUST actually describe that tight framing and specific focal detail (e.g. extreme close-up on buckled seatbelt straps, frayed nylon, water droplets, wide eyes), NOT the same full-body or wide environmental description used in a wider beat nearby. The camera framing tag and the prompt prose MUST strictly match.
 
 6. Strict Narrative Faithfulness (NO UNSTATED FACTUAL INVENTIONS):
    Do NOT invent fictitious specific story facts, character names, senders, or plot details that are NOT present in the narration or already locked in characterSheet/locationSheet.
@@ -284,17 +286,17 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - "beats": an array of fine-grained visual beats.
 
 4. Granular Visual Beat Partitioning & HARD CEILING RULE:
-   HARD CEILING: No beat may represent more than 2 seconds of estimated narration or 8 words, whichever is smaller.
-   A sentence like "If you think volcanoes take thousands of years to grow," MUST be split into micro-beats:
-   - "If you think" [~1.2s]
-   - "volcanoes" [~1.0s]
-   - "take thousands of years" [~1.8s]
-   - "to grow," [~1.1s]
-   Split each scene's narratorLine at EVERY natural phrase pause, comma, conjunction, preposition, and clause boundary.
-   NEVER leave a whole sentence as one static beat. Expect 6 to 12 fine-grained micro-beats per scene.
+   HARD CEILING (SAFETY MAXIMUM): No beat may represent more than 2 seconds of estimated narration or 8 words, whichever is smaller.
+   CRITICAL: This ceiling is a MAXIMUM safety limit, NOT a mandate to over-split sentences into redundant duplicate images.
+   DO NOT force a sentence into extra phrase beats if adjacent splits would end up rendering as the exact same image.
+   Every beat MUST show something distinct that its neighbor does NOT (a different focal detail, framing distance, sequential phase of action, or emotional beat reflected in pose and expression).
+   If two adjacent phrase-level splits would render as the exact same picture, merge them into ONE single cohesive beat instead of generating redundant near-duplicates.
    
    CRITICAL CINEMATIC SHOT VARIETY:
    Vary camera sizes and angles across sequential beats to ensure rhythmic dynamic pacing. Do not default every beat to eye-level medium static shots. Vary size, angle, and movement deliberately based on what's happening in that beat.
+
+   STRICT SHOT TYPE & PROSE ALIGNMENT (CLOSE-UP / MACRO / EXTREME-CLOSE-UP):
+   When a beat's shotType is close-up, macro, extreme-close-up, or detail shot, its imagePrompt text prose MUST actually describe that tight framing and specific focal detail (e.g., extreme close-up on buckled seatbelt straps, frayed nylon webbing, rain droplets on a metal latch, wide panicked eyes), NOT the same full-body or wide environmental description used in a wider beat nearby. The camera framing tag and the text prose MUST strictly match!
 
    CRITICAL ACTION AND POSE SPECIFICITY:
    For all character action and pose descriptions in imagePrompt, ALWAYS explicitly include: (1) what the hands/arms are doing, (2) which direction the body and torso are facing, and (3) where the eyes are looking, not just a generic pose. For example: "Facing left toward the horizon, right arm raised, pointing at the volcano, eyes following the gesture" instead of "a person standing there."

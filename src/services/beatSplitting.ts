@@ -68,6 +68,128 @@ export function getPreviewText(text: string, maxWords: number = 4): string {
 }
 
 /**
+ * Check if a shot type represents a tight close-up / macro framing
+ */
+export function isTightShot(shotType?: string): boolean {
+  if (!shotType) return false;
+  const lower = shotType.toLowerCase();
+  return (
+    lower.includes('close-up') ||
+    lower.includes('macro') ||
+    lower.includes('detail') ||
+    lower.includes('tight') ||
+    lower.includes('ots') ||
+    lower.includes('over-the-shoulder')
+  );
+}
+
+/**
+ * Ensure tight shot types (close-up, macro, extreme-close-up) have matching prose descriptions
+ * that describe specific tight details rather than full-body / wide environmental scenes.
+ */
+export function alignProseWithShotType(beat: Beat): Beat {
+  const shotType = beat.shotType || '';
+  if (!isTightShot(shotType)) {
+    return beat;
+  }
+
+  let prompt = beat.imagePrompt || '';
+  const textSpan = (beat.textSpan || '').trim();
+
+  // Check if prompt describes a wide shot or full-body view
+  const widePatterns = [
+    /\bwide shot\b/i,
+    /\bextreme-wide\b/i,
+    /\bwide establishing shot\b/i,
+    /\bpanoramic view\b/i,
+    /\baerial view\b/i,
+    /\bfull-body shot\b/i,
+    /\bwide view of\b/i
+  ];
+
+  const hasWidePhrases = widePatterns.some(p => p.test(prompt));
+
+  if (hasWidePhrases || !/\b(close-up|macro|detail|texture|focusing|zoomed|extreme close-up|hands|face|eyes|fingers|strap|buckle|fabric)\b/i.test(prompt)) {
+    // Re-frame the opening prompt to be a true tight shot matching shotType
+    const cleanShotLabel = shotType.trim();
+    const cleanAngle = (beat.cameraAngle || 'eye-level').trim();
+
+    // Remove any existing bracketed camera header if present
+    const promptWithoutHeader = prompt.replace(/^\[.*?\]\s*/, '');
+
+    // Replace wide opening framing with tight detail framing
+    let reframedPrompt = promptWithoutHeader;
+    for (const pattern of widePatterns) {
+      reframedPrompt = reframedPrompt.replace(pattern, `${cleanShotLabel} focusing tightly on ${textSpan || 'the specific detail'}`);
+    }
+
+    if (!/\b(close-up|macro|detail|texture|focusing)\b/i.test(reframedPrompt)) {
+      reframedPrompt = `[${cleanShotLabel}, ${cleanAngle}, Extreme close-up detail] Focusing tightly on the specific detail of "${textSpan}": ${reframedPrompt}`;
+    } else if (!reframedPrompt.startsWith('[')) {
+      reframedPrompt = `[${cleanShotLabel}, ${cleanAngle}] ${reframedPrompt}`;
+    }
+
+    return {
+      ...beat,
+      imagePrompt: reframedPrompt
+    };
+  }
+
+  return beat;
+}
+
+/**
+ * Merge adjacent near-duplicate beats within a scene if they lack distinct visual progression
+ * or if keeping them separate creates redundant identical images.
+ */
+export function mergeRedundantNearDuplicateBeats(
+  beats: Beat[],
+  maxBeatWords: number = MAX_BEAT_WORDS,
+  maxBeatSeconds: number = MAX_BEAT_SECONDS
+): Beat[] {
+  if (beats.length <= 1) return beats;
+
+  const merged: Beat[] = [];
+  let current = beats[0];
+
+  for (let i = 1; i < beats.length; i++) {
+    const next = beats[i];
+    const combinedWords = getWordCount(current.textSpan + ' ' + next.textSpan);
+    const combinedSeconds = (current.estimatedSeconds || 1.5) + (next.estimatedSeconds || 1.5);
+
+    // Normalize prompts for comparison
+    const normPrompt1 = (current.imagePrompt || '').replace(/\[.*?\]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const normPrompt2 = (next.imagePrompt || '').replace(/\[.*?\]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+    // Check if prompts are near-identical or share identical subject & action descriptions
+    const isIdenticalPrompt = normPrompt1 === normPrompt2 || (normPrompt1.length > 20 && normPrompt2.length > 20 && (normPrompt1.includes(normPrompt2) || normPrompt2.includes(normPrompt1)));
+    const fitsWithinCeiling = combinedWords <= maxBeatWords && combinedSeconds <= maxBeatSeconds;
+
+    if (fitsWithinCeiling && isIdenticalPrompt) {
+      // Merge next into current
+      current = {
+        ...current,
+        textSpan: `${current.textSpan.trim()} ${next.textSpan.trim()}`,
+        estimatedSeconds: Math.round(combinedSeconds * 10) / 10,
+        // Keep current's prompt or pick longer
+        imagePrompt: current.imagePrompt.length >= next.imagePrompt.length ? current.imagePrompt : next.imagePrompt
+      };
+    } else {
+      merged.push(alignProseWithShotType(current));
+      current = next;
+    }
+  }
+
+  merged.push(alignProseWithShotType(current));
+
+  // Re-index beats
+  return merged.map((b, idx) => ({
+    ...b,
+    beatIndex: idx + 1
+  }));
+}
+
+/**
  * Cleanly extract sub-phrases from a broad phrase using punctuation,
  * conjunctions, prepositions, and grammatical clauses.
  */
@@ -155,11 +277,14 @@ export function enforceBeatCeilings(
     ? (targetVideoDuration <= 5 ? 10 : targetVideoDuration <= 10 ? 14 : 18)
     : MAX_BEAT_WORDS;
 
+  // Step 1: Deduplicate near-duplicate adjacent beats that lack distinct visual progression
+  const deduplicatedInputBeats = mergeRedundantNearDuplicateBeats(beats, maxBeatWords, maxBeatSeconds);
+
   const validatedBeats: Beat[] = [];
   let globalBeatCounter = 1;
 
-  for (let bIdx = 0; bIdx < beats.length; bIdx++) {
-    const originalBeat = beats[bIdx];
+  for (let bIdx = 0; bIdx < deduplicatedInputBeats.length; bIdx++) {
+    const originalBeat = deduplicatedInputBeats[bIdx];
     const text = (originalBeat.textSpan || '').trim();
     const wordCount = getWordCount(text);
     const seconds = typeof originalBeat.estimatedSeconds === 'number' && originalBeat.estimatedSeconds > 0
@@ -172,11 +297,11 @@ export function enforceBeatCeilings(
 
     if (!exceedsWords && !exceedsSeconds) {
       // Valid beat within ceiling
-      validatedBeats.push({
+      validatedBeats.push(alignProseWithShotType({
         ...originalBeat,
         beatIndex: globalBeatCounter++,
         estimatedSeconds: Math.min(maxBeatSeconds, Math.max(0.8, Math.round(seconds * 10) / 10)),
-      });
+      }));
       continue;
     }
 
@@ -214,13 +339,18 @@ export function enforceBeatCeilings(
         // Adapt the prompt to emphasize this sub-beat's visual focus
         let adaptedPrompt = basePrompt;
         if (subIdx > 0) {
-          adaptedPrompt = `[${subShotType}, ${subCameraAngle}, ${subCameraMove}] Focusing on "${subPhrase}": ` +
-            basePrompt.replace(/^\[.*?\]\s*/, '');
+          if (isTightShot(subShotType)) {
+            adaptedPrompt = `[${subShotType}, ${subCameraAngle}, ${subCameraMove}] Extreme close-up detail shot focusing tightly on "${subPhrase}": ` +
+              basePrompt.replace(/^\[.*?\]\s*/, '').replace(/\bwide shot of\b/gi, 'detail shot of').replace(/\bwide establishing shot of\b/gi, 'close-up of');
+          } else {
+            adaptedPrompt = `[${subShotType}, ${subCameraAngle}, ${subCameraMove}] Focusing on "${subPhrase}": ` +
+              basePrompt.replace(/^\[.*?\]\s*/, '');
+          }
         }
 
         const subSFX = subIdx === 0 ? originalBeat.visualSoundEffect : undefined;
 
-        validatedBeats.push({
+        validatedBeats.push(alignProseWithShotType({
           beatIndex: globalBeatCounter++,
           textSpan: subPhrase,
           imagePrompt: adaptedPrompt,
@@ -229,15 +359,15 @@ export function enforceBeatCeilings(
           cameraAngle: subCameraAngle,
           cameraMovement: subCameraMove,
           visualSoundEffect: subSFX,
-        });
+        }));
       });
     } else {
       // Could not sub-split phrase further, clamp seconds
-      validatedBeats.push({
+      validatedBeats.push(alignProseWithShotType({
         ...originalBeat,
         beatIndex: globalBeatCounter++,
         estimatedSeconds: Math.min(maxBeatSeconds, seconds),
-      });
+      }));
     }
   }
 
