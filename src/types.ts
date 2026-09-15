@@ -18,6 +18,7 @@ export interface Beat {
   cameraAngle?: string;
   cameraMovement?: string;
   visualSoundEffect?: string;
+  temporalAnchor?: string;
 }
 
 export interface Scene {

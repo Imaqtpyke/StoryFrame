@@ -14,6 +14,7 @@ import {
   Clapperboard,
   Image as ImageIcon,
   Zap,
+  Calendar,
 } from 'lucide-react';
 
 interface BeatBottomSheetProps {
@@ -149,6 +150,12 @@ export default function BeatBottomSheet({
             <span className="stamp-chip text-[9px]">
               <Video size={9} className="mr-1 text-[#9C9C96] shrink-0" />
               {beat.cameraMovement}
+            </span>
+          )}
+          {beat.temporalAnchor && (
+            <span className="stamp-chip text-[9px] bg-amber-950/60 text-amber-300 border-amber-800/60 font-medium">
+              <Calendar size={9} className="mr-1 text-amber-400 shrink-0" />
+              {beat.temporalAnchor}
             </span>
           )}
           {beat.visualSoundEffect && (

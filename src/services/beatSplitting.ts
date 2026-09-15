@@ -349,6 +349,7 @@ export function enforceBeatCeilings(
         }
 
         const subSFX = subIdx === 0 ? originalBeat.visualSoundEffect : undefined;
+        const subTemporal = subIdx === 0 ? originalBeat.temporalAnchor : undefined;
 
         validatedBeats.push(alignProseWithShotType({
           beatIndex: globalBeatCounter++,
@@ -359,6 +360,7 @@ export function enforceBeatCeilings(
           cameraAngle: subCameraAngle,
           cameraMovement: subCameraMove,
           visualSoundEffect: subSFX,
+          temporalAnchor: subTemporal,
         }));
       });
     } else {

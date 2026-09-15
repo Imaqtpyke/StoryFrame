@@ -97,6 +97,49 @@ function inferCameraMovement(imagePrompt: string, beatIndex: number): string {
   return DEFAULT_CAMERA_MOVEMENTS[(beatIndex - 1) % DEFAULT_CAMERA_MOVEMENTS.length];
 }
 
+/**
+ * Detects whether a beat's text span or spoken phrase contains a date, year, century, decade, or elapsed time anchor.
+ * Examples: "in 1945", "1945", "for 29 years", "in 1974", "October 14, 1962", "in the 1920s", "300 BC".
+ */
+export function extractTemporalAnchor(text: string): string | null {
+  if (!text || !text.trim()) return null;
+  const clean = text.trim();
+
+  // Pattern 1: Exact 4-digit years or year ranges with optional 'in/by/around' (e.g. "in 1945", "1945", "1939-1945", "1800s", "the 1920s")
+  const yearMatch = clean.match(/\b(?:in|by|around|during|circa|c\.)?\s*([12]\d{3}s?|[5-9]\d{2}(?:\s*(?:BC|AD|BCE|CE))?)\b/i);
+  if (yearMatch && yearMatch[1]) {
+    const yr = yearMatch[1].trim();
+    // Verify it's a plausible year number (not just a generic 4-digit number like 1000 meters)
+    const num = parseInt(yr.replace(/\D/g, ''), 10);
+    if ((num >= 1000 && num <= 2100) || /BC|BCE|AD|CE/i.test(yr)) {
+      return yr;
+    }
+  }
+
+  // Pattern 2: Specific calendar dates (e.g. "December 24, 1971", "July 4th", "August 1945", "June 6, 1944")
+  const dateMatch = clean.match(/\b((?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember))\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*[12]\d{3})?)\b/i);
+  if (dateMatch && dateMatch[1]) {
+    return dateMatch[1].trim();
+  }
+
+  // Pattern 3: Elapsed duration phrases (e.g. "for 29 years", "after 30 years", "over 10 decades", "over 50 years", "for nearly three decades")
+  const durationMatch = clean.match(/\b((?:for|after|nearly|over|past|across)\s+(?:\d+|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|forty|fifty)\s+(?:years|decades|centuries|months))\b/i);
+  if (durationMatch && durationMatch[1]) {
+    return durationMatch[1].trim();
+  }
+
+  // Pattern 4: Standalone year token like "1945" or "1974"
+  const standaloneYear = clean.match(/\b([12]\d{3})\b/);
+  if (standaloneYear && standaloneYear[1]) {
+    const num = parseInt(standaloneYear[1], 10);
+    if (num >= 1200 && num <= 2100) {
+      return standaloneYear[1];
+    }
+  }
+
+  return null;
+}
+
 export async function generateStoryDirectly(
   req: GenerateStoryRequest,
   apiKey: string
@@ -222,6 +265,11 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    The opening beat of the whole story (Scene 1, Beat 1) MUST NOT be pure atmosphere, fog, smoke, an empty landscape/environment, an empty establishing shot, or a slow fade, UNLESS the story's actual first sentence is genuinely and explicitly about that atmospheric element.
    Scene 1 Beat 1 MUST show something concrete and visually arresting: the main character, a striking action already in motion, or the single most compelling visual subject/element the story possesses. A weak, abstract, or empty opening loses short-form viewers in the first two seconds.
 
+ 10. TEMPORAL ANCHOR & HISTORICAL ACCURACY RULE (YEARS, DATES, AND DURATIONS):
+   If the narrator line, story sentence, or beat phrase mentions a date, year, century, decade, or time duration (e.g. "in 1945", "December 24, 1971", "for 29 years", "in the 1920s", "300 BC"):
+   - You MUST populate "temporalAnchor" on that beat with the exact date/year/duration phrase (e.g. "1945", "December 24, 1971", "for 29 years").
+   - In the beat's prompt ("imagePrompt" / text-to-video prompt), you MUST explicitly describe and display that era/year/date in the visual description (e.g. "1945 era military gear, authentic World War II period attire", or "displaying 29 years of weathering, aged weathered attire representing 29 years elapsed"). This guarantees historical and temporal accuracy.
+
 5. Start Frame Ingredients (Text to Image Prompt):
    For each scene, provide "startFramePrompt": a pristine text-to-image prompt to generate the initial reference keyframe image for image-to-video tools (Kling, Runway, Luma, Sora). Formatted as:
    [Shot framing and angle] of [Subject with exact character details], [Initial frame pose] in [Setting/Location Details], [Lighting & Color palette], ${defaultAspectRatio}, ${characterStyle || 'cinematic rendering'}.
@@ -235,7 +283,8 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - "shotType": explicit cinematography shot size (e.g., "extreme-wide", "wide", "medium", "close-up", "extreme-close-up")
    - "cameraAngle": explicit camera angle (e.g., "eye-level", "high-angle", "low-angle", "birds-eye", "worms-eye", "dutch-tilt")
    - "cameraMovement": cinematic camera motion cue (e.g., "Slow forward push-in", "Smooth lateral tracking", "Gentle crane tilt down")
-   - "imagePrompt": A complete, standalone, production-ready TEXT TO VIDEO PROMPT formatted for AI video generators capturing this specific beat's action, shot framing, camera angle, motion, physics, lighting, and audio: "no dialogue, ambient sound only". Aspect ratio: ${defaultAspectRatio}.
+   - "temporalAnchor": optional string for explicit year, date, or elapsed duration (e.g. "1945", "December 24, 1971", "for 29 years")
+   - "imagePrompt": A complete, standalone, production-ready TEXT TO VIDEO PROMPT formatted for AI video generators capturing this specific beat's action, shot framing, camera angle, motion, physics, lighting, and audio: "no dialogue, ambient sound only". If temporalAnchor is present, explicitly reflect that era/date and weathering in the visual description. Aspect ratio: ${defaultAspectRatio}.
 
 STRICT CONSTRAINTS:
 1. DO NOT use em dashes anywhere (do not use "\\u2014", "\\u2013", or "--"). Use commas, periods, or parentheses instead.
@@ -274,6 +323,7 @@ STRICT CONSTRAINTS:
           "shotType": string,
           "cameraAngle": string,
           "cameraMovement": string,
+          "temporalAnchor": "string (optional: e.g. 1945, December 24, 1971, for 29 years)",
           "imagePrompt": string
         }
       ]
@@ -364,6 +414,11 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    The opening beat of the whole story (Scene 1, Beat 1) MUST NOT be pure atmosphere, fog, smoke, an empty landscape/environment, an empty establishing shot, or a slow fade, UNLESS the story's actual first sentence is genuinely and explicitly about that atmospheric element.
    Scene 1 Beat 1 MUST show something concrete and visually arresting: the main character, a striking action already in motion, or the single most compelling visual subject/element the story possesses. A weak, abstract, or empty opening loses short-form viewers in the first two seconds.
 
+   TEMPORAL ANCHOR & HISTORICAL ACCURACY RULE (YEARS, DATES, AND DURATIONS):
+   If the narrator line, story sentence, or beat phrase mentions a date, year, century, decade, or time duration (e.g. "in 1945", "December 24, 1971", "for 29 years", "in the 1920s", "300 BC"):
+   - You MUST populate "temporalAnchor" on that beat with the exact date/year/duration phrase (e.g. "1945", "December 24, 1971", "for 29 years").
+   - In the beat's prompt ("imagePrompt"), you MUST explicitly describe and display that era/year/date in the visual description (e.g. "1945 era military gear, authentic World War II period attire", or "displaying 29 years of weathering, aged weathered attire representing 29 years elapsed"). This guarantees historical and temporal accuracy.
+
    VISUAL SOUND EFFECT RULE (IMAGE MODE ONLY):
    Check styleProfile.artStyle and characterStyle input.
    IF AND ONLY IF the visual style is illustrated or comic-adjacent (e.g. stickman, anime, manga, comic book, cartoon, pop-art, graphic novel, line illustration — NOT photorealistic film / 3D realistic rendering):
@@ -379,6 +434,7 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - "cameraAngle": explicit camera angle (e.g., "eye-level", "high-angle", "low-angle", "birds-eye", "worms-eye", "dutch-tilt")
    - "cameraMovement": cinematic motion cue (e.g., "Slow Push-In", "Static Frame", "Tracking Subject", "Smooth Pan", "Low Dolly Glide", "Aerial Drift")
    - "visualSoundEffect": optional string for comic-style bold sound effect lettering (e.g. "CRASH!", "SPLASH!") for illustrated styles on impact beats only. Omit for photorealistic style.
+   - "temporalAnchor": optional string for explicit year, date, or elapsed duration (e.g. "1945", "December 24, 1971", "for 29 years").
    - "imagePrompt": a structured cinematic prompt formatted according to the formula:
      [Shot Type & Camera Angle] of [Subject with exact character appearance details word-for-word from characterSheet], [Key Action/Beat with specific hands, torso facing direction, and eye gaze], [Integrated bold comic sound effect lettering if visualSoundEffect is present] in [Exact Location Details word-for-word from locationSheet], [Lighting & Color Grade]. [Aspect ratio and style anchors: ${defaultAspectRatio}, ${characterStyle || 'cinematic rendering'}].
    - "estimatedSeconds": estimated spoken narration duration in seconds (HARD CEILING: MAXIMUM 2.0 SECONDS, typically 1.0 to 1.8 seconds).
@@ -418,6 +474,7 @@ STRICT CONSTRAINTS:
           "shotType": "extreme-wide | wide | medium | close-up | extreme-close-up",
           "cameraAngle": "eye-level | high-angle | low-angle | birds-eye | worms-eye | dutch-tilt",
           "cameraMovement": "Slow Push-In | Static Frame | Tracking...",
+          "temporalAnchor": "string (optional: e.g. 1945, for 29 years)",
           "imagePrompt": string,
           "estimatedSeconds": number
         }
@@ -685,6 +742,29 @@ ${durationInstruction}${customBeatsPrompt}`;
         }
       }
 
+      // Extract or preserve temporal anchor (e.g. "1945", "December 24, 1971", "for 29 years")
+      let temporalAnchor: string | undefined = undefined;
+      if (typeof beat.temporalAnchor === 'string' && beat.temporalAnchor.trim().length > 0) {
+        temporalAnchor = beat.temporalAnchor.trim();
+      } else {
+        const detected = extractTemporalAnchor(textSpan) || extractTemporalAnchor(narratorLine);
+        if (detected) {
+          temporalAnchor = detected;
+        }
+      }
+
+      // Ensure that if a temporal anchor exists, it is also explicitly reflected in the image/video prompt
+      if (temporalAnchor) {
+        const anchorLower = temporalAnchor.toLowerCase();
+        if (!finalImagePrompt.toLowerCase().includes(anchorLower)) {
+          if (/\d{4}/.test(temporalAnchor) || /century|decade|bc|bce|ad|ce/i.test(temporalAnchor)) {
+            finalImagePrompt += ` Historical setting/era: ${temporalAnchor}.`;
+          } else {
+            finalImagePrompt += ` Temporal anchor: ${temporalAnchor}.`;
+          }
+        }
+      }
+
       return {
         beatIndex,
         textSpan,
@@ -692,6 +772,7 @@ ${durationInstruction}${customBeatsPrompt}`;
         cameraAngle,
         cameraMovement,
         visualSoundEffect,
+        temporalAnchor,
         imagePrompt: removeEmDashes(finalImagePrompt),
         estimatedSeconds: typeof beat.estimatedSeconds === 'number' && beat.estimatedSeconds > 0
           ? beat.estimatedSeconds
