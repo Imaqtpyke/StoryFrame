@@ -59,8 +59,11 @@ export function cleanRedundantOnScreenText(prompt: string, anchor?: string): str
     cleaned = cleaned.replace(specificRegex, '');
   }
   // Remove generic on-screen year/date text overlay instructions
-  const genericDateRegex = /\s*(?:Featuring|With|Includes?|Displaying)\s+(?:large\\s+clear\\s+legible|bold\\s+stylized|prominent\\s+stylized|clear\\s+legible|bold)?\s*(?:on-screen\\s+text|text\\s+overlay|title\\s+text|typography)\s*(?:overlay)?\s*reading\s*["']?(?:[12]\d{3}s?|FOR\s+\d+\s+YEARS|DECEMBER\s+\d+|OCTOBER\s+\d+|JANUARY\s+\d+|AUGUST\s+\d+|JULY\s+\d+|JUNE\s+\d+|IN\s+\d{4})["']?[^.]*\.?/gi;
+  const genericDateRegex = /\s*(?:Featuring|With|Includes?|Displaying)\s+(?:large\s+clear\s+legible|bold\s+stylized|prominent\s+stylized|clear\s+legible|bold)?\s*(?:on-screen\s+text|text\s+overlay|title\s+text|typography)\s*(?:overlay)?\s*reading\s*["']?(?:[12]\d{3}s?|FOR\s+\d+\s+YEARS|DECEMBER\s+\d+|OCTOBER\s+\d+|JANUARY\s+\d+|AUGUST\s+\d+|JULY\s+\d+|JUNE\s+\d+|IN\s+\d{4})["']?[^.]*\.?/gi;
   cleaned = cleaned.replace(genericDateRegex, '');
+  // Also remove any residual phrases like 'Featuring large clear legible on-screen text reading "..." displayed above...'
+  const residualOverlayRegex = /\s*Featuring\s+large\s+clear\s+legible\s+on-screen\s+text\s+reading\s+["'][^"']+["']\s+displayed\s+above[^.]*\.?/gi;
+  cleaned = cleaned.replace(residualOverlayRegex, '');
   return cleaned.replace(/\s{2,}/g, ' ').trim();
 }
 
@@ -417,14 +420,11 @@ export function enforceBeatCeilings(
         let subTemporal: string | undefined = undefined;
         if (directSubAnchor) {
           subTemporal = directSubAnchor;
-        } else if (subIdx === 0 && originalBeat.temporalAnchor && !subPhrases.some((sp, idx) => idx > 0 && !!extractTemporalAnchor(sp))) {
-          // If the original beat had a temporal anchor and no other sub-phrase matched directly, assign solely to the first sub-beat
-          subTemporal = originalBeat.temporalAnchor;
         }
 
         // If this sub-beat does NOT have the temporal anchor, strip any copied/leftover date text overlay instructions
-        if (!subTemporal && originalBeat.temporalAnchor) {
-          adaptedPrompt = cleanRedundantOnScreenText(adaptedPrompt, originalBeat.temporalAnchor);
+        if (!subTemporal) {
+          adaptedPrompt = cleanRedundantOnScreenText(adaptedPrompt, originalBeat.temporalAnchor || undefined);
         }
 
         validatedBeats.push(alignProseWithShotType({

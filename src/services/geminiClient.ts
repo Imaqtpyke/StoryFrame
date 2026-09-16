@@ -667,31 +667,20 @@ ${durationInstruction}${customBeatsPrompt}`;
     }
 
     // Resolve single-beat temporal anchor assignment for this scene:
-    const beatSpanAnchors = rawBeats.map((b: any) => {
-      const span = removeEmDashes(b.textSpan || b.text_span || '');
-      return extractTemporalAnchor(span);
-    });
-    const sceneNarratorAnchor = extractTemporalAnchor(narratorLine);
-
-    // Track which beat index is assigned a temporal anchor
+    // CRITICAL: Only assign a temporal anchor to a beat if that beat's OWN textSpan explicitly contains a date/year
     const assignedBeatAnchorMap = new Map<number, string>();
-    beatSpanAnchors.forEach((anchor, bIdx) => {
+    rawBeats.forEach((b: any, bIdx: number) => {
+      const span = removeEmDashes(b.textSpan || b.text_span || '');
+      const anchor = extractTemporalAnchor(span);
       if (anchor) {
         assignedBeatAnchorMap.set(bIdx, anchor);
+      } else if (typeof b.temporalAnchor === 'string' && b.temporalAnchor.trim().length > 0) {
+        const directAnchor = extractTemporalAnchor(b.temporalAnchor);
+        if (directAnchor && directAnchor.toLowerCase() === span.toLowerCase()) {
+          assignedBeatAnchorMap.set(bIdx, directAnchor);
+        }
       }
     });
-
-    // If no individual beat textSpan directly contained a date:
-    if (assignedBeatAnchorMap.size === 0) {
-      // Check if Gemini explicitly set a temporalAnchor on a specific beat
-      const gBeatIdx = rawBeats.findIndex((b: any) => typeof b.temporalAnchor === 'string' && b.temporalAnchor.trim().length > 0);
-      if (gBeatIdx !== -1) {
-        assignedBeatAnchorMap.set(gBeatIdx, rawBeats[gBeatIdx].temporalAnchor.trim());
-      } else if (sceneNarratorAnchor) {
-        // Fallback: If the scene narration has a date, assign it strictly to the first beat (bIdx 0), NEVER all beats
-        assignedBeatAnchorMap.set(0, sceneNarratorAnchor);
-      }
-    }
 
     const sanitizedBeats = rawBeats.map((beat: any, bIdx: number) => {
       const beatIndex = typeof beat.beatIndex === 'number' ? beat.beatIndex : bIdx + 1;
@@ -770,7 +759,7 @@ ${durationInstruction}${customBeatsPrompt}`;
         }
       } else {
         // For beats WITHOUT a temporal anchor, strip any accidental or repeated date text overlay instructions
-        finalImagePrompt = cleanRedundantOnScreenText(finalImagePrompt, sceneNarratorAnchor || undefined);
+        finalImagePrompt = cleanRedundantOnScreenText(finalImagePrompt);
       }
 
       return {
@@ -969,7 +958,27 @@ ${durationInstruction}${customBeatsPrompt}`;
     };
   });
 
-  const calculatedTotalSeconds = sanitizedScenes.reduce((sum: number, s: any) => sum + s.estimatedSeconds, 0);
+  // Final Storyboard-level safety pass: ensure date text overlay and temporal anchors ONLY exist on beats whose spoken textSpan contains the date
+  const finalScenes = sanitizedScenes.map((scene: any) => ({
+    ...scene,
+    beats: scene.beats.map((beat: any) => {
+      const directAnchor = extractTemporalAnchor(beat.textSpan || '');
+      if (directAnchor) {
+        return {
+          ...beat,
+          temporalAnchor: directAnchor,
+        };
+      }
+      // If beat does not speak the date, scrub any leftover temporal anchor and date overlay instructions
+      return {
+        ...beat,
+        temporalAnchor: undefined,
+        imagePrompt: cleanRedundantOnScreenText(beat.imagePrompt || ''),
+      };
+    }),
+  }));
+
+  const calculatedTotalSeconds = finalScenes.reduce((sum: number, s: any) => sum + s.estimatedSeconds, 0);
   const totalSeconds = typeof parsedData.totalDurationSeconds === 'number' && parsedData.totalDurationSeconds > 0
     ? parsedData.totalDurationSeconds
     : calculatedTotalSeconds;
@@ -979,7 +988,7 @@ ${durationInstruction}${customBeatsPrompt}`;
     characterSheet: sanitizedCharacterSheet,
     locationSheet: sanitizedLocationSheet,
     totalDurationSeconds: totalSeconds,
-    scenes: sanitizedScenes,
+    scenes: finalScenes,
     generationMode: isVideoMode ? 'video' : 'image',
     targetVideoDuration: isVideoMode ? targetVideoDuration : undefined,
   };
