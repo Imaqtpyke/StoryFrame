@@ -3,7 +3,7 @@
 // API keys are strictly kept in browser memory / sessionStorage and never sent to any remote backend.
 
 import { GenerateStoryRequest, StoryGenerationResult, StyleProfile } from '../types';
-import { enforceBeatCeilings, extractTemporalAnchor, cleanRedundantOnScreenText } from './beatSplitting';
+import { enforceBeatCeilings, extractTemporalAnchor, cleanRedundantOnScreenText, sanitizeImagePromptShotFraming } from './beatSplitting';
 
 function removeEmDashes(text: string): string {
   if (!text) return text;
@@ -423,7 +423,8 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - "visualSoundEffect": optional string for comic-style bold sound effect lettering (e.g. "CRASH!", "SPLASH!") for illustrated styles on impact beats only. Omit for photorealistic style.
    - "temporalAnchor": optional string for explicit year, date, or elapsed duration (e.g. "1945", "December 24, 1971", "for 29 years").
    - "imagePrompt": a structured cinematic prompt formatted according to the formula:
-     [Shot Type & Camera Angle] of [Subject with exact character appearance details word-for-word from characterSheet], [Key Action & Staging: exact body angle (e.g. 3/4 screen-left, profile, frontal), gaze vector, hand/finger gestures, character staging (main character commanding focal thirds, side characters placed flanking or in depth reacting toward them), and kinetic pacing/tempo], [Integrated bold comic sound effect lettering if visualSoundEffect is present] in [Exact Location Details word-for-word from locationSheet], [Lighting & Color Grade]. [Aspect ratio and style anchors: ${defaultAspectRatio}, ${characterStyle || 'cinematic rendering'}].
+     [Subject with exact character appearance details word-for-word from characterSheet], [Key Action & Staging: exact body angle (e.g. 3/4 screen-left, profile, frontal), gaze vector, hand/finger gestures, character staging (main character commanding focal thirds, side characters placed flanking or in depth reacting toward them), and kinetic pacing/tempo], [Integrated bold comic sound effect lettering if visualSoundEffect is present] in [Exact Location Details word-for-word from locationSheet], [Lighting & Color Grade]. [Aspect ratio and style anchors: ${defaultAspectRatio}, ${characterStyle || 'cinematic rendering'}].
+     CRITICAL PROSE CONSTRAINT: "imagePrompt" MUST NEVER open with, or contain anywhere, words describing the camera shot framing, angle, or focus (e.g. NEVER include phrases like "Wide shot of...", "Extreme close-up detail shot focusing tightly on...", "Medium shot of...", or "Focusing on..."). Shot framing and camera angles live EXCLUSIVELY in the "shotType", "cameraAngle", and "cameraMovement" fields! "imagePrompt" MUST start directly with the scene subject, action, and setting.
    - "estimatedSeconds": estimated spoken narration duration in seconds (HARD CEILING: MAXIMUM 2.0 SECONDS, typically 1.0 to 1.8 seconds).
 
 5. Duration and Pacing:
@@ -960,11 +961,11 @@ ${durationInstruction}${customBeatsPrompt}`;
 
   // Final Storyboard-level safety pass:
   // 1. Ensure date text overlay and temporal anchors ONLY exist on beats whose spoken textSpan contains the date
-  // 2. Strip any leftover bracketed labels like [Shot, Angle, Movement] from prompt bodies
-  // 3. Compare adjacent beats within each scene and ensure visual progression without prompt duplication
+  // 2. Strip any leftover bracketed labels like [Shot, Angle, Movement] and any shot framing descriptions ("Wide shot of...", "Extreme close-up detail shot focusing tightly on...", etc.)
+  // 3. Compare adjacent beats within each scene and ensure visual progression without prompt duplication or shot framing
   const finalScenes = sanitizedScenes.map((scene: any) => {
     const rawBeats = scene.beats.map((beat: any) => {
-      let prompt = (beat.imagePrompt || '').replace(/^\[.*?\]\s*/, '').trim();
+      let prompt = sanitizeImagePromptShotFraming(beat.imagePrompt || '');
 
       const directAnchor = extractTemporalAnchor(beat.textSpan || '');
       if (directAnchor) {
@@ -998,7 +999,12 @@ ${durationInstruction}${customBeatsPrompt}`;
     };
 
     const distinctBeats = rawBeats.map((beat: any, bIdx: number) => {
-      if (bIdx === 0) return beat;
+      if (bIdx === 0) {
+        return {
+          ...beat,
+          imagePrompt: sanitizeImagePromptShotFraming(beat.imagePrompt || ''),
+        };
+      }
       const prevBeat = rawBeats[bIdx - 1];
       const prevCore = getCoreDescription(prevBeat.imagePrompt || '');
       const currCore = getCoreDescription(beat.imagePrompt || '');
@@ -1008,10 +1014,8 @@ ${durationInstruction}${customBeatsPrompt}`;
 
       if (isDuplicate) {
         const textSpan = (beat.textSpan || '').trim();
-        const cleanShot = (beat.shotType || 'Dynamic medium angle shot').trim();
-        const cleanAngle = (beat.cameraAngle || 'eye-level').trim();
-        // Replace duplicated core with distinct action & subject focus derived from its own textSpan
-        const distinctCore = `${cleanShot} from a ${cleanAngle} perspective, distinct visual moment specifically capturing "${textSpan}".`;
+        // Replace duplicated core with distinct action & subject focus derived from its own textSpan without framing labels
+        const distinctCore = `Visual moment specifically depicting and focusing on "${textSpan}".`;
         
         let newPrompt = beat.imagePrompt.replace(prevCore, distinctCore);
         if (newPrompt === beat.imagePrompt) {
@@ -1019,10 +1023,13 @@ ${durationInstruction}${customBeatsPrompt}`;
         }
         return {
           ...beat,
-          imagePrompt: newPrompt.replace(/^\[.*?\]\s*/, '').trim(),
+          imagePrompt: sanitizeImagePromptShotFraming(newPrompt),
         };
       }
-      return beat;
+      return {
+        ...beat,
+        imagePrompt: sanitizeImagePromptShotFraming(beat.imagePrompt || ''),
+      };
     });
 
     return {

@@ -47,6 +47,71 @@ export function extractTemporalAnchor(text: string): string | null {
 }
 
 /**
+ * Strips any shot framing words, camera angles, perspective descriptions,
+ * "focusing on" meta-framing, and bracketed labels from an imagePrompt.
+ * Runs in an iterative loop until no stacked prefixes or framing remain.
+ * The prompt must start directly with the scene description (subject, action, setting).
+ */
+export function sanitizeImagePromptShotFraming(prompt: string): string {
+  if (!prompt || typeof prompt !== 'string') return '';
+  let cleaned = prompt.trim();
+
+  let prev = '';
+  // Loop until string stabilizes (handles stacked/nested framing prefixes)
+  let iterations = 0;
+  while (cleaned !== prev && iterations < 10) {
+    prev = cleaned;
+    iterations++;
+
+    // 1. Strip any leading bracketed tokens like [Shot, Angle, Movement] or [Extreme Close-Up, Eye-Level]
+    cleaned = cleaned.replace(/^\[.*?\]\s*/, '');
+
+    // 2. Remove meta-framing sentences like:
+    // "Extreme close-up detail shot focusing tightly on '...':"
+    // "Focusing tightly on '...':"
+    // "Focusing on the specific detail of '...':"
+    // "Shot focusing on the words '...':"
+    cleaned = cleaned.replace(/^(?:[a-z0-9\s-]+\s+)?(?:shot\s+)?focusing\s+(?:tightly\s+|directly\s+|closely\s+)?on\s*(?:the\s+words?\s*|phrase\s*|the\s+specific\s+detail\s+of\s*)?['"][^'"]*['"](?:\s*from\s+a\s+[^,.:]+)?\s*[:,-]?\s*/i, '');
+    cleaned = cleaned.replace(/^focusing\s+(?:tightly\s+|directly\s+|closely\s+)?on\s*[^:,.-]+[:,-]\s*/i, '');
+    cleaned = cleaned.replace(/^visual\s+moment\s+(?:specifically\s+)?(?:depicting\s+and\s+focusing\s+on|capturing)\s*['"][^'"]*['"]\s*[:,-.]?\s*/i, '');
+
+    // 3. Remove opening shot/framing prefixes such as:
+    // "Extreme close-up detail shot of..."
+    // "Wide establishing shot of..."
+    // "Medium shot, low-angle of..."
+    // "Close-up shot of..."
+    // "Low-angle hero shot of..."
+    // "Dutch angle shot of..."
+    const openingFramingRegex = /^(?:(?:extreme[-\s]+)?(?:close[-\s]*up|wide|medium|macro|panoramic|aerial|establishing|full[-\s]*body|low[-\s]*angle|high[-\s]*angle|dutch[-\s]*angle|birds[-\s]*eye|worms[-\s]*eye|over[-\s]*the[-\s]*shoulder|ots|first[-\s]*person|pov|telephoto)\s+(?:detail\s+|hero\s+|cinematic\s+|establishing\s+|perspective\s+)?(?:shot|view|angle|framing|composition|perspective|take)?(?:\s*,\s*(?:low|high|dutch|eye[-\s]*level|worms[-\s]*eye|birds[-\s]*eye)[-\s]*(?:angle|tilt|level|view|shot)?)?\s*(?:of|showing|depicting|capturing|framing|features|featuring|:)?\s*)+/i;
+    cleaned = cleaned.replace(openingFramingRegex, '');
+
+    // 4. Remove simple opening shot names with colon or comma, e.g. "Medium shot: ..." or "Close-up: ..."
+    cleaned = cleaned.replace(/^(?:Extreme\s+close-up|Close-up|Medium\s+shot|Wide\s+shot|Macro\s+shot|Establishing\s+shot|Detail\s+shot|Low-angle\s+shot|High-angle\s+shot|Dutch-angle\s+shot|Aerial\s+shot|POV\s+shot)\s*[:,-]\s*/i, '');
+
+    // 5. Clean up any remaining leading "of " or colon/dashes/whitespace
+    cleaned = cleaned.replace(/^(?:of|showing|depicting)\s+/i, '');
+    cleaned = cleaned.replace(/^[:;,-]\s*/, '').trim();
+  }
+
+  // 6. Strip any inline / embedded shot framing phrases such as:
+  // ", in a wide establishing shot," or ", seen from a low-angle shot," or "captured in a close-up shot"
+  cleaned = cleaned.replace(/\b(?:captured\s+in|seen\s+from|framed\s+as|in)\s+a\s+(?:extreme[-\s]+close[-\s]*up|close[-\s]*up|wide|medium|macro|panoramic|aerial|establishing|low[-\s]*angle|high[-\s]*angle|dutch[-\s]*angle)\s+(?:shot|view|framing|perspective)\b/gi, '');
+  cleaned = cleaned.replace(/\b(?:extreme[-\s]+close[-\s]*up|close[-\s]*up|wide|medium|macro|panoramic|aerial|establishing|low[-\s]*angle|high[-\s]*angle|dutch[-\s]*angle)\s+(?:shot|framing|angle)\s*,\s*/gi, '');
+
+  // 7. Remove any residual bracketed tokens anywhere in the prompt
+  cleaned = cleaned.replace(/\[(?:Wide|Medium|Close-up|Macro|Extreme\s+Close-Up|Low-angle|High-angle|Dutch\s+Angle|Eye-level|Static|Pan|Tilt|Zoom|Tracking)[^\]]*\]\s*/gi, '');
+
+  // 8. Clean up double spaces, dangling commas, and ensure capitalized first letter
+  cleaned = cleaned.replace(/\s{2,}/g, ' ').replace(/\s*,\s*,/g, ',').replace(/^[,:;\s-]+/, '').trim();
+
+  if (cleaned.length > 0) {
+    cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  }
+
+  return cleaned;
+}
+
+/**
  * Strips redundant or accidental on-screen text overlay instructions regarding a date/year
  * from prompts of beats that do NOT introduce that date.
  */
@@ -148,19 +213,10 @@ export function isTightShot(shotType?: string): boolean {
 }
 
 /**
- * Ensure tight shot types (close-up, macro, extreme-close-up) have prompt prose
- * that cleanly strips any wide/establishing opening prefixes and any leftover bracketed headers.
+ * Sanitizes beat prompt prose to strip all shot framing prefixes and leftover bracketed headers.
  */
 export function alignProseWithShotType(beat: Beat): Beat {
-  let prompt = (beat.imagePrompt || '').replace(/^\[.*?\]\s*/, '').trim();
-  const shotType = beat.shotType || '';
-
-  if (isTightShot(shotType)) {
-    // Strip conflicting wide opening phrases if present
-    prompt = prompt
-      .replace(/^(?:wide\s+establishing\s+shot|wide\s+shot|extreme-wide\s+shot|panoramic\s+view|aerial\s+view|full-body\s+shot)\s*(?:of)?\s*/i, '')
-      .trim();
-  }
+  const prompt = sanitizeImagePromptShotFraming(beat.imagePrompt || '');
 
   return {
     ...beat,
