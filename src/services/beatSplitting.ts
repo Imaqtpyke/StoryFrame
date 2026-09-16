@@ -148,58 +148,24 @@ export function isTightShot(shotType?: string): boolean {
 }
 
 /**
- * Ensure tight shot types (close-up, macro, extreme-close-up) have matching prose descriptions
- * that describe specific tight details rather than full-body / wide environmental scenes.
+ * Ensure tight shot types (close-up, macro, extreme-close-up) have prompt prose
+ * that cleanly strips any wide/establishing opening prefixes and any leftover bracketed headers.
  */
 export function alignProseWithShotType(beat: Beat): Beat {
+  let prompt = (beat.imagePrompt || '').replace(/^\[.*?\]\s*/, '').trim();
   const shotType = beat.shotType || '';
-  if (!isTightShot(shotType)) {
-    return beat;
+
+  if (isTightShot(shotType)) {
+    // Strip conflicting wide opening phrases if present
+    prompt = prompt
+      .replace(/^(?:wide\s+establishing\s+shot|wide\s+shot|extreme-wide\s+shot|panoramic\s+view|aerial\s+view|full-body\s+shot)\s*(?:of)?\s*/i, '')
+      .trim();
   }
 
-  let prompt = beat.imagePrompt || '';
-  const textSpan = (beat.textSpan || '').trim();
-
-  // Check if prompt describes a wide shot or full-body view
-  const widePatterns = [
-    /\bwide shot\b/i,
-    /\bextreme-wide\b/i,
-    /\bwide establishing shot\b/i,
-    /\bpanoramic view\b/i,
-    /\baerial view\b/i,
-    /\bfull-body shot\b/i,
-    /\bwide view of\b/i
-  ];
-
-  const hasWidePhrases = widePatterns.some(p => p.test(prompt));
-
-  if (hasWidePhrases || !/\b(close-up|macro|detail|texture|focusing|zoomed|extreme close-up|hands|face|eyes|fingers|strap|buckle|fabric)\b/i.test(prompt)) {
-    // Re-frame the opening prompt to be a true tight shot matching shotType
-    const cleanShotLabel = shotType.trim();
-    const cleanAngle = (beat.cameraAngle || 'eye-level').trim();
-
-    // Remove any existing bracketed camera header if present
-    const promptWithoutHeader = prompt.replace(/^\[.*?\]\s*/, '');
-
-    // Replace wide opening framing with tight detail framing
-    let reframedPrompt = promptWithoutHeader;
-    for (const pattern of widePatterns) {
-      reframedPrompt = reframedPrompt.replace(pattern, `${cleanShotLabel} focusing tightly on ${textSpan || 'the specific detail'}`);
-    }
-
-    if (!/\b(close-up|macro|detail|texture|focusing)\b/i.test(reframedPrompt)) {
-      reframedPrompt = `[${cleanShotLabel}, ${cleanAngle}, Extreme close-up detail] Focusing tightly on the specific detail of "${textSpan}": ${reframedPrompt}`;
-    } else if (!reframedPrompt.startsWith('[')) {
-      reframedPrompt = `[${cleanShotLabel}, ${cleanAngle}] ${reframedPrompt}`;
-    }
-
-    return {
-      ...beat,
-      imagePrompt: reframedPrompt
-    };
-  }
-
-  return beat;
+  return {
+    ...beat,
+    imagePrompt: prompt
+  };
 }
 
 /**
@@ -355,98 +321,12 @@ export function enforceBeatCeilings(
       ? originalBeat.estimatedSeconds
       : Math.max(1.0, Math.min(maxBeatSeconds, Math.round(wordCount * 0.35 * 10) / 10));
 
-    // Check if this beat violates the ceiling:
-    const exceedsWords = wordCount > maxBeatWords;
-    const exceedsSeconds = seconds > maxBeatSeconds;
-
-    if (!exceedsWords && !exceedsSeconds) {
-      // Valid beat within ceiling
-      validatedBeats.push(alignProseWithShotType({
-        ...originalBeat,
-        beatIndex: globalBeatCounter++,
-        estimatedSeconds: Math.min(maxBeatSeconds, Math.max(0.8, Math.round(seconds * 10) / 10)),
-      }));
-      continue;
-    }
-
-    // Split this beat into micro-beats
-    const subPhrases = splitPhraseIntoSubBeats(text, maxBeatWords);
-
-    // If splitting produced multiple sub-phrases:
-    if (subPhrases.length > 1) {
-      const basePrompt = originalBeat.imagePrompt || '';
-
-      subPhrases.forEach((subPhrase, subIdx) => {
-        const subWords = getWordCount(subPhrase);
-        const subSeconds = Math.min(
-          maxBeatSeconds,
-          Math.max(0.8, Math.round((subWords * 0.35 + 0.3) * 10) / 10)
-        );
-
-        // Dynamically rotate shot types, camera angles, and camera movements so each micro-beat feels varied
-        const shotCycleIndex = (sceneIndex * 3 + globalBeatCounter) % DYNAMIC_SHOT_CYCLE.length;
-        const moveCycleIndex = (sceneIndex * 2 + globalBeatCounter) % DYNAMIC_MOVEMENT_CYCLE.length;
-        const angleCycleIndex = (sceneIndex * 4 + globalBeatCounter) % DYNAMIC_ANGLE_CYCLE.length;
-        
-        const subShotType = subIdx === 0 && originalBeat.shotType
-          ? originalBeat.shotType
-          : DYNAMIC_SHOT_CYCLE[shotCycleIndex];
-
-        const subCameraAngle = originalBeat.cameraAngle
-          ? originalBeat.cameraAngle
-          : DYNAMIC_ANGLE_CYCLE[angleCycleIndex];
-
-        const subCameraMove = subIdx === 0 && originalBeat.cameraMovement
-          ? originalBeat.cameraMovement
-          : DYNAMIC_MOVEMENT_CYCLE[moveCycleIndex];
-
-        // Adapt the prompt to emphasize this sub-beat's visual focus
-        let adaptedPrompt = basePrompt;
-        if (subIdx > 0) {
-          if (isTightShot(subShotType)) {
-            adaptedPrompt = `[${subShotType}, ${subCameraAngle}, ${subCameraMove}] Extreme close-up detail shot focusing tightly on "${subPhrase}": ` +
-              basePrompt.replace(/^\[.*?\]\s*/, '').replace(/\bwide shot of\b/gi, 'detail shot of').replace(/\bwide establishing shot of\b/gi, 'close-up of');
-          } else {
-            adaptedPrompt = `[${subShotType}, ${subCameraAngle}, ${subCameraMove}] Focusing on "${subPhrase}": ` +
-              basePrompt.replace(/^\[.*?\]\s*/, '');
-          }
-        }
-
-        const subSFX = subIdx === 0 ? originalBeat.visualSoundEffect : undefined;
-
-        // SINGLE-BEAT TEMPORAL ANCHOR RULE:
-        // Only assign temporalAnchor to the specific sub-beat whose phrase actually contains the date
-        const directSubAnchor = extractTemporalAnchor(subPhrase);
-        let subTemporal: string | undefined = undefined;
-        if (directSubAnchor) {
-          subTemporal = directSubAnchor;
-        }
-
-        // If this sub-beat does NOT have the temporal anchor, strip any copied/leftover date text overlay instructions
-        if (!subTemporal) {
-          adaptedPrompt = cleanRedundantOnScreenText(adaptedPrompt, originalBeat.temporalAnchor || undefined);
-        }
-
-        validatedBeats.push(alignProseWithShotType({
-          beatIndex: globalBeatCounter++,
-          textSpan: subPhrase,
-          imagePrompt: adaptedPrompt,
-          estimatedSeconds: subSeconds,
-          shotType: subShotType,
-          cameraAngle: subCameraAngle,
-          cameraMovement: subCameraMove,
-          visualSoundEffect: subSFX,
-          temporalAnchor: subTemporal,
-        }));
-      });
-    } else {
-      // Could not sub-split phrase further, clamp seconds
-      validatedBeats.push(alignProseWithShotType({
-        ...originalBeat,
-        beatIndex: globalBeatCounter++,
-        estimatedSeconds: Math.min(maxBeatSeconds, seconds),
-      }));
-    }
+    // Valid beat within ceiling
+    validatedBeats.push(alignProseWithShotType({
+      ...originalBeat,
+      beatIndex: globalBeatCounter++,
+      estimatedSeconds: Math.min(maxBeatSeconds, Math.max(0.8, Math.round(seconds * 10) / 10)),
+    }));
   }
 
   // In Video mode: smartly balance the sum of beat durations to cover the target clip duration

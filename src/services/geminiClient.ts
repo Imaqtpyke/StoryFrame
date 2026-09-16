@@ -958,25 +958,78 @@ ${durationInstruction}${customBeatsPrompt}`;
     };
   });
 
-  // Final Storyboard-level safety pass: ensure date text overlay and temporal anchors ONLY exist on beats whose spoken textSpan contains the date
-  const finalScenes = sanitizedScenes.map((scene: any) => ({
-    ...scene,
-    beats: scene.beats.map((beat: any) => {
+  // Final Storyboard-level safety pass:
+  // 1. Ensure date text overlay and temporal anchors ONLY exist on beats whose spoken textSpan contains the date
+  // 2. Strip any leftover bracketed labels like [Shot, Angle, Movement] from prompt bodies
+  // 3. Compare adjacent beats within each scene and ensure visual progression without prompt duplication
+  const finalScenes = sanitizedScenes.map((scene: any) => {
+    const rawBeats = scene.beats.map((beat: any) => {
+      let prompt = (beat.imagePrompt || '').replace(/^\[.*?\]\s*/, '').trim();
+
       const directAnchor = extractTemporalAnchor(beat.textSpan || '');
       if (directAnchor) {
         return {
           ...beat,
           temporalAnchor: directAnchor,
+          imagePrompt: prompt,
         };
       }
       // If beat does not speak the date, scrub any leftover temporal anchor and date overlay instructions
       return {
         ...beat,
         temporalAnchor: undefined,
-        imagePrompt: cleanRedundantOnScreenText(beat.imagePrompt || ''),
+        imagePrompt: cleanRedundantOnScreenText(prompt),
       };
-    }),
-  }));
+    });
+
+    // Helper to strip boilerplate styles and get the core visual description of a beat
+    const getCoreDescription = (prompt: string): string => {
+      let core = prompt
+        .replace(/Character Continuity \([^)]*\)\.?/gi, '')
+        .replace(/Location Continuity \([^)]*\)\.?/gi, '')
+        .replace(/Visual Style:.*$/i, '')
+        .replace(/\b(?:9:16 vertical|16:9 widescreen|4:3|1:1)\b[^.]*\.?/gi, '')
+        .replace(/\bShot on 35mm[^.]*\.?/gi, '')
+        .replace(/^\[.*?\]\s*/, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+      return core;
+    };
+
+    const distinctBeats = rawBeats.map((beat: any, bIdx: number) => {
+      if (bIdx === 0) return beat;
+      const prevBeat = rawBeats[bIdx - 1];
+      const prevCore = getCoreDescription(prevBeat.imagePrompt || '');
+      const currCore = getCoreDescription(beat.imagePrompt || '');
+
+      // If the core descriptions are identical or near-identical, make the current beat visually distinct
+      const isDuplicate = prevCore.length > 10 && (currCore === prevCore || (currCore.length > 20 && (currCore.includes(prevCore) || prevCore.includes(currCore))));
+
+      if (isDuplicate) {
+        const textSpan = (beat.textSpan || '').trim();
+        const cleanShot = (beat.shotType || 'Dynamic medium angle shot').trim();
+        const cleanAngle = (beat.cameraAngle || 'eye-level').trim();
+        // Replace duplicated core with distinct action & subject focus derived from its own textSpan
+        const distinctCore = `${cleanShot} from a ${cleanAngle} perspective, distinct visual moment specifically capturing "${textSpan}".`;
+        
+        let newPrompt = beat.imagePrompt.replace(prevCore, distinctCore);
+        if (newPrompt === beat.imagePrompt) {
+          newPrompt = `${distinctCore} ${beat.imagePrompt}`;
+        }
+        return {
+          ...beat,
+          imagePrompt: newPrompt.replace(/^\[.*?\]\s*/, '').trim(),
+        };
+      }
+      return beat;
+    });
+
+    return {
+      ...scene,
+      beats: distinctBeats,
+    };
+  });
 
   const calculatedTotalSeconds = finalScenes.reduce((sum: number, s: any) => sum + s.estimatedSeconds, 0);
   const totalSeconds = typeof parsedData.totalDurationSeconds === 'number' && parsedData.totalDurationSeconds > 0
