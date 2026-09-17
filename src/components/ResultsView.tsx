@@ -25,6 +25,7 @@ import {
   Clapperboard,
   Image as ImageIcon,
   Zap,
+  Scissors,
 } from 'lucide-react';
 
 interface ResultsViewProps {
@@ -274,7 +275,7 @@ export default function ResultsView({
   const downloadCsvExport = () => {
     setIsExportMenuOpen(false);
     const hasVideo = result.generationMode === 'video' || normalizedScenes.some((s) => s.videoPrompt);
-    const headers = ['Scene', 'Roman Scene', 'Beat', 'Estimated Seconds', 'Shot Type', 'Camera Angle', 'Camera Movement', 'Spoken Narration', 'Visual Image Prompt'];
+    const headers = ['Scene', 'Roman Scene', 'Beat', 'Estimated Seconds', 'Shot Type', 'Camera Angle', 'Camera Movement', 'Editing Note (Transition Anchor)', 'Spoken Narration', 'Visual Image Prompt'];
     if (hasVideo) {
       headers.push('Scene Video Prompt (8-Part)', 'Start Frame Keyframe Prompt');
     }
@@ -290,6 +291,7 @@ export default function ResultsView({
           beat.shotType || 'Medium Shot',
           beat.cameraAngle || 'Eye-level',
           beat.cameraMovement || 'Static',
+          beat.transitionHint ? `"${beat.transitionHint.replace(/"/g, '""')}"` : '""',
           `"${beat.textSpan.replace(/"/g, '""')}"`,
           `"${beat.imagePrompt.replace(/"/g, '""')}"`,
         ];
@@ -363,10 +365,11 @@ export default function ResultsView({
         md += `#### Start Frame Keyframe Prompt (Image Ingredient)\n\`\`\`text\n${scene.startFramePrompt}\n\`\`\`\n\n`;
       }
 
-      md += `| Beat | Duration | Shot Size | Angle | Movement | Spoken Words | Visual Image Prompt |\n`;
-      md += `| :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n`;
+      md += `| Beat | Duration | Shot Size | Angle | Movement | Editing Note | Spoken Words | Visual Image Prompt |\n`;
+      md += `| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n`;
       (scene.beats || []).forEach((b) => {
-        md += `| Beat ${b.beatIndex} | ~${b.estimatedSeconds}s | ${b.shotType || 'Medium Shot'} | ${b.cameraAngle || 'Eye-level'} | ${b.cameraMovement || 'Static'} | "${b.textSpan.replace(/\|/g, '-')}" | ${b.imagePrompt.replace(/\|/g, '-')} |\n`;
+        const transNote = b.transitionHint ? b.transitionHint.replace(/\|/g, '-') : '-';
+        md += `| Beat ${b.beatIndex} | ~${b.estimatedSeconds}s | ${b.shotType || 'Medium Shot'} | ${b.cameraAngle || 'Eye-level'} | ${b.cameraMovement || 'Static'} | ${transNote} | "${b.textSpan.replace(/\|/g, '-')}" | ${b.imagePrompt.replace(/\|/g, '-')} |\n`;
       });
       md += `\n`;
     });
@@ -674,6 +677,18 @@ export default function ResultsView({
                                   <span className="truncate">{beat.cameraMovement}</span>
                                 </div>
                               )}
+                              {beat.visualSoundEffect && (
+                                <div className="flex items-center gap-1 text-[8px] font-editorial-meta font-bold text-purple-300">
+                                  <Zap size={8} className="text-purple-400 shrink-0" />
+                                  <span className="truncate">SFX: {beat.visualSoundEffect}</span>
+                                </div>
+                              )}
+                              {beat.transitionHint && (
+                                <div className="flex items-center gap-1 text-[7.5px] font-editorial-meta text-amber-400">
+                                  <Scissors size={7.5} className="text-amber-400 shrink-0" />
+                                  <span className="truncate">Editing Note</span>
+                                </div>
+                              )}
                             </div>
 
                             <div className="pt-1 border-t border-white/5">
@@ -745,6 +760,12 @@ export default function ResultsView({
                                     <span className="truncate">SFX: {beat.visualSoundEffect}</span>
                                   </div>
                                 )}
+                                {beat.transitionHint && (
+                                  <div className="flex items-center gap-1 text-[8px] font-editorial-meta text-amber-400 bg-amber-950/40 border border-amber-800/40 px-1 py-0.5 rounded-[1px] w-fit">
+                                    <Scissors size={8} className="text-amber-400 shrink-0" />
+                                    <span className="truncate">Editing Note</span>
+                                  </div>
+                                )}
                               </div>
 
                               <div className="pt-1.5 border-t border-white/5 flex items-center justify-between gap-1">
@@ -793,6 +814,12 @@ export default function ResultsView({
                                   <span className="stamp-chip bg-purple-950/60 text-purple-300 border-purple-800/50 font-bold">
                                     <Zap size={9} className="mr-1 text-purple-400 shrink-0 sm:w-2.5 sm:h-2.5" />
                                     SFX: {beat.visualSoundEffect}
+                                  </span>
+                                )}
+                                {beat.transitionHint && (
+                                  <span className="stamp-chip bg-amber-950/60 text-amber-300 border-amber-800/50 font-medium">
+                                    <Scissors size={9} className="mr-1 text-amber-400 shrink-0 sm:w-2.5 sm:h-2.5" />
+                                    Editing Note
                                   </span>
                                 )}
                                 <span className="font-editorial-meta text-[9px] sm:text-[10px] text-emerald-400">
@@ -865,6 +892,21 @@ export default function ResultsView({
                                   </div>
                                 </div>
                                 <span className="text-[9px] font-editorial-meta text-purple-400/80 italic">Integrated into image artwork</span>
+                              </div>
+                            )}
+
+                            {beat.transitionHint && (
+                              <div className="p-2.5 sm:p-3 bg-amber-950/20 border border-amber-800/40 rounded space-y-1">
+                                <div className="flex items-center justify-between">
+                                  <span className="font-editorial-meta text-[9px] sm:text-[10px] text-amber-300 tracking-wider uppercase flex items-center gap-1.5 font-medium">
+                                    <Scissors size={11} className="text-amber-400" />
+                                    <span>Editing Note • Scene Transition Anchor</span>
+                                  </span>
+                                  <span className="text-[9px] font-editorial-meta text-amber-400/70 italic">Post-production edit guide</span>
+                                </div>
+                                <p className="text-xs sm:text-sm text-amber-100/90 leading-relaxed font-sans">
+                                  {beat.transitionHint}
+                                </p>
                               </div>
                             )}
 

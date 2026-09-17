@@ -18,7 +18,8 @@ const SHOT_OPTIONS = [
   'Over-the-Shoulder',
   'Low Angle',
   'High Angle',
-  'POV'
+  'POV',
+  'Whip-Pan'
 ];
 
 export default function CustomBeatEditor({
@@ -278,9 +279,17 @@ export default function CustomBeatEditor({
                           className="bg-[#0A0A09] border border-white/10 p-2.5 sm:p-3 space-y-2 text-xs"
                         >
                           <div className="flex items-center justify-between gap-2 border-b border-white/5 pb-1.5">
-                            <span className="font-display font-medium text-[#E0E0D8] text-[11px]">
-                              Beat {bIdx + 1}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="font-display font-medium text-[#E0E0D8] text-[11px]">
+                                Beat {bIdx + 1}
+                              </span>
+                              {((sIdx > 0 && bIdx === 0) || (sIdx < scenes.length - 1 && bIdx === scene.beats.length - 1)) && (
+                                <span className="inline-flex items-center gap-1 text-[8px] font-editorial-meta text-amber-400 bg-amber-950/40 border border-amber-800/40 px-1.5 py-0.5 rounded-[1px]" title="Editing-stage transition anchor beat connecting adjacent scenes">
+                                  <Layers size={8} />
+                                  <span>Scene Transition Beat</span>
+                                </span>
+                              )}
+                            </div>
                             <div className="flex items-center space-x-1">
                               {/* Split phrase button */}
                               {beat.textSpan.trim().split(/\s+/).length >= 2 && (
@@ -363,6 +372,27 @@ export default function CustomBeatEditor({
                                 ))}
                               </select>
                             </div>
+                          </div>
+
+                          {/* Editing Transition Note (Optional) */}
+                          <div>
+                            <div className="flex items-center justify-between mb-0.5">
+                              <label className="font-editorial-meta text-[9px] text-[#808078] flex items-center gap-1">
+                                <Scissors size={8} className="text-amber-400" />
+                                <span>EDITING NOTE / TRANSITION ANCHOR (Optional)</span>
+                              </label>
+                              <span className="text-[8px] font-editorial-meta text-[#606058] italic">Post-edit cut / dissolve anchor</span>
+                            </div>
+                            <input
+                              type="text"
+                              value={beat.transitionHint || ''}
+                              onChange={(e) =>
+                                handleUpdateBeat(sIdx, bIdx, 'transitionHint', e.target.value)
+                              }
+                              placeholder="e.g. Shared circular silhouette / match cut on horizon line"
+                              disabled={disabled}
+                              className="w-full bg-[#141412] border border-white/10 px-2.5 py-1.5 text-xs text-amber-300/90 focus:border-amber-400 focus:outline-none placeholder-[#505048]"
+                            />
                           </div>
                         </div>
                       ))}

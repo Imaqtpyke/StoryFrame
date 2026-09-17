@@ -1,4 +1,4 @@
-import { Beat } from '../types';
+import { Beat, Scene, StyleProfile } from '../types';
 
 export const MAX_BEAT_SECONDS = 2.0;
 export const MAX_BEAT_WORDS = 8;
@@ -82,11 +82,11 @@ export function sanitizeImagePromptShotFraming(prompt: string): string {
     // "Close-up shot of..."
     // "Low-angle hero shot of..."
     // "Dutch angle shot of..."
-    const openingFramingRegex = /^(?:(?:extreme[-\s]+)?(?:close[-\s]*up|wide|medium|macro|panoramic|aerial|establishing|full[-\s]*body|low[-\s]*angle|high[-\s]*angle|dutch[-\s]*angle|birds[-\s]*eye|worms[-\s]*eye|over[-\s]*the[-\s]*shoulder|ots|first[-\s]*person|pov|telephoto)\s+(?:detail\s+|hero\s+|cinematic\s+|establishing\s+|perspective\s+)?(?:shot|view|angle|framing|composition|perspective|take)?(?:\s*,\s*(?:low|high|dutch|eye[-\s]*level|worms[-\s]*eye|birds[-\s]*eye)[-\s]*(?:angle|tilt|level|view|shot)?)?\s*(?:of|showing|depicting|capturing|framing|features|featuring|:)?\s*)+/i;
+    const openingFramingRegex = /^(?:(?:extreme[-\s]+)?(?:close[-\s]*up|wide|medium|macro|panoramic|aerial|establishing|full[-\s]*body|low[-\s]*angle|high[-\s]*angle|dutch[-\s]*angle|birds[-\s]*eye|worms[-\s]*eye|over[-\s]*the[-\s]*shoulder|ots|first[-\s]*person|pov|telephoto|whip[-\s]*pan)\s+(?:detail\s+|hero\s+|cinematic\s+|establishing\s+|perspective\s+)?(?:shot|view|angle|framing|composition|perspective|take)?(?:\s*,\s*(?:low|high|dutch|eye[-\s]*level|worms[-\s]*eye|birds[-\s]*eye)[-\s]*(?:angle|tilt|level|view|shot)?)?\s*(?:of|showing|depicting|capturing|framing|features|featuring|:)?\s*)+/i;
     cleaned = cleaned.replace(openingFramingRegex, '');
 
     // 4. Remove simple opening shot names with colon or comma, e.g. "Medium shot: ..." or "Close-up: ..."
-    cleaned = cleaned.replace(/^(?:Extreme\s+close-up|Close-up|Medium\s+shot|Wide\s+shot|Macro\s+shot|Establishing\s+shot|Detail\s+shot|Low-angle\s+shot|High-angle\s+shot|Dutch-angle\s+shot|Aerial\s+shot|POV\s+shot)\s*[:,-]\s*/i, '');
+    cleaned = cleaned.replace(/^(?:Extreme\s+close-up|Close-up|Medium\s+shot|Wide\s+shot|Macro\s+shot|Establishing\s+shot|Detail\s+shot|Low-angle\s+shot|High-angle\s+shot|Dutch-angle\s+shot|Aerial\s+shot|POV\s+shot|Whip-pan\s+shot|Whip-pan)\s*[:,-]\s*/i, '');
 
     // 5. Clean up any remaining leading "of " or colon/dashes/whitespace
     cleaned = cleaned.replace(/^(?:of|showing|depicting)\s+/i, '');
@@ -95,11 +95,11 @@ export function sanitizeImagePromptShotFraming(prompt: string): string {
 
   // 6. Strip any inline / embedded shot framing phrases such as:
   // ", in a wide establishing shot," or ", seen from a low-angle shot," or "captured in a close-up shot"
-  cleaned = cleaned.replace(/\b(?:captured\s+in|seen\s+from|framed\s+as|in)\s+a\s+(?:extreme[-\s]+close[-\s]*up|close[-\s]*up|wide|medium|macro|panoramic|aerial|establishing|low[-\s]*angle|high[-\s]*angle|dutch[-\s]*angle)\s+(?:shot|view|framing|perspective)\b/gi, '');
-  cleaned = cleaned.replace(/\b(?:extreme[-\s]+close[-\s]*up|close[-\s]*up|wide|medium|macro|panoramic|aerial|establishing|low[-\s]*angle|high[-\s]*angle|dutch[-\s]*angle)\s+(?:shot|framing|angle)\s*,\s*/gi, '');
+  cleaned = cleaned.replace(/\b(?:captured\s+in|seen\s+from|framed\s+as|in)\s+a\s+(?:extreme[-\s]+close[-\s]*up|close[-\s]*up|wide|medium|macro|panoramic|aerial|establishing|low[-\s]*angle|high[-\s]*angle|dutch[-\s]*angle|whip[-\s]*pan)\s+(?:shot|view|framing|perspective)\b/gi, '');
+  cleaned = cleaned.replace(/\b(?:extreme[-\s]+close[-\s]*up|close[-\s]*up|wide|medium|macro|panoramic|aerial|establishing|low[-\s]*angle|high[-\s]*angle|dutch[-\s]*angle|whip[-\s]*pan)\s+(?:shot|framing|angle)\s*,\s*/gi, '');
 
   // 7. Remove any residual bracketed tokens anywhere in the prompt
-  cleaned = cleaned.replace(/\[(?:Wide|Medium|Close-up|Macro|Extreme\s+Close-Up|Low-angle|High-angle|Dutch\s+Angle|Eye-level|Static|Pan|Tilt|Zoom|Tracking)[^\]]*\]\s*/gi, '');
+  cleaned = cleaned.replace(/\[(?:Wide|Medium|Close-up|Macro|Extreme\s+Close-Up|Low-angle|High-angle|Dutch\s+Angle|Eye-level|Static|Pan|Tilt|Zoom|Tracking|Whip-Pan|Whip\s+Pan)[^\]]*\]\s*/gi, '');
 
   // 8. Clean up double spaces, dangling commas, and ensure capitalized first letter
   cleaned = cleaned.replace(/\s{2,}/g, ' ').replace(/\s*,\s*,/g, ',').replace(/^[,:;\s-]+/, '').trim();
@@ -405,5 +405,134 @@ export function enforceBeatCeilings(
   }
 
   return validatedBeats;
+}
+
+/**
+ * Populates and validates `transitionHint` fields across all scenes.
+ * STRICT SPECIFICATION:
+ * - Populated ONLY on the last beat of a scene (scene i) and the first beat of the next scene (scene i + 1).
+ * - All intermediate beats and outer terminals (first beat of Scene 1, last beat of final scene)
+ *   MUST have `transitionHint` set to `undefined`.
+ * - Describes a shared visual anchor (shape, color, motion direction, screen position) to make editing cuts
+ *   or dissolves intentional rather than random.
+ * - This applies to both Image mode (crossfades/match-cuts between stills) and Video mode.
+ * - Explicitly framed as an editing-stage operation, NOT an AI-generated clip transition.
+ */
+export function populateSceneTransitionHints(scenes: Scene[], styleProfile?: StyleProfile): Scene[] {
+  if (!Array.isArray(scenes) || scenes.length <= 1) {
+    return (scenes || []).map((scene) => ({
+      ...scene,
+      beats: (scene.beats || []).map((beat) => ({
+        ...beat,
+        transitionHint: undefined,
+      })),
+    }));
+  }
+
+  return scenes.map((scene, sIdx) => {
+    const isFirstScene = sIdx === 0;
+    const isLastScene = sIdx === scenes.length - 1;
+    const beats = scene.beats || [];
+    if (beats.length === 0) return scene;
+
+    const updatedBeats = beats.map((beat, bIdx) => {
+      const isSceneFirstBeat = bIdx === 0;
+      const isSceneLastBeat = bIdx === beats.length - 1;
+
+      // Only incoming boundary (first beat of scene > 0) or outgoing boundary (last beat of scene < lastScene)
+      const isIncomingTransitionBeat = !isFirstScene && isSceneFirstBeat;
+      const isOutgoingTransitionBeat = !isLastScene && isSceneLastBeat;
+
+      if (!isIncomingTransitionBeat && !isOutgoingTransitionBeat) {
+        return {
+          ...beat,
+          transitionHint: undefined,
+        };
+      }
+
+      // If already populated cleanly and contextually, sanitize it
+      if (beat.transitionHint && beat.transitionHint.trim().length > 6) {
+        const cleaned = beat.transitionHint
+          .replace(/[\u2014\u2013]|--/g, ', ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        return {
+          ...beat,
+          transitionHint: cleaned,
+        };
+      }
+
+      // Generate a structured visual anchor note for editing assembly
+      if (isOutgoingTransitionBeat) {
+        const nextScene = scenes[sIdx + 1];
+        const nextFirstBeat = nextScene?.beats?.[0];
+        const hasWhipPan =
+          (beat.cameraMovement || '').toLowerCase().includes('whip') ||
+          (beat.shotType || '').toLowerCase().includes('whip');
+
+        if (hasWhipPan) {
+          return {
+            ...beat,
+            transitionHint: `Outgoing anchor: Fast lateral whip-pan motion blur providing kinetic exit momentum to match cut or dissolve into Scene ${sIdx + 2}.`,
+          };
+        }
+
+        const colorHint = styleProfile?.colorPalette
+          ? `tonal ${styleProfile.colorPalette.split(/[,;]/)[0].trim()}`
+          : 'ambient lighting';
+        const motionHint =
+          beat.cameraMovement && beat.cameraMovement !== 'Static Frame' && beat.cameraMovement !== 'Static'
+            ? `${beat.cameraMovement.toLowerCase()} motion direction`
+            : 'screen position and focal third';
+        const nextSubject = nextFirstBeat?.textSpan
+          ? `"${nextFirstBeat.textSpan.slice(0, 32)}..."`
+          : `Scene ${sIdx + 2}`;
+
+        return {
+          ...beat,
+          transitionHint: `Outgoing anchor: Harmonized ${colorHint} and ${motionHint} aligning screen geometry for an intentional cut into ${nextSubject}.`,
+        };
+      }
+
+      if (isIncomingTransitionBeat) {
+        const prevScene = scenes[sIdx - 1];
+        const prevLastBeat = prevScene?.beats?.[prevScene.beats.length - 1];
+        const hasWhipPan =
+          (beat.cameraMovement || '').toLowerCase().includes('whip') ||
+          (beat.shotType || '').toLowerCase().includes('whip') ||
+          (prevLastBeat?.cameraMovement || '').toLowerCase().includes('whip') ||
+          (prevLastBeat?.shotType || '').toLowerCase().includes('whip');
+
+        if (hasWhipPan) {
+          return {
+            ...beat,
+            transitionHint: `Incoming anchor: Motion blur settling smoothly onto subject, resolving the whip-pan momentum exiting Scene ${sIdx}.`,
+          };
+        }
+
+        const colorHint = styleProfile?.colorPalette
+          ? `matching ${styleProfile.colorPalette.split(/[,;]/)[0].trim()} palette`
+          : 'tonal continuity';
+        const prevSubject = prevLastBeat?.textSpan
+          ? `"${prevLastBeat.textSpan.slice(0, 32)}..."`
+          : `Scene ${sIdx}`;
+
+        return {
+          ...beat,
+          transitionHint: `Incoming anchor: Shared visual orientation and ${colorHint} picking up the eye position from ${prevSubject} for a deliberate cut or crossfade.`,
+        };
+      }
+
+      return {
+        ...beat,
+        transitionHint: undefined,
+      };
+    });
+
+    return {
+      ...scene,
+      beats: updatedBeats,
+    };
+  });
 }
 

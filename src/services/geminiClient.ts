@@ -3,7 +3,7 @@
 // API keys are strictly kept in browser memory / sessionStorage and never sent to any remote backend.
 
 import { GenerateStoryRequest, StoryGenerationResult, StyleProfile } from '../types';
-import { enforceBeatCeilings, extractTemporalAnchor, cleanRedundantOnScreenText, sanitizeImagePromptShotFraming } from './beatSplitting';
+import { enforceBeatCeilings, extractTemporalAnchor, cleanRedundantOnScreenText, sanitizeImagePromptShotFraming, populateSceneTransitionHints } from './beatSplitting';
 
 function removeEmDashes(text: string): string {
   if (!text) return text;
@@ -43,7 +43,8 @@ const DEFAULT_SHOT_TYPES = [
   'Low-Angle Cinematic Shot',
   'Macro Detail Shot',
   'Point-of-View (POV)',
-  'Dutch Angle Hero Shot'
+  'Dutch Angle Hero Shot',
+  'Whip-Pan'
 ];
 
 const DEFAULT_CAMERA_MOVEMENTS = [
@@ -51,6 +52,7 @@ const DEFAULT_CAMERA_MOVEMENTS = [
   'Static Frame',
   'Tracking Subject',
   'Smooth Pan',
+  'Whip-Pan',
   'Low Dolly Glide',
   'Handheld Cinematic Drift'
 ];
@@ -66,6 +68,7 @@ const DEFAULT_CAMERA_ANGLES = [
 
 function inferShotType(imagePrompt: string, beatIndex: number): string {
   const lower = imagePrompt.toLowerCase();
+  if (lower.includes('whip') || lower.includes('swish pan')) return 'Whip-Pan';
   if (lower.includes('extreme close') || lower.includes('macro')) return 'Extreme Close-Up';
   if (lower.includes('close-up') || lower.includes('closeup') || lower.includes('face') || lower.includes('eyes')) return 'Close-Up';
   if (lower.includes('wide') || lower.includes('establishing') || lower.includes('landscape') || lower.includes('aerial')) return 'Wide Establishing Shot';
@@ -89,10 +92,11 @@ function inferCameraAngle(imagePrompt: string, beatIndex: number): string {
 
 function inferCameraMovement(imagePrompt: string, beatIndex: number): string {
   const lower = imagePrompt.toLowerCase();
+  if (lower.includes('whip') || lower.includes('swish') || lower.includes('fast blur pan') || lower.includes('blur pan')) return 'Whip-Pan';
   if (lower.includes('push') || lower.includes('zoom in')) return 'Slow Push-In';
-  if (lower.includes('track') || lower.includes('follow') || lower.includes('run')) return 'Tracking Movement';
+  if (lower.includes('track') || lower.includes('follow') || lower.includes('run')) return 'Tracking Subject';
   if (lower.includes('pan')) return 'Smooth Pan';
-  if (lower.includes('dolly')) return 'Dolly Slide';
+  if (lower.includes('dolly')) return 'Low Dolly Glide';
   if (lower.includes('static') || lower.includes('still')) return 'Static Frame';
   return DEFAULT_CAMERA_MOVEMENTS[(beatIndex - 1) % DEFAULT_CAMERA_MOVEMENTS.length];
 }
@@ -249,10 +253,13 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - "beatIndex": integer (1, 2, 3...)
    - "textSpan": the specific phrase/action segment from the narrator line (e.g. "Imagine an entire island")
    - "estimatedSeconds": estimated duration in seconds for this beat, distributed so the sum of all beats in the scene equals approximately ${targetVideoDuration} seconds.
-   - "shotType": explicit cinematography shot size (e.g., "extreme-wide", "wide", "medium", "close-up", "extreme-close-up")
+   - "shotType": explicit cinematography shot size or transition shot (e.g., "extreme-wide", "wide", "medium", "close-up", "extreme-close-up", "whip-pan")
    - "cameraAngle": explicit camera angle (e.g., "eye-level", "high-angle", "low-angle", "birds-eye", "worms-eye", "dutch-tilt")
-   - "cameraMovement": cinematic camera motion cue (e.g., "Slow forward push-in", "Smooth lateral tracking", "Gentle crane tilt down")
+   - "cameraMovement": cinematic camera motion cue (e.g., "Slow forward push-in", "Smooth lateral tracking", "Gentle crane tilt down", "Whip-Pan (fast, blurred pan for in-shot transition)")
    - "temporalAnchor": optional string for explicit year, date, or elapsed duration (e.g. "1945", "December 24, 1971", "for 29 years")
+   - "transitionHint": optional string describing a shared visual anchor (shape, color, motion direction, screen position).
+     STRICT POPULATION RULE: "transitionHint" MUST be populated ONLY on the LAST beat of a scene and the FIRST beat of the NEXT scene (i.e. between Scene N and Scene N+1). All intermediate beats within a scene and outer boundary terminals (first beat of Scene 1, last beat of final scene) MUST NOT have a transitionHint (omit or leave undefined). Describes a shared visual anchor so that cuts, match-cuts, crossfades, or whip transitions applied later in NLE video editing read as intentional rather than random.
+     CRITICAL SCOPING NOTE: This is strictly an editing-stage visual rhyme guide for human video assembly, NOT an automated AI clip-to-clip transition effect.
    - "imagePrompt": A complete, standalone, production-ready TEXT TO VIDEO PROMPT formatted for AI video generators capturing this specific beat's action with high-precision cinematography:
      * EXACT BODY ANGLE & GAZE: Torso orientation (e.g. 3/4 profile screen-left, frontal, dorsal), head direction, and eye gaze line.
      * PRECISE GESTURES: Exact hand, arm, and posture kinematics (e.g. clenched fists, reaching fingers, slumped shoulders).
@@ -294,10 +301,11 @@ STRICT CONSTRAINTS:
           "beatIndex": number,
           "textSpan": string,
           "estimatedSeconds": number,
-          "shotType": string,
-          "cameraAngle": string,
-          "cameraMovement": string,
+          "shotType": "extreme-wide | wide | medium | close-up | extreme-close-up | whip-pan",
+          "cameraAngle": "eye-level | high-angle | low-angle | birds-eye | worms-eye | dutch-tilt",
+          "cameraMovement": "Slow forward push-in | Static Frame | Tracking Subject | Smooth Pan | Whip-Pan",
           "temporalAnchor": "string (optional: e.g. 1945, December 24, 1971, for 29 years)",
+          "transitionHint": "string (optional: populated ONLY on last beat of scene or first beat of next scene for editing cuts/dissolves)",
           "imagePrompt": string
         }
       ]
@@ -417,11 +425,14 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    Each beat must specify:
    - "beatIndex": integer (1, 2, 3...)
    - "textSpan": the exact words from the scene's narratorLine that this visual beat covers (MAX 8 WORDS).
-   - "shotType": explicit cinematography shot size (e.g., "extreme-wide", "wide", "medium", "close-up", "extreme-close-up")
+   - "shotType": explicit cinematography shot size or transition shot (e.g., "extreme-wide", "wide", "medium", "close-up", "extreme-close-up", "whip-pan")
    - "cameraAngle": explicit camera angle (e.g., "eye-level", "high-angle", "low-angle", "birds-eye", "worms-eye", "dutch-tilt")
-   - "cameraMovement": cinematic motion cue (e.g., "Slow Push-In", "Static Frame", "Tracking Subject", "Smooth Pan", "Low Dolly Glide", "Aerial Drift")
+   - "cameraMovement": cinematic motion cue (e.g., "Slow Push-In", "Static Frame", "Tracking Subject", "Smooth Pan", "Whip-Pan", "Low Dolly Glide", "Aerial Drift")
    - "visualSoundEffect": optional string for comic-style bold sound effect lettering (e.g. "CRASH!", "SPLASH!") for illustrated styles on impact beats only. Omit for photorealistic style.
    - "temporalAnchor": optional string for explicit year, date, or elapsed duration (e.g. "1945", "December 24, 1971", "for 29 years").
+   - "transitionHint": optional string describing a shared visual anchor (shape, color, motion direction, screen position).
+     STRICT POPULATION RULE: "transitionHint" MUST be populated ONLY on the LAST beat of a scene and the FIRST beat of the NEXT scene (i.e. between Scene N and Scene N+1). All intermediate beats within a scene and outer boundary terminals (first beat of Scene 1, last beat of final scene) MUST NOT have a transitionHint (omit or leave undefined). Describes a shared visual anchor so that crossfades, dissolves, or match cuts applied later in editing read as deliberate rather than random.
+     CRITICAL SCOPING NOTE: This is strictly an editing-stage visual rhyme guide for post-production assembly, NOT an automated AI generation effect.
    - "imagePrompt": a structured cinematic prompt formatted according to the formula:
      [Subject with exact character appearance details word-for-word from characterSheet], [Key Action & Staging: exact body angle (e.g. 3/4 screen-left, profile, frontal), gaze vector, hand/finger gestures, character staging (main character commanding focal thirds, side characters placed flanking or in depth reacting toward them), and kinetic pacing/tempo], [Integrated bold comic sound effect lettering if visualSoundEffect is present] in [Exact Location Details word-for-word from locationSheet], [Lighting & Color Grade]. [Aspect ratio and style anchors: ${defaultAspectRatio}, ${characterStyle || 'cinematic rendering'}].
      CRITICAL PROSE CONSTRAINT: "imagePrompt" MUST NEVER open with, or contain anywhere, words describing the camera shot framing, angle, or focus (e.g. NEVER include phrases like "Wide shot of...", "Extreme close-up detail shot focusing tightly on...", "Medium shot of...", or "Focusing on..."). Shot framing and camera angles live EXCLUSIVELY in the "shotType", "cameraAngle", and "cameraMovement" fields! "imagePrompt" MUST start directly with the scene subject, action, and setting.
@@ -459,10 +470,11 @@ STRICT CONSTRAINTS:
         {
           "beatIndex": number,
           "textSpan": string,
-          "shotType": "extreme-wide | wide | medium | close-up | extreme-close-up",
+          "shotType": "extreme-wide | wide | medium | close-up | extreme-close-up | whip-pan",
           "cameraAngle": "eye-level | high-angle | low-angle | birds-eye | worms-eye | dutch-tilt",
-          "cameraMovement": "Slow Push-In | Static Frame | Tracking...",
+          "cameraMovement": "Slow Push-In | Static Frame | Tracking Subject | Smooth Pan | Whip-Pan",
           "temporalAnchor": "string (optional: e.g. 1945, for 29 years)",
+          "transitionHint": "string (optional: populated ONLY on last beat of scene or first beat of next scene for editing cuts/dissolves)",
           "imagePrompt": string,
           "estimatedSeconds": number
         }
@@ -478,7 +490,7 @@ Do not include markdown code fences or backticks, just the raw JSON object.`;
 The user has explicitly segmented the story into exact scenes and custom visual beats. You MUST follow this exact scene breakdown and phrase assignment. For each beat, follow the user's specific visual guidance and shot suggestions while ensuring NO near-duplicate frames and strict visual progression:
 ${customScenes.map((cs, sIdx) => `Scene ${sIdx + 1} narration: "${cs.narratorLine}"
 Beats:
-${cs.beats.map((b, bIdx) => `  - Beat ${bIdx + 1} phrase: "${b.textSpan}"${b.userGuidance ? ` | Director's Visual Note: "${b.userGuidance}"` : ''}${b.shotType ? ` | Preferred Shot: "${b.shotType}"` : ''}`).join('\n')}`).join('\n\n')}`;
+${cs.beats.map((b, bIdx) => `  - Beat ${bIdx + 1} phrase: "${b.textSpan}"${b.userGuidance ? ` | Director's Visual Note: "${b.userGuidance}"` : ''}${b.shotType ? ` | Preferred Shot: "${b.shotType}"` : ''}${b.transitionHint ? ` | Editing Transition Note: "${b.transitionHint}"` : ''}`).join('\n')}`).join('\n\n')}`;
   }
 
   const userPrompt = `Story Idea:
@@ -763,6 +775,11 @@ ${durationInstruction}${customBeatsPrompt}`;
         finalImagePrompt = cleanRedundantOnScreenText(finalImagePrompt);
       }
 
+      const rawTransitionHint = beat.transitionHint || beat.transition_hint;
+      const transitionHint = typeof rawTransitionHint === 'string' && rawTransitionHint.trim().length > 0
+        ? removeEmDashes(rawTransitionHint.trim())
+        : undefined;
+
       return {
         beatIndex,
         textSpan,
@@ -771,6 +788,7 @@ ${durationInstruction}${customBeatsPrompt}`;
         cameraMovement,
         visualSoundEffect,
         temporalAnchor,
+        transitionHint,
         imagePrompt: removeEmDashes(finalImagePrompt),
         estimatedSeconds: typeof beat.estimatedSeconds === 'number' && beat.estimatedSeconds > 0
           ? beat.estimatedSeconds
@@ -876,7 +894,12 @@ ${durationInstruction}${customBeatsPrompt}`;
       const shotType = primaryBeat.shotType || 'Medium Shot';
       const rawMove = primaryBeat.cameraMovement || 'Slow push-in';
       const singleCameraMove = rawMove.replace(/\b(and|then|with)\b/gi, ',').split(/[,;]/)[0].trim() || 'Slow push-in';
-      const cameraDesc = `${shotType}, ${singleCameraMove}`;
+      const isWhipPan = singleCameraMove.toLowerCase().includes('whip') || shotType.toLowerCase().includes('whip');
+      const cameraDesc = isWhipPan
+        ? (shotType.toLowerCase().includes('whip')
+            ? 'Whip-Pan, fast blurred in-shot transition pan'
+            : `${shotType}, Whip-Pan (fast blurred in-shot transition pan)`)
+        : `${shotType}, ${singleCameraMove}`;
 
       // 4. Lighting & Environment from styleProfile
       let envDesc = sanitizedStyleProfile.eraAndSetting;
@@ -1038,7 +1061,9 @@ ${durationInstruction}${customBeatsPrompt}`;
     };
   });
 
-  const calculatedTotalSeconds = finalScenes.reduce((sum: number, s: any) => sum + s.estimatedSeconds, 0);
+  const scenesWithTransitionHints = populateSceneTransitionHints(finalScenes, sanitizedStyleProfile);
+
+  const calculatedTotalSeconds = scenesWithTransitionHints.reduce((sum: number, s: any) => sum + s.estimatedSeconds, 0);
   const totalSeconds = typeof parsedData.totalDurationSeconds === 'number' && parsedData.totalDurationSeconds > 0
     ? parsedData.totalDurationSeconds
     : calculatedTotalSeconds;
@@ -1048,7 +1073,7 @@ ${durationInstruction}${customBeatsPrompt}`;
     characterSheet: sanitizedCharacterSheet,
     locationSheet: sanitizedLocationSheet,
     totalDurationSeconds: totalSeconds,
-    scenes: finalScenes,
+    scenes: scenesWithTransitionHints,
     generationMode: isVideoMode ? 'video' : 'image',
     targetVideoDuration: isVideoMode ? targetVideoDuration : undefined,
   };

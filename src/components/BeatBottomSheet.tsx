@@ -14,6 +14,7 @@ import {
   Clapperboard,
   Image as ImageIcon,
   Zap,
+  Scissors,
 } from 'lucide-react';
 
 interface BeatBottomSheetProps {
@@ -157,6 +158,12 @@ export default function BeatBottomSheet({
               SFX: {beat.visualSoundEffect}
             </span>
           )}
+          {beat.transitionHint && (
+            <span className="stamp-chip text-[9px] bg-amber-950/60 text-amber-300 border-amber-800/50">
+              <Scissors size={9} className="mr-1 text-amber-400 shrink-0" />
+              Editing Note
+            </span>
+          )}
           <span className="font-editorial-meta text-[9px] text-emerald-400/90 ml-auto flex items-center gap-0.5">
             <Clock size={9} />
             ~{beat.estimatedSeconds}s
@@ -205,6 +212,21 @@ export default function BeatBottomSheet({
                 </div>
               </div>
               <span className="text-[9px] font-editorial-meta text-purple-400/80 italic">Baked into image artwork</span>
+            </div>
+          )}
+
+          {beat.transitionHint && (
+            <div className="p-2.5 bg-amber-950/20 border border-amber-800/40 rounded space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="font-editorial-meta text-[9px] text-amber-300 tracking-wider uppercase flex items-center gap-1.5 font-medium">
+                  <Scissors size={11} className="text-amber-400" />
+                  <span>Editing Note • Scene Transition Anchor</span>
+                </span>
+                <span className="text-[9px] font-editorial-meta text-amber-400/70 italic">Post-production edit guide</span>
+              </div>
+              <p className="text-xs text-amber-100/90 leading-relaxed font-sans">
+                {beat.transitionHint}
+              </p>
             </div>
           )}
 

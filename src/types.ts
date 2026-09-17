@@ -19,6 +19,7 @@ export interface Beat {
   cameraMovement?: string;
   visualSoundEffect?: string;
   temporalAnchor?: string;
+  transitionHint?: string;
 }
 
 export interface Scene {
@@ -48,6 +49,7 @@ export interface CustomBeatDefinition {
   textSpan: string;
   userGuidance?: string;
   shotType?: string;
+  transitionHint?: string;
 }
 
 export interface CustomSceneDefinition {
