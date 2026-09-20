@@ -101,6 +101,44 @@ function inferCameraMovement(imagePrompt: string, beatIndex: number): string {
   return DEFAULT_CAMERA_MOVEMENTS[(beatIndex - 1) % DEFAULT_CAMERA_MOVEMENTS.length];
 }
 
+function resolveEstablishedLookPlaceholders(
+  prompt: string,
+  charSheet: Record<string, string>,
+  locSheet: Record<string, string>
+): string {
+  const placeholderRegex = /\s*\((?:matching established look|matching established setting)[^)]*\)/gi;
+  if (!placeholderRegex.test(prompt)) {
+    return prompt;
+  }
+
+  return prompt.replace(/([A-Za-z0-9\s'-]+?)\s*\((?:matching established look|matching established setting)[^)]*\)/gi, (match, entityName) => {
+    const trimmed = entityName.trim();
+    const cleanLower = trimmed.toLowerCase();
+
+    // Check location sheet first
+    for (const [locKey, locDesc] of Object.entries(locSheet)) {
+      if (cleanLower.includes(locKey.toLowerCase()) || locKey.toLowerCase().includes(cleanLower)) {
+        return `${trimmed}: ${locDesc}`;
+      }
+    }
+
+    // Check character sheet
+    for (const [charKey, charDesc] of Object.entries(charSheet)) {
+      if (cleanLower.includes(charKey.toLowerCase()) || charKey.toLowerCase().includes(cleanLower)) {
+        return `${trimmed}: ${charDesc}`;
+      }
+    }
+
+    return trimmed;
+  });
+}
+
+function resolveDisjunctivePhrasing(prompt: string): string {
+  return prompt
+    .replace(/\b(?:like a|such as a)\s+([a-zA-Z0-9\s-]+?)\s+(?:or|and)\s+[a-zA-Z0-9\s-]+(?=[,\.])/gi, '$1')
+    .replace(/\b(?:like an|such as an)\s+([a-zA-Z0-9\s-]+?)\s+(?:or|and)\s+[a-zA-Z0-9\s-]+(?=[,\.])/gi, '$1');
+}
+
 export { extractTemporalAnchor, cleanRedundantOnScreenText };
 
 export async function generateStoryDirectly(
@@ -179,7 +217,24 @@ You MUST take their raw premise, question, draft, or concept and perform compreh
    - Every ${targetVideoDuration}-second scene MUST be subdivided into 2 to 3 sequential micro-beats (${targetVideoDuration <= 6 ? '2 to 3 beats of ~1.0s to 2.0s each' : '3 to 5 beats of ~1.5s to 2.5s each'}).
    - Each beat covers a short 2 to 4 word phrase segment of the narratorLine and presents a distinct visual camera shot, angle, and movement progression (Beat 1: establishing/starting action, Beat 2: dynamic reaction or shift, Beat 3: immediate consequence or visual punchline).`
      : `- HARD CEILING RULE: No single beat may represent more than 2 seconds of estimated narration or 8 words, whichever is smaller.
-   - Partition each scene's spoken sentence across 2 to 4 distinct visual beats with dynamic camera variety (wide → medium → close-up).`}`
+   - Partition each scene's spoken sentence across 2 to 4 distinct visual beats with dynamic camera variety (wide → medium → close-up).`}
+
+5. MANDATORY GLOBAL VISUAL TOKEN BIBLE & UNBREAKABLE COLOR/MATERIAL CONSISTENCY:
+   - Establish and strictly enforce a unified, permanent visual anchor palette across all scenes and beats:
+     * FLUIDS, GASES & ENERGETIC SUBSTANCES: If acid, gastric fluid, poison, potion, fire, blood, or energy is present, you MUST explicitly declare its EXACT color up front in Scene 1 (e.g., "toxic fluorescent-green bubbling acid" or "viscous dark plum-purple gastric fluid"). That EXACT color descriptor MUST BE REPEATED in every single beat that features it. Switching colors mid-story (e.g. green in scene 1 and purple in scene 2) or leaving color unstated so the video generator guesses is STRICTLY FORBIDDEN.
+     * PROPS & SWALLOWED / HELD OBJECTS: Explicitly define key objects with exact, singular geometry, material, and dimensions (e.g., "a 1-inch hexagonal galvanized steel bolt with screw threads"). Disjunctive or indecisive phrasing like "like a small bolt or coin", "either X or Y", or "a metal object" is STRICTLY FORBIDDEN.
+     * RECURRING ENVIRONMENT GEOMETRY & ARCHITECTURE: Lock the specific walls, geometry, textures, and color tones of the recurring location (e.g., "cavernous internal organ environment with blocky, textured walls representing organic stomach lining rugae folds with 32-bit flat shading").
+
+6. 100% SELF-CONTAINED PROMPTS FOR DOWNSTREAM VIDEO GENERATORS (GOOGLE FLOW / VEO / KLING):
+   - Downstream video generation tools render each clip in isolation without access to previous scenes.
+   - Therefore, NEVER output empty references like "(matching established look from Scene 1)" or "(matching established look)" in any videoPrompt or beat imagePrompt without the full concrete visual details!
+   - Every single beat prompt MUST be completely self-contained with its visual DNA (art style, environment architecture, subject/object geometry, and locked fluid color).
+
+7. FRONT-LOADED VISUAL FOUNDATION (FIRST 15-20 TOKENS):
+   - Video diffusion models give the highest attention weight to the first 15 to 20 tokens.
+   - In all beat prompts and scene video prompts, FRONT-LOAD the visual foundation at the start:
+     [${characterStyle || 'cinematic'}, 32-bit flat-shaded] [Environment Anchor] [Subject & Locked Color/Material]: [Action kinematics & movement]. Camera: [Shot Type], [Camera Angle], [Camera Movement]. Lighting: [...]. Physics: [...]. Audio: no dialogue, ambient sound only. ${defaultAspectRatio}.
+   - NEVER bury the environment description in a trailing parenthetical at the end like "Location Continuity (...)" where video diffusion engines will ignore it.`
     : '';
 
   const systemPrompt = isVideoMode
@@ -783,16 +838,43 @@ ${durationInstruction}${customBeatsPrompt}`;
         finalImagePrompt += '.';
       }
 
-      if (matchedCharClauses.length > 0) {
-        finalImagePrompt += ` Character Continuity (${matchedCharClauses.join('. ')}).`;
-      }
+      if (autoArchitectMode) {
+        // Enhance Story mode: resolve placeholders, disjunctive phrasing, and front-load visual anchors
+        finalImagePrompt = resolveEstablishedLookPlaceholders(finalImagePrompt, sanitizedCharacterSheet, sanitizedLocationSheet);
+        finalImagePrompt = resolveDisjunctivePhrasing(finalImagePrompt);
 
-      if (matchedLocClauses.length > 0) {
-        finalImagePrompt += ` Location Continuity (${matchedLocClauses.join('. ')}).`;
-      }
+        // Strip any trailing parenthetical continuity blocks so they don't get ignored at the end of the prompt
+        finalImagePrompt = finalImagePrompt.replace(/\s*(?:Location|Character) Continuity \([^)]*\)\.?/gi, '');
 
-      if (!finalImagePrompt.includes(sanitizedStyleProfile.artStyle)) {
-        finalImagePrompt += ` ${styleProfileWording}`;
+        if (matchedCharClauses.length > 0) {
+          const charText = matchedCharClauses.join('. ');
+          if (!finalImagePrompt.toLowerCase().includes(charText.toLowerCase().substring(0, 25))) {
+            finalImagePrompt = `[Character: ${charText}] ${finalImagePrompt}`;
+          }
+        }
+        if (matchedLocClauses.length > 0) {
+          const locText = matchedLocClauses.join('. ');
+          if (!finalImagePrompt.toLowerCase().includes(locText.toLowerCase().substring(0, 25))) {
+            finalImagePrompt = `[Environment: ${locText}] ${finalImagePrompt}`;
+          }
+        }
+
+        if (!finalImagePrompt.includes(sanitizedStyleProfile.artStyle)) {
+          finalImagePrompt = `[${sanitizedStyleProfile.artStyle}] ${finalImagePrompt}`;
+        }
+      } else {
+        // EXACT ORIGINAL TOGGLE-OFF BEHAVIOR - UNCHANGED
+        if (matchedCharClauses.length > 0) {
+          finalImagePrompt += ` Character Continuity (${matchedCharClauses.join('. ')}).`;
+        }
+
+        if (matchedLocClauses.length > 0) {
+          finalImagePrompt += ` Location Continuity (${matchedLocClauses.join('. ')}).`;
+        }
+
+        if (!finalImagePrompt.includes(sanitizedStyleProfile.artStyle)) {
+          finalImagePrompt += ` ${styleProfileWording}`;
+        }
       }
 
       // Sanitize visualSoundEffect (Image mode only; illustrated / comic styles only)
@@ -922,10 +1004,14 @@ ${durationInstruction}${customBeatsPrompt}`;
       if (charactersInScene.length > 0) {
         subjectDesc = charactersInScene.map(cName => {
           const firstSeen = characterFirstScene.get(cName);
-          if (firstSeen === sceneIndex) {
-            return `${cName}, ${sanitizedCharacterSheet[cName] || 'cinematic protagonist'} [Established Look]`;
+          if (autoArchitectMode) {
+            return `${cName}, ${sanitizedCharacterSheet[cName] || 'cinematic protagonist'}`;
           } else {
-            return `${cName} (matching established look from Scene ${toRoman(firstSeen || 1)})`;
+            if (firstSeen === sceneIndex) {
+              return `${cName}, ${sanitizedCharacterSheet[cName] || 'cinematic protagonist'} [Established Look]`;
+            } else {
+              return `${cName} (matching established look from Scene ${toRoman(firstSeen || 1)})`;
+            }
           }
         }).join(' and ');
       } else {
@@ -958,7 +1044,7 @@ ${durationInstruction}${customBeatsPrompt}`;
 
       // 4. Lighting & Environment from styleProfile
       let envDesc = sanitizedStyleProfile.eraAndSetting;
-      if (sceneIndex > 1 && settingFirstScene.has(sanitizedStyleProfile.eraAndSetting)) {
+      if (!autoArchitectMode && sceneIndex > 1 && settingFirstScene.has(sanitizedStyleProfile.eraAndSetting)) {
         const sFirst = settingFirstScene.get(sanitizedStyleProfile.eraAndSetting);
         if (sFirst && sFirst < sceneIndex) {
           envDesc += ` (matching established setting from Scene ${toRoman(sFirst)})`;
@@ -987,6 +1073,11 @@ ${durationInstruction}${customBeatsPrompt}`;
       const rawVP = scene.videoPrompt || scene.video_prompt;
       if (typeof rawVP === 'string' && rawVP.trim().length > 30) {
         let cleanedVP = removeEmDashes(rawVP.trim());
+        if (autoArchitectMode) {
+          cleanedVP = resolveEstablishedLookPlaceholders(cleanedVP, sanitizedCharacterSheet, sanitizedLocationSheet);
+          cleanedVP = resolveDisjunctivePhrasing(cleanedVP);
+          cleanedVP = cleanedVP.replace(/\s*(?:Location|Character) Continuity \([^)]*\)\.?/gi, '');
+        }
         // Ensure Audio is explicit
         if (!cleanedVP.toLowerCase().includes('audio:')) {
           cleanedVP += `\nAudio: ${audioDesc}.`;
@@ -1016,7 +1107,12 @@ ${durationInstruction}${customBeatsPrompt}`;
       // Generate startFramePrompt (Text to Image Prompt for start frame ingredient)
       const rawStartFrame = scene.startFramePrompt || scene.start_frame_prompt || scene.start_frame_image_prompt;
       if (typeof rawStartFrame === 'string' && rawStartFrame.trim().length > 20) {
-        startFramePrompt = removeEmDashes(rawStartFrame.trim());
+        let cleanedStartFrame = removeEmDashes(rawStartFrame.trim());
+        if (autoArchitectMode) {
+          cleanedStartFrame = resolveEstablishedLookPlaceholders(cleanedStartFrame, sanitizedCharacterSheet, sanitizedLocationSheet);
+          cleanedStartFrame = resolveDisjunctivePhrasing(cleanedStartFrame);
+        }
+        startFramePrompt = cleanedStartFrame;
       } else {
         startFramePrompt = removeEmDashes(
           `[${shotType}] of ${subjectDesc}, opening start frame pose in ${sanitizedStyleProfile.eraAndSetting}, ${sanitizedStyleProfile.lighting}, ${sanitizedStyleProfile.colorPalette}. ${sanitizedStyleProfile.lensAndFilmStock}. ${defaultAspectRatio}, ${characterStyle || 'cinematic production rendering'}.`
