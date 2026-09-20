@@ -140,12 +140,16 @@ export async function generateStoryDirectly(
     durationInstruction = `Provide a well-paced scene sequence with 3 to 6 seconds per scene floor.`;
   }
 
+  const maxSpokenWordsPerScene = isVideoMode
+    ? Math.max(6, Math.round(targetVideoDuration * 2.2))
+    : 10;
+
   const autoArchitectInstruction = autoArchitectMode
     ? `\n\n================================================================================
 CRITICAL: AUTO STORY ARCHITECT & VIRAL HOOK OPTIMIZATION ACTIVE:
 ================================================================================
 The user has enabled the Auto Story Architect & Hook Optimizer pipeline.
-You MUST take their raw premise, question, draft, or concept and perform comprehensive end-to-end research, hook engineering, full-sentence narrative scripting, and visual scene breakdown in this single pass:
+You MUST take their raw premise, question, draft, or concept and perform comprehensive end-to-end research, hook engineering, duration-calibrated narrative scripting, and visual scene breakdown in this single pass:
 
 1. COMPREHENSIVE CONCEPT RESEARCH & CAUSAL CHAIN (APPLICABLE TO ANY STORY):
    - Analyze the premise deeply, whether it is a biological or medical curiosity (e.g. Zack D. Films style: "What happens if you swallow a magnet/battery?"), a scientific phenomenon, historical turning point, urban legend, mystery, or creative drama.
@@ -154,19 +158,28 @@ You MUST take their raw premise, question, draft, or concept and perform compreh
 2. VIRAL OPENING HOOK ENGINEERING (MAXIMUM FIRST 2-SECOND RETENTION):
    - You MUST craft an irresistible, scroll-stopping opening hook sentence for Scene 1.
    - Ban boring traditional narrative intros (e.g., NEVER begin with "Have you ever wondered...", "This is the story of...", or "In 1999...").
-   - Employ high-retention formats: Curiosity Gap, Imminent Jeopardy, or Counter-Intuitive Truth (e.g., "If you swallow two magnets at different times, they won't just pass through your body.", "The moment a diver breaches 300 feet without a cage, the water turns pitch black, but that is not what kills you.").
+   - Employ high-retention formats: Curiosity Gap, Imminent Jeopardy, or Counter-Intuitive Truth (e.g., "Swallowing two tiny magnets can silently tear your organs.", "The moment a diver breaches 300 feet without a cage, the ocean goes pitch black, but that is not what kills you.").
    - Populate the "hookAnalysis" object in the JSON output:
      - "headlineHook": the exact viral opening hook sentence used in Scene 1 Beat 1.
      - "hookType": the psychological hook category (e.g., "Curiosity Gap", "Immediate Biological Threat", "Counter-Intuitive Truth", "High-Stakes Dilemma").
      - "hookRationale": concise 1-2 sentence explanation of why this hook grabs and holds viewer retention in the first two seconds.
 
-3. FULL-SENTENCE SPOKEN NARRATION SCRIPT:
-   - Formulate the entire story into clean, complete, grammatically pristine spoken sentences across every scene.
-   - Every scene's "narratorLine" MUST be a complete, well-formed sentence that flows naturally into the next, forming a compelling voiceover script when read continuously from beginning to end.
+3. STRICT DURATION-AWARE SPOKEN NARRATION BUDGET (CRITICAL PACING MATH):
+   ${isVideoMode
+     ? `- VIDEO CLIP DURATION: Each scene clip represents EXACTLY ${targetVideoDuration} seconds.
+   - SPOKEN WORD CEILING: Natural voiceover speech runs at ~2 to 2.2 words per second. Therefore, EACH scene's "narratorLine" MUST BE PUNCHY AND MUST NOT EXCEED ${maxSpokenWordsPerScene} WORDS (for a ${targetVideoDuration}-second clip, max ${maxSpokenWordsPerScene} words).
+   - NEVER cram a long, complex 12-20 word sentence into a ${targetVideoDuration}-second scene!
+   - If the premise or scientific fact requires more explanation, you MUST distribute the narrative across MULTIPLE sequential ${targetVideoDuration}-second scenes (e.g., Scene 1: hook premise in ≤${maxSpokenWordsPerScene} words; Scene 2: biological/causal mechanism in ≤${maxSpokenWordsPerScene} words; Scene 3: visual outcome in ≤${maxSpokenWordsPerScene} words).`
+     : `- Speech runs at ~2 words per second. Every scene's "narratorLine" must be a natural spoken sentence, and "estimatedSeconds" must reflect spoken pacing accurately (~1 second per 2 words).
+   - If a target duration is set (${durationSeconds ? durationSeconds + 's' : 'automatic'}), pace the script length so all scenes combined match this target closely.`}
 
-4. SEAMLESS SCENE BREAKDOWN & VISUAL PROMPTING:
-   - Seamlessly sequence the story into chronological scenes and micro-beats covering every beat of the narration.
-   - Ensure rich visual continuity, varied camera framing, and hyper-detailed prompts ready for rendering without any need for manual cutting or comparison.`
+4. MANDATORY MULTI-BEAT BREAKDOWN (NEVER A SINGLE BEAT PER SCENE):
+   ${isVideoMode
+     ? `- MANDATORY MULTI-BEAT RULE: A single beat spanning an entire ${targetVideoDuration}-second video clip is STRICTLY FORBIDDEN.
+   - Every ${targetVideoDuration}-second scene MUST be subdivided into 2 to 3 sequential micro-beats (${targetVideoDuration <= 6 ? '2 to 3 beats of ~1.0s to 2.0s each' : '3 to 5 beats of ~1.5s to 2.5s each'}).
+   - Each beat covers a short 2 to 4 word phrase segment of the narratorLine and presents a distinct visual camera shot, angle, and movement progression (Beat 1: establishing/starting action, Beat 2: dynamic reaction or shift, Beat 3: immediate consequence or visual punchline).`
+     : `- HARD CEILING RULE: No single beat may represent more than 2 seconds of estimated narration or 8 words, whichever is smaller.
+   - Partition each scene's spoken sentence across 2 to 4 distinct visual beats with dynamic camera variety (wide → medium → close-up).`}`
     : '';
 
   const systemPrompt = isVideoMode
@@ -174,11 +187,11 @@ You MUST take their raw premise, question, draft, or concept and perform compreh
 Your task is to take a story and generate a production-ready, scene-by-scene video generation breakdown with smart duration-adaptive video beats.${autoArchitectInstruction}
 
 TARGET DURATION & SMART BEAT ADAPTATION:
-The target video duration is ${targetVideoDuration} seconds per scene clip (e.g., 5s, 6s, 8s, 10s, 15s).
-You MUST analyze the narrator sentence and narrative action of each scene and break it into sequential visual video shot beats that TOGETHER precisely span and cover the ${targetVideoDuration}-second duration.
-- For a 5-second clip: create 2 to 3 concise video shot beats (~1.5s to 2.5s each, totaling ~5s).
-- For a 10-second clip: create 3 to 5 developmental video shot beats (~2.0s to 3.0s each, totaling ~10s).
-- For a 15-second clip: create 4 to 6 expansive video shot beats (~2.5s to 3.5s each, totaling ~15s).
+The target video duration is ${targetVideoDuration} seconds per scene clip (e.g., ${targetVideoDuration}s).
+You MUST analyze the narrator sentence and narrative action of each scene and break it into sequential visual video shot beats that TOGETHER precisely span and cover the ${targetVideoDuration}-second duration:
+- For a ${targetVideoDuration}-second clip: create ${targetVideoDuration <= 6 ? '2 to 3 concise video shot beats (~1.0s to 2.0s each, precisely totaling ' + targetVideoDuration + 's)' : '3 to 5 developmental video shot beats (~1.5s to 2.5s each, precisely totaling ' + targetVideoDuration + 's)'}.
+- SINGLE-BEAT SCENES ARE STRICTLY FORBIDDEN. Every scene clip MUST feature multiple progressive shot beats.
+- Each beat covers a phrase fragment of 2 to 4 words from the narratorLine, with distinct camera shotType, cameraAngle, and cameraMovement.
 
 For example, for the sentence: "Imagine an entire island, packed with a bustling mining town, completely vanishing into the ocean overnight":
 - Beat 1 ("Imagine an entire island"): Complete video prompt of an entire island shot with aerial camera movement.
@@ -845,12 +858,14 @@ ${durationInstruction}${customBeatsPrompt}`;
     const calculatedSceneSeconds = Math.round(
       ceilingEnforcedBeats.reduce((sum: number, b: any) => sum + (b.estimatedSeconds || 1.5), 0)
     );
-    const sceneSeconds = Math.max(
-      calculatedSceneSeconds,
-      typeof scene.estimatedSeconds === 'number' && scene.estimatedSeconds > 0
-        ? scene.estimatedSeconds
-        : calculatedSceneSeconds
-    );
+    const sceneSeconds = isVideoMode
+      ? targetVideoDuration
+      : Math.max(
+          calculatedSceneSeconds,
+          typeof scene.estimatedSeconds === 'number' && scene.estimatedSeconds > 0
+            ? scene.estimatedSeconds
+            : calculatedSceneSeconds
+        );
 
     // Track characters established in this scene
     const establishedCharacters: string[] = [];

@@ -377,12 +377,91 @@ export function enforceBeatCeilings(
       ? originalBeat.estimatedSeconds
       : Math.max(1.0, Math.min(maxBeatSeconds, Math.round(wordCount * 0.35 * 10) / 10));
 
+    // Check if beat needs subdivision:
+    // 1. Exceeds maxBeatWords or maxBeatSeconds
+    // 2. In video mode, if this is the ONLY beat in the scene and has 5 or more words
+    const shouldSplit = wordCount > maxBeatWords || seconds > maxBeatSeconds || (isVideoMode && deduplicatedInputBeats.length === 1 && wordCount >= 5);
+
+    if (shouldSplit) {
+      const targetChunkWords = isVideoMode
+        ? Math.max(3, Math.min(maxBeatWords, Math.ceil(wordCount / (targetVideoDuration <= 6 ? 2 : 3))))
+        : MAX_BEAT_WORDS;
+      const subPhrases = splitPhraseIntoSubBeats(text, targetChunkWords);
+
+      if (subPhrases.length > 1) {
+        const subDuration = Math.round((seconds / subPhrases.length) * 10) / 10;
+        subPhrases.forEach((subText, subIdx) => {
+          const subWordCount = getWordCount(subText);
+          const subEstimatedSec = Math.max(0.8, Math.round(subWordCount * 0.35 * 10) / 10);
+          const shotCycleIdx = (bIdx + subIdx) % DYNAMIC_SHOT_CYCLE.length;
+          const moveCycleIdx = (bIdx + subIdx) % DYNAMIC_MOVEMENT_CYCLE.length;
+          const angleCycleIdx = (bIdx + subIdx) % DYNAMIC_ANGLE_CYCLE.length;
+
+          const assignedShotType = subIdx === 0
+            ? (originalBeat.shotType || DYNAMIC_SHOT_CYCLE[0])
+            : DYNAMIC_SHOT_CYCLE[shotCycleIdx];
+
+          const assignedCameraAngle = subIdx === 0
+            ? (originalBeat.cameraAngle || DYNAMIC_ANGLE_CYCLE[0])
+            : DYNAMIC_ANGLE_CYCLE[angleCycleIdx];
+
+          const assignedCameraMovement = subIdx === 0
+            ? (originalBeat.cameraMovement || DYNAMIC_MOVEMENT_CYCLE[0])
+            : DYNAMIC_MOVEMENT_CYCLE[moveCycleIdx];
+
+          validatedBeats.push(alignProseWithShotType({
+            ...originalBeat,
+            beatIndex: globalBeatCounter++,
+            textSpan: subText,
+            shotType: assignedShotType,
+            cameraAngle: assignedCameraAngle,
+            cameraMovement: assignedCameraMovement,
+            estimatedSeconds: Math.min(maxBeatSeconds, Math.max(0.8, subEstimatedSec || subDuration)),
+            imagePrompt: originalBeat.imagePrompt || subText,
+          }));
+        });
+        continue;
+      }
+    }
+
     // Valid beat within ceiling
     validatedBeats.push(alignProseWithShotType({
       ...originalBeat,
       beatIndex: globalBeatCounter++,
       estimatedSeconds: Math.min(maxBeatSeconds, Math.max(0.8, Math.round(seconds * 10) / 10)),
     }));
+  }
+
+  // Safety fallback for Video mode: never allow a single-beat video scene
+  if (isVideoMode && validatedBeats.length === 1 && targetVideoDuration >= 3) {
+    const singleBeat = validatedBeats[0];
+    const words = (singleBeat.textSpan || '').trim().split(/\s+/).filter(Boolean);
+    if (words.length >= 4) {
+      const mid = Math.ceil(words.length / 2);
+      const span1 = words.slice(0, mid).join(' ');
+      const span2 = words.slice(mid).join(' ');
+      const halfSec = Math.round((targetVideoDuration / 2) * 10) / 10;
+
+      validatedBeats.length = 0;
+      validatedBeats.push(alignProseWithShotType({
+        ...singleBeat,
+        beatIndex: 1,
+        textSpan: span1,
+        shotType: singleBeat.shotType || 'Medium Shot',
+        cameraAngle: singleBeat.cameraAngle || 'eye-level',
+        cameraMovement: singleBeat.cameraMovement || 'Slow Push-In',
+        estimatedSeconds: halfSec,
+      }));
+      validatedBeats.push(alignProseWithShotType({
+        ...singleBeat,
+        beatIndex: 2,
+        textSpan: span2,
+        shotType: isTightShot(singleBeat.shotType) ? 'Medium Shot' : 'Close-Up Detail',
+        cameraAngle: singleBeat.cameraAngle === 'low-angle' ? 'eye-level' : 'low-angle',
+        cameraMovement: 'Tracking Subject',
+        estimatedSeconds: Math.max(0.8, Math.round((targetVideoDuration - halfSec) * 10) / 10),
+      }));
+    }
   }
 
   // In Video mode: smartly balance the sum of beat durations to cover the target clip duration
