@@ -119,6 +119,7 @@ export async function generateStoryDirectly(
     targetVideoDuration: reqTargetVideoDuration,
     beatMode = 'automatic',
     customScenes,
+    autoArchitectMode,
   } = req;
 
   const isVideoMode = generationMode === 'video';
@@ -139,9 +140,38 @@ export async function generateStoryDirectly(
     durationInstruction = `Provide a well-paced scene sequence with 3 to 6 seconds per scene floor.`;
   }
 
+  const autoArchitectInstruction = autoArchitectMode
+    ? `\n\n================================================================================
+CRITICAL: AUTO STORY ARCHITECT & VIRAL HOOK OPTIMIZATION ACTIVE:
+================================================================================
+The user has enabled the Auto Story Architect & Hook Optimizer pipeline.
+You MUST take their raw premise, question, draft, or concept and perform comprehensive end-to-end research, hook engineering, full-sentence narrative scripting, and visual scene breakdown in this single pass:
+
+1. COMPREHENSIVE CONCEPT RESEARCH & CAUSAL CHAIN (APPLICABLE TO ANY STORY):
+   - Analyze the premise deeply, whether it is a biological or medical curiosity (e.g. Zack D. Films style: "What happens if you swallow a magnet/battery?"), a scientific phenomenon, historical turning point, urban legend, mystery, or creative drama.
+   - Establish the precise step-by-step physical, chemical, or psychological cause-and-effect chain. Break down what happens sequentially without hand-waving or skipping mechanical steps.
+
+2. VIRAL OPENING HOOK ENGINEERING (MAXIMUM FIRST 2-SECOND RETENTION):
+   - You MUST craft an irresistible, scroll-stopping opening hook sentence for Scene 1.
+   - Ban boring traditional narrative intros (e.g., NEVER begin with "Have you ever wondered...", "This is the story of...", or "In 1999...").
+   - Employ high-retention formats: Curiosity Gap, Imminent Jeopardy, or Counter-Intuitive Truth (e.g., "If you swallow two magnets at different times, they won't just pass through your body.", "The moment a diver breaches 300 feet without a cage, the water turns pitch black, but that is not what kills you.").
+   - Populate the "hookAnalysis" object in the JSON output:
+     - "headlineHook": the exact viral opening hook sentence used in Scene 1 Beat 1.
+     - "hookType": the psychological hook category (e.g., "Curiosity Gap", "Immediate Biological Threat", "Counter-Intuitive Truth", "High-Stakes Dilemma").
+     - "hookRationale": concise 1-2 sentence explanation of why this hook grabs and holds viewer retention in the first two seconds.
+
+3. FULL-SENTENCE SPOKEN NARRATION SCRIPT:
+   - Formulate the entire story into clean, complete, grammatically pristine spoken sentences across every scene.
+   - Every scene's "narratorLine" MUST be a complete, well-formed sentence that flows naturally into the next, forming a compelling voiceover script when read continuously from beginning to end.
+
+4. SEAMLESS SCENE BREAKDOWN & VISUAL PROMPTING:
+   - Seamlessly sequence the story into chronological scenes and micro-beats covering every beat of the narration.
+   - Ensure rich visual continuity, varied camera framing, and hyper-detailed prompts ready for rendering without any need for manual cutting or comparison.`
+    : '';
+
   const systemPrompt = isVideoMode
     ? `You are an expert film director, cinematographer, and AI video prompt engineer.
-Your task is to take a story and generate a production-ready, scene-by-scene video generation breakdown with smart duration-adaptive video beats.
+Your task is to take a story and generate a production-ready, scene-by-scene video generation breakdown with smart duration-adaptive video beats.${autoArchitectInstruction}
 
 TARGET DURATION & SMART BEAT ADAPTATION:
 The target video duration is ${targetVideoDuration} seconds per scene clip (e.g., 5s, 6s, 8s, 10s, 15s).
@@ -273,6 +303,11 @@ STRICT CONSTRAINTS:
 3. NO REAL OR IDENTIFIABLE PERSON NAMES IN VISUAL PROMPTS: NEVER use real, identifiable people's actual proper names (historical figures, celebrities, private individuals) in characterSheet keys, imagePrompt, videoPrompt, or startFramePrompt — use generic role descriptions instead. Mythological, legendary, and folkloric figures (Hercules, Zeus, King Arthur, Robin Hood) are EXEMPT and should be named normally. Real names are permitted in narratorLine.
 4. You MUST respond with ONLY a valid JSON object matching this schema:
 {
+  "hookAnalysis": {
+    "headlineHook": "string (Scene 1 Beat 1 viral hook)",
+    "hookType": "string (e.g. Curiosity Gap | Immediate Threat | Counter-Intuitive Truth | Dilemma)",
+    "hookRationale": "string (1-2 sentences on retention psychology)"
+  },
   "styleProfile": {
     "artStyle": "...",
     "colorPalette": "...",
@@ -314,7 +349,7 @@ STRICT CONSTRAINTS:
 }
 Do not include markdown code fences or backticks, just raw JSON.`
     : `You are an expert film director, cinematographer, and storyboard production supervisor.
-Your task is to take a story and generate a production-ready, nested scene-and-beat visual breakdown with exact cinematic image prompts, shot taxonomy tags, narrator lines, a style profile, and visual continuity sheets.
+Your task is to take a story and generate a production-ready, nested scene-and-beat visual breakdown with exact cinematic image prompts, shot taxonomy tags, narrator lines, a style profile, and visual continuity sheets.${autoArchitectInstruction}
 
 SCHEMA AND STRUCTURE REQUIREMENTS:
 1. Style Profile:
@@ -448,6 +483,11 @@ STRICT CONSTRAINTS:
 3. NO REAL OR IDENTIFIABLE PERSON NAMES IN VISUAL PROMPTS: NEVER use real, identifiable people's actual proper names (historical figures, celebrities, private individuals) in characterSheet keys, imagePrompt, videoPrompt, or startFramePrompt — use generic role descriptions instead. Mythological, legendary, and folkloric figures (Hercules, Zeus, King Arthur, Robin Hood) are EXEMPT and should be named normally. Real names are permitted in narratorLine.
 4. You MUST respond with ONLY a valid JSON object matching this schema:
 {
+  "hookAnalysis": {
+    "headlineHook": "string (Scene 1 Beat 1 viral hook)",
+    "hookType": "string (e.g. Curiosity Gap | Immediate Threat | Counter-Intuitive Truth | Dilemma)",
+    "hookRationale": "string (1-2 sentences on retention psychology)"
+  },
   "styleProfile": {
     "artStyle": "Specific art medium or style...",
     "colorPalette": "Specific palette...",
@@ -493,7 +533,7 @@ Beats:
 ${cs.beats.map((b, bIdx) => `  - Beat ${bIdx + 1} phrase: "${b.textSpan}"${b.userGuidance ? ` | Director's Visual Note: "${b.userGuidance}"` : ''}${b.shotType ? ` | Preferred Shot: "${b.shotType}"` : ''}${b.transitionHint ? ` | Editing Transition Note: "${b.transitionHint}"` : ''}`).join('\n')}`).join('\n\n')}`;
   }
 
-  const userPrompt = `Story Idea:
+  const userPrompt = `${autoArchitectMode ? '[PIPELINE: AUTO STORY ARCHITECT & HOOK OPTIMIZER ACTIVE - Research concept, engineer viral opening hook, write full-sentence voiceover script, and generate breakdown]\n\n' : ''}Story Idea / Concept Premise:
 ${story}
 
 Character Style Instruction:
@@ -1068,6 +1108,14 @@ ${durationInstruction}${customBeatsPrompt}`;
     ? parsedData.totalDurationSeconds
     : calculatedTotalSeconds;
 
+  const hookAnalysis = parsedData.hookAnalysis && typeof parsedData.hookAnalysis === 'object'
+    ? {
+        headlineHook: typeof parsedData.hookAnalysis.headlineHook === 'string' ? parsedData.hookAnalysis.headlineHook : undefined,
+        hookType: typeof parsedData.hookAnalysis.hookType === 'string' ? parsedData.hookAnalysis.hookType : undefined,
+        hookRationale: typeof parsedData.hookAnalysis.hookRationale === 'string' ? parsedData.hookAnalysis.hookRationale : undefined,
+      }
+    : undefined;
+
   return {
     styleProfile: sanitizedStyleProfile,
     characterSheet: sanitizedCharacterSheet,
@@ -1076,5 +1124,6 @@ ${durationInstruction}${customBeatsPrompt}`;
     scenes: scenesWithTransitionHints,
     generationMode: isVideoMode ? 'video' : 'image',
     targetVideoDuration: isVideoMode ? targetVideoDuration : undefined,
+    hookAnalysis,
   };
 }

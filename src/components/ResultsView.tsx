@@ -479,6 +479,42 @@ export default function ResultsView({
         </div>
       </div>
 
+      {/* Auto Story Architect: High-Retention Viral Hook Banner */}
+      {result.hookAnalysis?.headlineHook && (
+        <div
+          id="viral-hook-analysis-banner"
+          className="p-3.5 sm:p-4 bg-[#14130E] border border-amber-500/40 rounded-[2px] space-y-2 shadow-[0_0_20px_rgba(245,158,11,0.06)]"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-amber-500/20 pb-2">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 text-[10px] sm:text-[11px] font-editorial-meta font-bold uppercase tracking-wider text-amber-300 bg-amber-950/80 border border-amber-500/50 px-2 py-0.5 rounded-[1px]">
+                <Sparkles size={11} className="text-amber-400" />
+                VIRAL HOOK OPTIMIZATION
+              </span>
+              {result.hookAnalysis.hookType && (
+                <span className="text-xs font-display text-amber-200/90 font-medium">
+                  {result.hookAnalysis.hookType}
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] font-editorial-meta text-amber-400/70 tracking-wider">
+              AUTO-ARCHITECT 1-PASS
+            </span>
+          </div>
+
+          <div className="space-y-1">
+            <div className="text-xs sm:text-sm font-display text-[#F5F5F0] italic pl-2.5 border-l-2 border-amber-400 leading-relaxed">
+              &ldquo;{result.hookAnalysis.headlineHook}&rdquo;
+            </div>
+            {result.hookAnalysis.hookRationale && (
+              <p className="text-[11px] sm:text-xs text-[#A8A8A0] font-narrative leading-relaxed pt-0.5">
+                <span className="text-amber-300 font-medium">Retention Strategy:</span> {result.hookAnalysis.hookRationale}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Main Header & Clean Compact Utility Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1 sm:pt-2">
         <div>

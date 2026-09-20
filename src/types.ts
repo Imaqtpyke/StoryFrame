@@ -42,6 +42,11 @@ export interface StoryGenerationResult {
   scenes: Scene[];
   generationMode?: GenerationMode;
   targetVideoDuration?: number;
+  hookAnalysis?: {
+    headlineHook?: string;
+    hookType?: string;
+    hookRationale?: string;
+  };
 }
 
 export interface CustomBeatDefinition {
@@ -71,6 +76,7 @@ export interface GenerateStoryRequest {
   targetVideoDuration?: number;
   beatMode?: 'automatic' | 'custom';
   customScenes?: CustomSceneDefinition[];
+  autoArchitectMode?: boolean;
 }
 
 export interface HistoryItem {

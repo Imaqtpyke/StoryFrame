@@ -79,6 +79,7 @@ export default function GeneratorForm({
 }: GeneratorFormProps) {
   const { apiKey, hasCustomKey, rememberInSession, setCustomApiKey, clearCustomApiKey } = useApiKey();
   const [generationMode, setGenerationMode] = useState<GenerationMode>('image');
+  const [autoArchitectMode, setAutoArchitectMode] = useState<boolean>(false);
   const [beatMode, setBeatMode] = useState<'automatic' | 'custom'>('automatic');
   const [customScenes, setCustomScenes] = useState<CustomSceneDefinition[]>([]);
   const [story, setStory] = useState('');
@@ -350,7 +351,7 @@ export default function GeneratorForm({
       }
     }
 
-    const effectiveBeatMode = parsedCustomScenes ? 'custom' : beatMode;
+    const effectiveBeatMode = autoArchitectMode ? 'automatic' : (parsedCustomScenes ? 'custom' : beatMode);
 
     onSubmit({
       story: story.trim(),
@@ -363,7 +364,8 @@ export default function GeneratorForm({
       generationMode,
       targetVideoDuration,
       beatMode: effectiveBeatMode,
-      customScenes: parsedCustomScenes,
+      customScenes: autoArchitectMode ? undefined : parsedCustomScenes,
+      autoArchitectMode,
     });
   };
 
@@ -468,7 +470,7 @@ export default function GeneratorForm({
               htmlFor="story-input-box"
               className="block font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96]"
             >
-              STORY IDEA
+              {autoArchitectMode ? 'STORY PREMISE, QUESTION, OR DRAFT' : 'STORY IDEA'}
             </label>
 
             <div className="flex items-center space-x-2">
@@ -498,18 +500,22 @@ export default function GeneratorForm({
               onChange={(e) => setStory(e.target.value)}
               disabled={isLoading}
               placeholder={
-                beatMode === 'custom'
-                  ? 'e.g. She fell (beat 1) two miles through open air (beat 2), strapped to three airplane seats, and survived (beat 3).'
-                  : 'Type your story, synopsis, or sequence of events here. Describe what happens from beginning to end.'
+                autoArchitectMode
+                  ? "Enter any concept, question, or rough draft (e.g. 'What happens if you swallow a magnet?' or 'A deep-sea diver finds a glowing hatch'). The AI will research causal facts, craft a viral hook, script full sentences, and generate scene prompts."
+                  : (beatMode === 'custom'
+                      ? 'e.g. She fell (beat 1) two miles through open air (beat 2), strapped to three airplane seats, and survived (beat 3).'
+                      : 'Type your story, synopsis, or sequence of events here. Describe what happens from beginning to end.')
               }
               className={`w-full p-3 sm:p-4 bg-[#121211] hover:bg-[#161614] focus:bg-[#121211] text-[#F5F5F0] placeholder:text-[#666660] border transition-colors focus:outline-none text-sm sm:text-base leading-relaxed resize-y story-textarea-scroll ${
-                beatMode === 'custom' ? 'border-amber-400/50 focus:border-amber-400' : 'border-white/10 focus:border-white'
+                autoArchitectMode
+                  ? 'border-amber-400/40 focus:border-amber-400'
+                  : (beatMode === 'custom' ? 'border-amber-400/50 focus:border-amber-400' : 'border-white/10 focus:border-white')
               }`}
               required
             />
           </div>
 
-          {beatMode === 'custom' && (
+          {!autoArchitectMode && beatMode === 'custom' && (
             <div className="text-[11px] text-amber-300/90 flex flex-wrap items-center justify-between gap-1 px-1 py-1 bg-[#18160E] border border-amber-400/20">
               <span>
                 Manual Beats: place <strong>(beat 1)</strong>, <strong>(beat 2)</strong>, <strong>(beat 3)</strong> right after each line or phrase.
@@ -540,7 +546,106 @@ export default function GeneratorForm({
           />
         </div>
 
-        {/* Format, Distribution Platform, Target Duration, and Beat Pacing Controls */}
+        {/* Enhance Story Toggle */}
+        <div
+          id="auto-architect-toggle-card"
+          className={`p-3 sm:p-3.5 border rounded-[2px] transition-all flex items-center justify-between gap-3 ${
+            autoArchitectMode
+              ? 'bg-[#15140F] border-amber-500/60 shadow-[0_0_24px_rgba(245,158,11,0.09)]'
+              : 'bg-[#121211] border-white/10 hover:border-white/20'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <Sparkles size={14} className={autoArchitectMode ? 'text-amber-400' : 'text-[#888880]'} />
+            <span className="font-display font-medium text-xs sm:text-sm text-white">
+              Enhance Story
+            </span>
+          </div>
+
+          {/* Toggle Switch */}
+          <div className="flex items-center gap-2.5 shrink-0">
+            <button
+              type="button"
+              id="auto-architect-toggle-switch"
+              role="switch"
+              aria-checked={autoArchitectMode}
+              disabled={isLoading}
+              onClick={() => setAutoArchitectMode(!autoArchitectMode)}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-1 focus:ring-amber-400 ${
+                autoArchitectMode ? 'bg-amber-500' : 'bg-[#252522]'
+              }`}
+              title="Toggle Enhance Story"
+            >
+              <span
+                aria-hidden="true"
+                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                  autoArchitectMode ? 'translate-x-5 !bg-black' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+
+        {/* Beat Pacing Controls (under Enhance Story) */}
+        <div className="space-y-1.5 sm:space-y-2">
+          <span className="block font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96]">
+            BEAT PACING
+          </span>
+          {autoArchitectMode ? (
+            <div
+              id="auto-architect-pacing-indicator"
+              className="w-full flex items-center justify-between px-3 bg-[#15140F] border border-amber-500/40 h-[42px] sm:h-[46px] rounded-[2px]"
+              title="Enhance Story automatically optimizes scene beats and narrative pacing"
+            >
+              <div className="flex items-center space-x-1.5 min-w-0">
+                <Sparkles size={12} className="text-amber-400 shrink-0" />
+                <span className="text-xs font-display text-amber-300 font-medium truncate">
+                  AI Auto-Pacing (Direct 1-Pass)
+                </span>
+              </div>
+              <span className="text-[9px] font-editorial-meta uppercase tracking-wider text-amber-400/80 bg-amber-950/60 border border-amber-800/40 px-1.5 py-0.5 rounded-[1px] shrink-0">
+                Active
+              </span>
+            </div>
+          ) : (
+            <div
+              id="beat-mode-toggle-group"
+              className="w-full flex p-1 bg-[#121211] border border-white/10 h-[42px] sm:h-[46px] items-center"
+              role="group"
+              aria-label="Beat pacing mode selection"
+            >
+              <button
+                type="button"
+                id="beat-mode-auto-btn"
+                disabled={isLoading}
+                onClick={() => handleToggleBeatMode('automatic')}
+                className={`flex-1 h-full px-2 sm:px-3 text-xs sm:text-sm transition-all font-display text-center whitespace-nowrap flex items-center justify-center ${
+                  beatMode === 'automatic'
+                    ? 'bg-white text-black font-semibold shadow-sm'
+                    : 'text-[#9C9C96] hover:text-white'
+                }`}
+              >
+                Automatic
+              </button>
+              <button
+                type="button"
+                id="beat-mode-custom-btn"
+                disabled={isLoading}
+                onClick={() => handleToggleBeatMode('custom')}
+                className={`flex-1 h-full px-2 sm:px-3 text-xs sm:text-sm transition-all font-display text-center whitespace-nowrap flex items-center justify-center space-x-1.5 ${
+                  beatMode === 'custom'
+                    ? 'bg-amber-400 text-black font-semibold shadow-sm'
+                    : 'text-[#9C9C96] hover:text-white'
+                }`}
+              >
+                <Scissors size={12} className={beatMode === 'custom' ? 'text-black' : 'text-amber-400'} />
+                <span>Manual Beats</span>
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Format, Distribution Platform, and Target Duration Controls */}
         <div className="space-y-3">
           {/* Aspect Ratio Format Full Width or Responsive Grid */}
           <div className="space-y-1.5 sm:space-y-2">
@@ -582,8 +687,8 @@ export default function GeneratorForm({
             </div>
           </div>
 
-          {/* Responsive row: Distribution Platform | Target Duration | Automatic / Manual Beats */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 items-start">
+          {/* Responsive row: Distribution Platform | Target Duration */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 items-start">
             {/* 1. Distribution Platform */}
             <div className="col-span-1">
               <CustomDropdown
@@ -668,47 +773,6 @@ export default function GeneratorForm({
                 </>
               )}
             </div>
-
-            {/* 3. Automatic vs Manual Beats (Right side of Target Duration) */}
-            <div className="col-span-1 space-y-1.5 sm:space-y-2">
-              <span className="block font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96]">
-                BEAT PACING MODE
-              </span>
-              <div
-                id="beat-mode-toggle-group"
-                className="w-full flex p-1 bg-[#121211] border border-white/10 h-[42px] sm:h-[46px] items-center"
-                role="group"
-                aria-label="Beat pacing mode selection"
-              >
-                <button
-                  type="button"
-                  id="beat-mode-auto-btn"
-                  disabled={isLoading}
-                  onClick={() => handleToggleBeatMode('automatic')}
-                  className={`flex-1 h-full px-2 sm:px-3 text-xs sm:text-sm transition-all font-display text-center whitespace-nowrap flex items-center justify-center ${
-                    beatMode === 'automatic'
-                      ? 'bg-white text-black font-semibold shadow-sm'
-                      : 'text-[#9C9C96] hover:text-white'
-                  }`}
-                >
-                  Automatic
-                </button>
-                <button
-                  type="button"
-                  id="beat-mode-custom-btn"
-                  disabled={isLoading}
-                  onClick={() => handleToggleBeatMode('custom')}
-                  className={`flex-1 h-full px-2 sm:px-3 text-xs sm:text-sm transition-all font-display text-center whitespace-nowrap flex items-center justify-center space-x-1.5 ${
-                    beatMode === 'custom'
-                      ? 'bg-amber-400 text-black font-semibold shadow-sm'
-                      : 'text-[#9C9C96] hover:text-white'
-                  }`}
-                >
-                  <Scissors size={12} className={beatMode === 'custom' ? 'text-black' : 'text-amber-400'} />
-                  <span>Manual Beats</span>
-                </button>
-              </div>
-            </div>
           </div>
         </div>
 
@@ -721,7 +785,9 @@ export default function GeneratorForm({
             className={`relative w-full sm:w-auto min-w-[260px] sm:min-w-[340px] min-h-[44px] sm:min-h-[48px] font-display text-sm sm:text-base font-medium tracking-tight rounded-[2px] transition-all flex items-center justify-center overflow-hidden shadow-lg ${
               isLoading
                 ? 'p-0 bg-[#141413] border border-white/25 cursor-wait shadow-[0_0_30px_rgba(0,0,0,0.85)]'
-                : 'px-6 sm:px-10 py-2.5 sm:py-3.5 bg-white text-black hover:bg-[#EAEAE6] active:bg-[#D4D4D0] disabled:opacity-40 disabled:cursor-not-allowed hover:shadow-xl'
+                : (autoArchitectMode
+                    ? 'px-6 sm:px-10 py-2.5 sm:py-3.5 bg-amber-400 text-black hover:bg-amber-300 active:bg-amber-500 font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:shadow-xl'
+                    : 'px-6 sm:px-10 py-2.5 sm:py-3.5 bg-white text-black hover:bg-[#EAEAE6] active:bg-[#D4D4D0] disabled:opacity-40 disabled:cursor-not-allowed hover:shadow-xl')
             }`}
           >
             {isLoading ? (
@@ -730,7 +796,9 @@ export default function GeneratorForm({
                 <div className="w-full min-h-[44px] sm:min-h-[48px] px-6 sm:px-10 py-2.5 sm:py-3.5 flex items-center justify-center space-x-2.5 text-white select-none">
                   <RefreshCw size={15} className="animate-spin text-white/80 shrink-0" />
                   <span className="font-display text-xs sm:text-sm font-medium tracking-tight text-white">
-                    Generating {generationMode === 'video' ? 'Video' : 'Storyboard'} Breakdown...
+                    {autoArchitectMode
+                      ? 'Architecting Story & Prompts...'
+                      : `Generating ${generationMode === 'video' ? 'Video' : 'Storyboard'} Breakdown...`}
                   </span>
                 </div>
 
@@ -744,7 +812,9 @@ export default function GeneratorForm({
 
                   <RefreshCw size={15} className="animate-spin text-black shrink-0" />
                   <span className="font-display text-xs sm:text-sm font-bold tracking-tight text-black">
-                    Generating {generationMode === 'video' ? 'Video' : 'Storyboard'} Breakdown...
+                    {autoArchitectMode
+                      ? 'Architecting Story & Prompts...'
+                      : `Generating ${generationMode === 'video' ? 'Video' : 'Storyboard'} Breakdown...`}
                   </span>
                 </div>
 
@@ -771,7 +841,14 @@ export default function GeneratorForm({
                 )}
               </>
             ) : (
-              <span>{generationMode === 'video' ? 'Generate Video Breakdown' : 'Generate Breakdown'}</span>
+              <span className="flex items-center gap-1.5">
+                {autoArchitectMode && <Sparkles size={14} className="shrink-0" />}
+                <span>
+                  {autoArchitectMode
+                    ? (generationMode === 'video' ? 'Enhance & Generate Video Plan' : 'Enhance & Generate Breakdown')
+                    : (generationMode === 'video' ? 'Generate Video Breakdown' : 'Generate Breakdown')}
+                </span>
+              </span>
             )}
           </button>
 
