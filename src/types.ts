@@ -42,6 +42,7 @@ export interface StoryGenerationResult {
   scenes: Scene[];
   generationMode?: GenerationMode;
   targetVideoDuration?: number;
+  autoArchitectMode?: boolean;
   hookAnalysis?: {
     headlineHook?: string;
     hookType?: string;
