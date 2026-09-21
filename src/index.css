@@ -245,6 +245,21 @@
   animation: liquidSurfaceCalmGlow 3s ease-in-out infinite;
 }
 
+@keyframes liquidSurfaceAmberGlow {
+  0%, 100% {
+    opacity: 0.8;
+    filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.75));
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 10px rgba(251, 191, 36, 0.95));
+  }
+}
+
+.animate-liquid-glow-amber {
+  animation: liquidSurfaceAmberGlow 3s ease-in-out infinite;
+}
+
 .animate-liquid-shimmer {
   animation: liquidGentleShimmer 4.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
   will-change: transform;

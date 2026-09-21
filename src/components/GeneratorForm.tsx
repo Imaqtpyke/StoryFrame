@@ -802,13 +802,21 @@ export default function GeneratorForm({
                   </span>
                 </div>
 
-                {/* 2. Light Progress Fill Layer: bright white illumination with crisp black text clipped to progress */}
+                {/* 2. Light Progress Fill Layer: bright amber-yellow or white illumination with crisp black text clipped to progress */}
                 <div
-                  className="absolute inset-0 bg-white text-black flex items-center justify-center space-x-2.5 px-6 sm:px-10 py-2.5 sm:py-3.5 select-none pointer-events-none z-10"
+                  className={`absolute inset-0 flex items-center justify-center space-x-2.5 px-6 sm:px-10 py-2.5 sm:py-3.5 select-none pointer-events-none z-10 ${
+                    autoArchitectMode ? 'bg-amber-400 text-black' : 'bg-white text-black'
+                  }`}
                   style={{ clipPath: `inset(0 ${Math.max(0, 100 - progress)}% 0 0)` }}
                 >
-                  {/* Subtle fluid surface shimmer reflection across filled white light */}
-                  <div className="absolute inset-0 w-1/3 bg-gradient-to-r from-transparent via-white/40 to-transparent pointer-events-none animate-liquid-shimmer" />
+                  {/* Subtle fluid surface shimmer reflection across filled light */}
+                  <div
+                    className={`absolute inset-0 w-1/3 pointer-events-none animate-liquid-shimmer ${
+                      autoArchitectMode
+                        ? 'bg-gradient-to-r from-transparent via-amber-200/50 to-transparent'
+                        : 'bg-gradient-to-r from-transparent via-white/40 to-transparent'
+                    }`}
+                  />
 
                   <RefreshCw size={15} className="animate-spin text-black shrink-0" />
                   <span className="font-display text-xs sm:text-sm font-bold tracking-tight text-black">
@@ -826,14 +834,26 @@ export default function GeneratorForm({
                   >
                     {/* Secondary Wave Crest (Translucent Liquid Depth) */}
                     <div className="absolute inset-0 w-full h-full animate-liquid-wave-back opacity-40">
-                      <svg viewBox="0 0 20 200" preserveAspectRatio="none" className="w-full h-full fill-white">
+                      <svg
+                        viewBox="0 0 20 200"
+                        preserveAspectRatio="none"
+                        className={`w-full h-full ${autoArchitectMode ? 'fill-amber-300' : 'fill-white'}`}
+                      >
                         <path d="M0,0 C8,25 16,50 8,75 C0,90 8,100 0,100 C8,125 16,150 8,175 C0,190 8,200 0,200 L0,0 Z" />
                       </svg>
                     </div>
 
-                    {/* Primary Wave Crest (Solid White Organic Wave with Ambient Glow) */}
-                    <div className="absolute inset-0 w-full h-full animate-liquid-wave-front animate-liquid-glow">
-                      <svg viewBox="0 0 20 200" preserveAspectRatio="none" className="w-full h-full fill-white">
+                    {/* Primary Wave Crest (Solid Organic Wave with Ambient Glow) */}
+                    <div
+                      className={`absolute inset-0 w-full h-full animate-liquid-wave-front ${
+                        autoArchitectMode ? 'animate-liquid-glow-amber' : 'animate-liquid-glow'
+                      }`}
+                    >
+                      <svg
+                        viewBox="0 0 20 200"
+                        preserveAspectRatio="none"
+                        className={`w-full h-full ${autoArchitectMode ? 'fill-amber-400' : 'fill-white'}`}
+                      >
                         <path d="M0,0 C12,25 2,50 10,75 C14,88 4,100 0,100 C12,125 2,150 10,175 C14,188 4,200 0,200 L0,0 Z" />
                       </svg>
                     </div>
@@ -855,7 +875,13 @@ export default function GeneratorForm({
           {/* Real-time generation phase indicator while loading */}
           {isLoading && (
             <div className="mt-2.5 flex items-center justify-center space-x-2 text-[11px] font-editorial-meta text-[#A0A09A] tracking-wider animate-in fade-in duration-300">
-              <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse shrink-0 shadow-[0_0_6px_white]" />
+              <span
+                className={`w-1.5 h-1.5 rounded-full animate-pulse shrink-0 ${
+                  autoArchitectMode
+                    ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.9)]'
+                    : 'bg-white shadow-[0_0_6px_white]'
+                }`}
+              />
               <span className="truncate max-w-[300px] sm:max-w-none">{progressPhase}</span>
             </div>
           )}
