@@ -119,7 +119,7 @@ export default function HelpGuideModal({ isOpen, onClose }: HelpGuideModalProps)
                 Director’s Guide &amp; Free AI Directory
               </h2>
               <p className="hidden md:block text-xs text-[#9C9C96] font-editorial-meta mt-0.5 tracking-wider">
-                PRODUCTION WORKFLOW • CHARACTER CONTINUITY • FREE GENERATION PLATFORMS
+                PRODUCTION WORKFLOW • CHARACTER CONTINUITY • FREE GENERATION PLATFORMS • VERSION 3.5
               </p>
             </div>
           </div>
@@ -287,10 +287,10 @@ export default function HelpGuideModal({ isOpen, onClose }: HelpGuideModalProps)
               <div className="space-y-6 max-w-3xl animate-in fade-in duration-200">
                 <div className="space-y-1.5 border-b border-white/10 pb-4">
                   <h3 className="text-lg sm:text-2xl font-display text-white tracking-tight">
-                    The 3-Step Production Workflow
+                    The 4-Step Directorial Workflow
                   </h3>
                   <p className="text-[#9C9C96] text-xs sm:text-sm">
-                    From a raw concept or voiceover script to a full video timeline in minutes.
+                    From a raw concept or voiceover script to a fully synchronized cinematic timeline in minutes.
                   </p>
                 </div>
 
@@ -301,10 +301,10 @@ export default function HelpGuideModal({ isOpen, onClose }: HelpGuideModalProps)
                     </div>
                     <div className="space-y-1.5 flex-1">
                       <h4 className="font-display font-medium text-white text-base">
-                        Input Script or Story Concept
+                        Input Script with Optional Beat Markup
                       </h4>
                       <p className="text-[#B0B0A8] text-xs sm:text-sm leading-relaxed">
-                        Enter your narrative, paste a YouTube voiceover transcript, or click one of our one-click presets (e.g. <em>The Lake Peigneur Sinkhole Disaster</em>).
+                        Enter your narrative, paste a YouTube voiceover transcript, or use one-click presets. For precise director control over where visual cuts occur, embed inline beat markers like <code className="text-white font-mono bg-white/10 px-1 py-0.5 text-xs">(beat 1)</code>, <code className="text-white font-mono bg-white/10 px-1 py-0.5 text-xs">(beat 2)</code> into your paragraphs.
                       </p>
                     </div>
                   </div>
@@ -315,10 +315,10 @@ export default function HelpGuideModal({ isOpen, onClose }: HelpGuideModalProps)
                     </div>
                     <div className="space-y-1.5 flex-1">
                       <h4 className="font-display font-medium text-white text-base">
-                        Select Generation Mode &amp; Visual Style
+                        Configure Format, Scene Count &amp; Model Tier
                       </h4>
                       <p className="text-[#B0B0A8] text-xs sm:text-sm leading-relaxed">
-                        Choose <strong>Text to Image</strong> (fast rapid shot cards) or <strong>Text to Video</strong> (duration-calibrated action clips). Set aspect ratio (9:16 Shorts or 16:9 Cinema) and choose from 18+ directorial styles.
+                        Choose <strong>Short-form (9:16 Vertical)</strong> for TikTok/Reels or <strong>Long-form (16:9 Widescreen)</strong> for YouTube. Pick <strong>Flash 2.5</strong> for rapid drafting or <strong>Pro 2.5</strong> for nuanced spatial blocking and subtle camera choreography.
                       </p>
                     </div>
                   </div>
@@ -329,10 +329,24 @@ export default function HelpGuideModal({ isOpen, onClose }: HelpGuideModalProps)
                     </div>
                     <div className="space-y-1.5 flex-1">
                       <h4 className="font-display font-medium text-white text-base">
-                        Generate, Copy Prompts &amp; Export CSV
+                        Character Sheet &amp; Continuity Anchors
                       </h4>
                       <p className="text-[#B0B0A8] text-xs sm:text-sm leading-relaxed">
-                        Click <strong>GENERATE BREAKDOWN</strong>. Review the Roman-numeral scene taxonomy, 1-click copy individual shot prompts, and click <strong>EXPORT CSV</strong> to import markers straight into CapCut, Premiere, or DaVinci.
+                        Review the locked Character Blueprint synthesized by StoryFrame. Facial structure, hair, distinctive wardrobe tokens, and color palettes are carried into every scene prompt, preventing character face drift across cuts in Flux, Midjourney, Kling, and Luma.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4 p-5 border border-white/10 bg-[#131311] rounded-[2px]">
+                    <div className="w-8 h-8 bg-white text-black font-bold font-mono text-sm flex items-center justify-center shrink-0 rounded-[1px]">
+                      4
+                    </div>
+                    <div className="space-y-1.5 flex-1">
+                      <h4 className="font-display font-medium text-white text-base">
+                        1-Click Copy, Narration TTS &amp; Timeline Sync
+                      </h4>
+                      <p className="text-[#B0B0A8] text-xs sm:text-sm leading-relaxed">
+                        Copy the narrator script directly into Kokoro TTS or ElevenLabs (calibrated to a natural 130-150 WPM cadence). Click <strong>EXPORT CSV</strong> to download a frame-accurate shot list ready to drop into CapCut, DaVinci Resolve, or Premiere Pro.
                       </p>
                     </div>
                   </div>

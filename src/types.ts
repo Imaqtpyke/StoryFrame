@@ -88,4 +88,4 @@ export interface HistoryItem {
   result: StoryGenerationResult;
 }
 
-export type ActivePage = 'generator' | 'terms' | 'privacy' | 'guide';
+export type ActivePage = 'generator' | 'terms' | 'privacy' | 'guide' | 'byok-security';

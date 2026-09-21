@@ -114,6 +114,7 @@ function StoryFrameMain() {
               onSubmit={handleGenerateStory}
               isLoading={isLoading}
               errorMessage={errorMessage}
+              onNavigate={setActivePage}
             />
           )
         ) : (

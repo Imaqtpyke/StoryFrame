@@ -1,14 +1,14 @@
 import { useState, FormEvent, MouseEvent, useEffect } from 'react';
 import CustomDropdown, { DropdownOption } from './CustomDropdown';
-import KeyConsentModal from './KeyConsentModal';
 import { useApiKey } from '../context/ApiKeyContext';
-import { StoryFormat, GenerateStoryRequest, GenerationMode, CustomSceneDefinition, CustomBeatDefinition } from '../types';
-import { Sliders, RefreshCw, AlertCircle, Dices, Eye, EyeOff, KeyRound, Trash2, CheckCircle2, Shield, Camera, Video, Sparkles, Scissors } from 'lucide-react';
+import { StoryFormat, GenerateStoryRequest, GenerationMode, CustomSceneDefinition, CustomBeatDefinition, ActivePage } from '../types';
+import { Sliders, RefreshCw, AlertCircle, Dices, Eye, EyeOff, KeyRound, Trash2, CheckCircle2, Shield, Camera, Video, Sparkles, Scissors, ExternalLink, ShieldCheck } from 'lucide-react';
 
 interface GeneratorFormProps {
   onSubmit: (data: GenerateStoryRequest) => void;
   isLoading: boolean;
   errorMessage: string | null;
+  onNavigate?: (page: ActivePage) => void;
 }
 
 const RANDOM_STORIES: string[] = [
@@ -76,6 +76,7 @@ export default function GeneratorForm({
   onSubmit,
   isLoading,
   errorMessage,
+  onNavigate,
 }: GeneratorFormProps) {
   const { apiKey, hasCustomKey, rememberInSession, setCustomApiKey, clearCustomApiKey } = useApiKey();
   const [generationMode, setGenerationMode] = useState<GenerationMode>('image');
@@ -97,7 +98,6 @@ export default function GeneratorForm({
   const [keyInput, setKeyInput] = useState(apiKey);
   const [showKeyText, setShowKeyText] = useState(false);
   const [rememberOptIn, setRememberOptIn] = useState(rememberInSession);
-  const [isConsentModalOpen, setIsConsentModalOpen] = useState(false);
   const [keyFeedback, setKeyFeedback] = useState<string | null>(null);
   const [formValidationNotice, setFormValidationNotice] = useState<string | null>(null);
 
@@ -162,13 +162,8 @@ export default function GeneratorForm({
       setTimeout(() => setKeyFeedback(null), 3000);
       return;
     }
-    setIsConsentModalOpen(true);
-  };
-
-  const handleConfirmConsent = () => {
     setCustomApiKey(keyInput.trim(), rememberOptIn);
-    setIsConsentModalOpen(false);
-    setKeyFeedback('Gemini API key applied. Requests will be executed directly from your browser.');
+    setKeyFeedback('Gemini API key applied. Requests will execute directly from your browser.');
     setFormValidationNotice(null);
     setTimeout(() => setKeyFeedback(null), 4000);
   };
@@ -1029,10 +1024,25 @@ export default function GeneratorForm({
                     </p>
                   )}
 
-                  <div className="p-3 bg-[#171715] border border-white/10 rounded-[2px] text-xs text-[#9C9C96] space-y-1 font-narrative">
-                    <div className="flex items-center space-x-1.5 text-white font-medium">
-                      <Shield size={12} className="text-emerald-400" />
-                      <span className="font-editorial-meta text-[10px]">DIRECT BROWSER-TO-GOOGLE ARCHITECTURE</span>
+                  <div className="p-3 bg-[#171715] border border-white/10 rounded-[2px] text-xs text-[#9C9C96] space-y-1.5 font-narrative">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-1.5 text-white font-medium">
+                        <Shield size={12} className="text-emerald-400" />
+                        <span className="font-editorial-meta text-[10px]">DIRECT BROWSER-TO-GOOGLE ARCHITECTURE</span>
+                      </div>
+                      {onNavigate && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onNavigate('byok-security');
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                          }}
+                          className="text-[10px] text-amber-400 hover:text-amber-300 font-editorial-meta tracking-wider underline underline-offset-2 inline-flex items-center gap-1"
+                        >
+                          <ShieldCheck size={11} />
+                          <span>READ SECURITY &amp; CONSENT GUIDE</span>
+                        </button>
+                      )}
                     </div>
                     <p className="leading-relaxed">
                       Your Gemini API key is kept exclusively within your local browser memory and used directly for Google Generative AI queries. Keys are never transmitted to or logged on third-party servers.
@@ -1052,14 +1062,6 @@ export default function GeneratorForm({
           )}
         </div>
       </form>
-
-      {/* BYOK Security & Consent Modal */}
-      <KeyConsentModal
-        isOpen={isConsentModalOpen}
-        onClose={() => setIsConsentModalOpen(false)}
-        onConfirm={handleConfirmConsent}
-        pendingKeyPrefix={keyInput.trim().slice(0, 8)}
-      />
     </div>
   );
 }

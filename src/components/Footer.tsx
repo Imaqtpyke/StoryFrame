@@ -15,7 +15,7 @@ export default function Footer({ onNavigate }: FooterProps) {
               StoryFrame
             </p>
             <span className="stamp-chip text-[8px] sm:text-[9px] bg-[#171715] text-[#A8A8A2] border-white/10">
-              v3.0
+              v3.5 • Production
             </span>
           </div>
           <p className="text-[#C4C4BE] sm:text-[#9C9C96] text-xs sm:text-sm leading-relaxed max-w-sm sm:max-w-none">
@@ -24,6 +24,18 @@ export default function Footer({ onNavigate }: FooterProps) {
         </div>
 
         <div className="flex flex-wrap items-center justify-center gap-x-4 sm:gap-x-6 gap-y-1 font-editorial-meta">
+          <button
+            type="button"
+            id="footer-nav-security"
+            onClick={() => {
+              onNavigate('byok-security');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            className="text-[9px] sm:text-[11px] min-h-[24px] sm:min-h-[44px] inline-flex items-center text-[#70706A] sm:text-[#9C9C96] hover:text-white transition-colors py-0.5 sm:py-1 focus:outline-none tracking-wider sm:tracking-widest"
+          >
+            BYOK Security
+          </button>
+          <span className="text-white/20 hidden sm:inline">•</span>
           <button
             type="button"
             id="footer-nav-help"
