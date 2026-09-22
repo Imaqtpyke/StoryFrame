@@ -730,9 +730,15 @@ export default function ResultsView({
                             </div>
 
                             <div className="pt-1 border-t border-white/5">
-                              <p className="text-[10px] text-[#E6E6E1] italic font-narrative line-clamp-2 leading-tight">
-                                &ldquo;{getPreviewText(beat.textSpan, 6)}&rdquo;
-                              </p>
+                              {beat.textSpan && beat.textSpan.trim().length > 0 ? (
+                                <p className="text-[10px] text-[#E6E6E1] italic font-narrative line-clamp-2 leading-tight">
+                                  &ldquo;{getPreviewText(beat.textSpan, 6)}&rdquo;
+                                </p>
+                              ) : (
+                                <span className="inline-block text-[8.5px] font-editorial-meta uppercase tracking-wider text-amber-400/90 bg-amber-950/40 px-1 py-0.5 rounded-[1px]">
+                                  Silent Reaction / Action Beat
+                                </span>
+                              )}
                             </div>
                           </div>
                         ))}
@@ -807,9 +813,15 @@ export default function ResultsView({
                               </div>
 
                               <div className="pt-1.5 border-t border-white/5 flex items-center justify-between gap-1">
-                                <p className="text-[11px] text-[#E6E6E1] italic font-narrative truncate max-w-[85%]">
-                                  &ldquo;{getPreviewText(beat.textSpan, 6)}&rdquo;
-                                </p>
+                                {beat.textSpan && beat.textSpan.trim().length > 0 ? (
+                                  <p className="text-[11px] text-[#E6E6E1] italic font-narrative truncate max-w-[85%]">
+                                    &ldquo;{getPreviewText(beat.textSpan, 6)}&rdquo;
+                                  </p>
+                                ) : (
+                                  <span className="inline-block text-[9px] font-editorial-meta uppercase tracking-wider text-amber-400/90 bg-amber-950/40 px-1.5 py-0.5 rounded-[1px]">
+                                    Silent Reaction / Action Beat
+                                  </span>
+                                )}
                                 <ChevronDown size={11} className="text-[#7D7D76] group-hover:text-white transition-colors shrink-0" />
                               </div>
                             </div>
@@ -916,7 +928,13 @@ export default function ResultsView({
                                 </button>
                               </div>
                               <div className="p-2 sm:p-2.5 bg-[#0D0D0C] border border-white/5 text-xs sm:text-sm font-narrative italic text-[#F5F5F0]">
-                                &ldquo;{beat.textSpan}&rdquo;
+                                {beat.textSpan && beat.textSpan.trim().length > 0 ? (
+                                  <>&ldquo;{beat.textSpan}&rdquo;</>
+                                ) : (
+                                  <span className="not-italic font-editorial-meta text-[10px] text-amber-400 uppercase tracking-wider">
+                                    [Silent Reaction / Action Beat - No Spoken Dialogue]
+                                  </span>
+                                )}
                               </div>
                             </div>
 

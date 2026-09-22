@@ -14,6 +14,7 @@ import {
   cleanRedundantOnScreenText,
   populateSceneTransitionHints,
 } from './beatSplitting';
+import { updateVideoPromptDuration } from './videoSuitability';
 
 function removeEmDashes(text: string): string {
   if (!text) return text;
@@ -174,7 +175,7 @@ export async function generateEnhancedStory(
 
   let durationInstruction = '';
   if (isVideoMode) {
-    durationInstruction = `Generation mode is Text to Video. Target single video clip duration is ${targetVideoDuration} seconds per scene (options 5-15s). Break the story into distinct visual scenes that can each be captured in a single ${targetVideoDuration}-second AI video shot.`;
+    durationInstruction = `Generation mode is Text to Video. Target single video clip duration is strictly ${targetVideoDuration} seconds per scene. Break the story into distinct visual scenes that can each be captured in a single ${targetVideoDuration}-second AI video shot. Each scene's master "videoPrompt" MUST state Duration: ${targetVideoDuration} seconds.`;
   } else if (durationMode === 'automatic') {
     durationInstruction = `Duration mode is Automatic. Break the story into however many scenes it naturally requires. Estimate realistic narration pacing with a floor of 3 to 6 seconds of spoken narration per scene. Calculate and return totalDurationSeconds accurately based on the scene pacing.`;
   } else if (durationSeconds && durationSeconds > 0) {
@@ -284,7 +285,7 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    For each scene, provide an array of fine-grained video beats representing the temporal subdivisions of this ${targetVideoDuration}-second clip.
    Each beat MUST contain:
    - "beatIndex": integer (1, 2, 3...)
-   - "textSpan": specific phrase/action segment from the narrator line
+   - "textSpan": specific phrase or spoken clause from the narrator line. Every beat MUST correspond to actual spoken words from the narrator line. DO NOT create artificial extra beats with empty textSpan ("") or ghost beats. Distribute the ${targetVideoDuration} seconds across the actual phrases of the sentence (e.g. 2 beats of 2.0s each for a 4-second clip).
    - "estimatedSeconds": estimated duration in seconds
    - "shotType": explicit cinematography shot size
    - "cameraAngle": explicit camera angle
@@ -513,6 +514,9 @@ ${durationInstruction}`;
     if (videoPrompt) {
       videoPrompt = resolveEstablishedLookPlaceholders(videoPrompt, sanitizedCharacterSheet, sanitizedLocationSheet);
       videoPrompt = resolveDisjunctivePhrasing(videoPrompt);
+      if (isVideoMode) {
+        videoPrompt = updateVideoPromptDuration(videoPrompt, targetVideoDuration, targetVideoDuration);
+      }
     }
     if (startFramePrompt) {
       startFramePrompt = resolveEstablishedLookPlaceholders(startFramePrompt, sanitizedCharacterSheet, sanitizedLocationSheet);

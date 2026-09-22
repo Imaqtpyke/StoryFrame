@@ -198,7 +198,13 @@ export default function BeatBottomSheet({
               </button>
             </div>
             <div className="p-2.5 bg-[#0A0A09] border border-white/10 text-xs text-[#F5F5F0] italic rounded">
-              &ldquo;{beat.textSpan}&rdquo;
+              {beat.textSpan && beat.textSpan.trim().length > 0 ? (
+                <>&ldquo;{beat.textSpan}&rdquo;</>
+              ) : (
+                <span className="not-italic font-editorial-meta text-[10px] text-amber-400 uppercase tracking-wider">
+                  [Silent Reaction / Action Beat - No Spoken Dialogue]
+                </span>
+              )}
             </div>
           </div>
 
