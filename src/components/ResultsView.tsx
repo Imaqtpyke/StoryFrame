@@ -641,6 +641,77 @@ export default function ResultsView({
                     </div>
                   </div>
 
+                  {/* Master Video Prompt & Keyframe Reference (Text to Video Mode) */}
+                  {isVideoMode && (scene.videoPrompt || scene.startFramePrompt) && (
+                    <div className="space-y-3 pt-1">
+                      {scene.videoPrompt && (
+                        <div className="bg-[#151410] border border-amber-900/40 p-3.5 sm:p-4 rounded-[2px] space-y-2">
+                          <div className="flex items-center justify-between gap-2 border-b border-amber-900/30 pb-2">
+                            <div className="flex items-center gap-1.5">
+                              <Clapperboard size={12} className="text-amber-400" />
+                              <span className="font-editorial-meta text-[9px] sm:text-[10px] text-amber-300 font-medium uppercase tracking-wider">
+                                Master Scene Video Prompt ({result.targetVideoDuration || scene.estimatedSeconds || 5}s Clip)
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(scene.videoPrompt || '', `scene-vp-${scene.index}`)}
+                              className="font-editorial-meta text-[9px] text-amber-400/90 hover:text-white bg-amber-950/60 hover:bg-amber-900/80 px-2 py-0.5 border border-amber-800/40 transition-colors inline-flex items-center gap-1 shrink-0"
+                            >
+                              {copiedIndex === `scene-vp-${scene.index}` ? (
+                                <>
+                                  <Check size={9} className="text-white" />
+                                  <span>COPIED</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy size={9} />
+                                  <span>COPY MASTER PROMPT</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                          <p className="font-mono text-xs text-[#F2EFE9] leading-relaxed selection:bg-white selection:text-black">
+                            {scene.videoPrompt}
+                          </p>
+                        </div>
+                      )}
+
+                      {scene.startFramePrompt && (
+                        <div className="bg-[#0B0F15] border border-sky-900/30 p-3 sm:p-3.5 rounded-[2px] space-y-1.5">
+                          <div className="flex items-center justify-between gap-2 border-b border-sky-900/20 pb-1.5">
+                            <div className="flex items-center gap-1.5">
+                              <ImageIcon size={11} className="text-sky-400/80" />
+                              <span className="font-editorial-meta text-[9px] text-sky-200/80 font-medium uppercase tracking-wider">
+                                Keyframe Reference Start Frame (Image-to-Video Anchor)
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(scene.startFramePrompt || '', `scene-sfp-${scene.index}`)}
+                              className="font-editorial-meta text-[9px] text-sky-300/80 hover:text-white bg-sky-950/40 hover:bg-sky-900/60 px-2 py-0.5 border border-sky-800/30 transition-colors inline-flex items-center gap-1 shrink-0"
+                            >
+                              {copiedIndex === `scene-sfp-${scene.index}` ? (
+                                <>
+                                  <Check size={9} className="text-white" />
+                                  <span>COPIED</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy size={9} />
+                                  <span>COPY KEYFRAME</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                          <p className="font-mono text-xs text-[#D8E6F0] leading-relaxed selection:bg-white selection:text-black">
+                            {scene.startFramePrompt}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Beats Breakdown Section (Cinematography & Visual Beats in Image Mode / Cinematography & Video Beats in Video Mode) */}
                   <div className="space-y-3.5 sm:space-y-4 pt-1 sm:pt-2">
                     <div className="flex items-center justify-between border-t border-white/10 pt-3 sm:pt-4">
