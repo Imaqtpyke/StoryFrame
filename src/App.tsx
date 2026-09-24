@@ -115,6 +115,7 @@ function StoryFrameMain() {
               isLoading={isLoading}
               errorMessage={errorMessage}
               onNavigate={setActivePage}
+              initialValues={lastRequest}
             />
           )
         ) : (

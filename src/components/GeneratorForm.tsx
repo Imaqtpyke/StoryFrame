@@ -9,6 +9,7 @@ interface GeneratorFormProps {
   isLoading: boolean;
   errorMessage: string | null;
   onNavigate?: (page: ActivePage) => void;
+  initialValues?: GenerateStoryRequest | null;
 }
 
 const RANDOM_STORIES: string[] = [
@@ -77,22 +78,52 @@ export default function GeneratorForm({
   isLoading,
   errorMessage,
   onNavigate,
+  initialValues,
 }: GeneratorFormProps) {
   const { apiKey, hasCustomKey, rememberInSession, setCustomApiKey, clearCustomApiKey } = useApiKey();
-  const [generationMode, setGenerationMode] = useState<GenerationMode>('image');
-  const [autoArchitectMode, setAutoArchitectMode] = useState<boolean>(false);
-  const [beatMode, setBeatMode] = useState<'automatic' | 'custom'>('automatic');
-  const [customScenes, setCustomScenes] = useState<CustomSceneDefinition[]>([]);
-  const [story, setStory] = useState('');
-  const [characterStyle, setCharacterStyle] = useState('');
-  const [format, setFormat] = useState<StoryFormat>('short');
-  const [platform, setPlatform] = useState('TikTok');
-  const [durationValue, setDurationValue] = useState('automatic');
-  const [videoDurationValue, setVideoDurationValue] = useState('5');
+  const [generationMode, setGenerationMode] = useState<GenerationMode>(initialValues?.generationMode || 'image');
+  const [autoArchitectMode, setAutoArchitectMode] = useState<boolean>(initialValues?.autoArchitectMode || false);
+  const [beatMode, setBeatMode] = useState<'automatic' | 'custom'>(initialValues?.beatMode || 'automatic');
+  const [customScenes, setCustomScenes] = useState<CustomSceneDefinition[]>(initialValues?.customScenes || []);
+  const [story, setStory] = useState(initialValues?.story || '');
+  const [characterStyle, setCharacterStyle] = useState(initialValues?.characterStyle || '');
+  const [format, setFormat] = useState<StoryFormat>(initialValues?.format || 'short');
+  const [platform, setPlatform] = useState(initialValues?.platform || 'TikTok');
+  const [durationValue, setDurationValue] = useState(
+    initialValues?.durationMode === 'automatic'
+      ? 'automatic'
+      : initialValues?.durationSeconds
+        ? String(initialValues.durationSeconds)
+        : 'automatic'
+  );
+  const [videoDurationValue, setVideoDurationValue] = useState(
+    initialValues?.targetVideoDuration ? String(initialValues.targetVideoDuration) : '5'
+  );
   const [customNumeric, setCustomNumeric] = useState('');
   const [customVideoSeconds, setCustomVideoSeconds] = useState('');
-  const [modelQuality, setModelQuality] = useState<'standard' | 'high'>('standard');
+  const [modelQuality, setModelQuality] = useState<'standard' | 'high'>(initialValues?.modelQuality || 'standard');
   const [showAdvanced, setShowAdvanced] = useState(false);
+
+  // Synchronize when initialValues changes (e.g. Back to Edit from Results)
+  useEffect(() => {
+    if (initialValues) {
+      if (initialValues.story !== undefined) setStory(initialValues.story);
+      if (initialValues.characterStyle !== undefined) setCharacterStyle(initialValues.characterStyle);
+      if (initialValues.format !== undefined) setFormat(initialValues.format);
+      if (initialValues.platform !== undefined) setPlatform(initialValues.platform);
+      if (initialValues.generationMode !== undefined) setGenerationMode(initialValues.generationMode);
+      if (initialValues.autoArchitectMode !== undefined) setAutoArchitectMode(initialValues.autoArchitectMode);
+      if (initialValues.beatMode !== undefined) setBeatMode(initialValues.beatMode);
+      if (initialValues.customScenes !== undefined) setCustomScenes(initialValues.customScenes);
+      if (initialValues.targetVideoDuration !== undefined) setVideoDurationValue(String(initialValues.targetVideoDuration));
+      if (initialValues.durationMode === 'automatic') {
+        setDurationValue('automatic');
+      } else if (initialValues.durationSeconds) {
+        setDurationValue(String(initialValues.durationSeconds));
+      }
+      if (initialValues.modelQuality !== undefined) setModelQuality(initialValues.modelQuality);
+    }
+  }, [initialValues]);
 
   // Bring Your Own Key (BYOK) State
   const [keyInput, setKeyInput] = useState(apiKey);
