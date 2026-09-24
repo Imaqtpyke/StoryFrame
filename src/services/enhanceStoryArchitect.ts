@@ -188,35 +188,43 @@ export async function generateEnhancedStory(
     ? Math.max(6, Math.round(targetVideoDuration * 2.2))
     : 10;
 
-  const autoArchitectInstruction = `\n\n================================================================================
+const autoArchitectInstruction = `\n\n================================================================================
 CRITICAL: AUTO STORY ARCHITECT & VIRAL HOOK OPTIMIZATION ACTIVE:
-================================================================================
+===============================================================================
 The user has enabled the Auto Story Architect & Hook Optimizer pipeline.
 You MUST take their raw premise, question, draft, or concept and perform comprehensive end-to-end research, hook engineering, duration-calibrated narrative scripting, and visual scene breakdown in this single pass:
 
-1. COMPREHENSIVE CONCEPT RESEARCH & CAUSAL CHAIN (APPLICABLE TO ANY STORY):
-   - Analyze the premise deeply, whether it is a biological or medical curiosity (e.g. Zack D. Films style: "What happens if you swallow a magnet/battery?"), a scientific phenomenon, historical turning point, urban legend, mystery, or creative drama.
+1. ABSOLUTE PRESERVATION OF CORE NUMBERS, CURRENCIES & SPECIFIC EXAMPLES:
+   - When the user provides specific numbers, currencies, and item examples (e.g. "₱1,000", "spending ₱150 on lunch, ₱100 on coffee, ₱80 on transportation"), you MUST STRICTLY PRESERVE THOSE EXACT FIGURES, CURRENCY SYMBOLS (₱, $, etc.), AND ITEMS in the narration!
+   - NEVER replace specific prices or numbers with vague generalizations like "a few dollars" or substitute different currencies.
+
+2. VISUAL CADENCE & COMMA-DELIBERATE SCRIPT STRUCTURE:
+   - Write spoken sentences with deliberate, natural comma clauses so every distinct transaction, action, or shift forms its own clean visual beat (e.g. "You hand over ₱150 for lunch, tap for a ₱100 coffee, drop ₱80 on fare, and watch your balance dwindle.").
+   - Avoid long, breathless run-on sentences. Let the voiceover breathe with crisp punctuation.
+
+3. COMPREHENSIVE CONCEPT RESEARCH & CAUSAL CHAIN (APPLICABLE TO ANY STORY):
+   - Analyze the premise deeply, whether it is a financial psychology phenomenon ("why money disappears fast"), a biological/medical curiosity (e.g. Zack D. Films style: "What happens if you swallow a magnet?"), scientific mechanism, historical event, or creative drama.
    - Establish the precise step-by-step physical, chemical, or psychological cause-and-effect chain. Break down what happens sequentially without hand-waving or skipping mechanical steps.
 
-2. VIRAL OPENING HOOK ENGINEERING (MAXIMUM FIRST 2-SECOND RETENTION):
+4. VIRAL OPENING HOOK ENGINEERING (MAXIMUM FIRST 2-SECOND RETENTION):
    - You MUST craft an irresistible, scroll-stopping opening hook sentence for Scene 1.
    - Ban boring traditional narrative intros (e.g., NEVER begin with "Have you ever wondered...", "This is the story of...", or "In 1999...").
-   - Employ high-retention formats: Curiosity Gap, Imminent Jeopardy, or Counter-Intuitive Truth (e.g., "Swallowing two tiny magnets can silently tear your organs.", "The moment a diver breaches 300 feet without a cage, the ocean goes pitch black, but that is not what kills you.").
+   - Employ high-retention formats: Curiosity Gap, Imminent Jeopardy, or Counter-Intuitive Truth (e.g., "Why does ₱1,000 feel like a small fortune when it hits your hand, but vanishes after just three casual taps?", "Swallowing two tiny magnets can silently tear your organs.").
    - Populate the "hookAnalysis" object in the JSON output:
      - "headlineHook": the exact viral opening hook sentence used in Scene 1 Beat 1.
      - "hookType": the psychological hook category (e.g., "Curiosity Gap", "Immediate Biological Threat", "Counter-Intuitive Truth", "High-Stakes Dilemma").
      - "hookRationale": concise 1-2 sentence explanation of why this hook grabs and holds viewer retention in the first two seconds.
 
-3. STRICT DURATION-AWARE SPOKEN NARRATION BUDGET (CRITICAL PACING MATH):
+5. STRICT DURATION-AWARE SPOKEN NARRATION BUDGET (CRITICAL PACING MATH):
    ${isVideoMode
      ? `- VIDEO CLIP DURATION: Each scene clip represents EXACTLY ${targetVideoDuration} seconds.
    - SPOKEN WORD CEILING: Natural voiceover speech runs at ~2 to 2.2 words per second. Therefore, EACH scene's "narratorLine" MUST BE PUNCHY AND MUST NOT EXCEED ${maxSpokenWordsPerScene} WORDS (for a ${targetVideoDuration}-second clip, max ${maxSpokenWordsPerScene} words).
    - NEVER cram a long, complex 12-20 word sentence into a ${targetVideoDuration}-second scene!
-   - If the premise or scientific fact requires more explanation, you MUST distribute the narrative across MULTIPLE sequential ${targetVideoDuration}-second scenes (e.g., Scene 1: hook premise in ≤${maxSpokenWordsPerScene} words; Scene 2: biological/causal mechanism in ≤${maxSpokenWordsPerScene} words; Scene 3: visual outcome in ≤${maxSpokenWordsPerScene} words).`
+   - If the premise requires more explanation, you MUST distribute the narrative across MULTIPLE sequential ${targetVideoDuration}-second scenes (e.g., Scene 1: hook premise in ≤${maxSpokenWordsPerScene} words; Scene 2: the purchases in ≤${maxSpokenWordsPerScene} words; Scene 3: the psychology in ≤${maxSpokenWordsPerScene} words; Scene 4: the mindset shift in ≤${maxSpokenWordsPerScene} words).`
      : `- Speech runs at ~2 words per second. Every scene's "narratorLine" must be a natural spoken sentence, and "estimatedSeconds" must reflect spoken pacing accurately (~1 second per 2 words).
    - If a target duration is set (${durationSeconds ? durationSeconds + 's' : 'automatic'}), pace the script length so all scenes combined match this target closely.`}
 
-4. MANDATORY MULTI-BEAT BREAKDOWN (NEVER A SINGLE BEAT PER SCENE):
+6. MANDATORY MULTI-BEAT BREAKDOWN (NEVER A SINGLE BEAT PER SCENE):
    ${isVideoMode
      ? `- MANDATORY MULTI-BEAT RULE: A single beat spanning an entire ${targetVideoDuration}-second video clip is STRICTLY FORBIDDEN.
    - Every ${targetVideoDuration}-second scene MUST be subdivided into 2 to 3 sequential micro-beats (${targetVideoDuration <= 6 ? '2 to 3 beats of ~1.0s to 2.0s each' : '3 to 5 beats of ~1.5s to 2.5s each'}).
@@ -224,22 +232,22 @@ You MUST take their raw premise, question, draft, or concept and perform compreh
      : `- HARD CEILING RULE: No single beat may represent more than 2 seconds of estimated narration or 8 words, whichever is smaller.
    - Partition each scene's spoken sentence across 2 to 4 distinct visual beats with dynamic camera variety (wide → medium → close-up).`}
 
-5. MANDATORY GLOBAL VISUAL TOKEN BIBLE & UNBREAKABLE COLOR/MATERIAL CONSISTENCY:
+7. MANDATORY GLOBAL VISUAL TOKEN BIBLE & UNBREAKABLE COLOR/MATERIAL CONSISTENCY:
    - Establish and strictly enforce a unified, permanent visual anchor palette across all scenes and beats:
-     * FLUIDS, GASES & ENERGETIC SUBSTANCES: If acid, gastric fluid, poison, potion, fire, blood, or energy is present, you MUST explicitly declare its EXACT color up front in Scene 1 (e.g., "toxic fluorescent-green bubbling acid" or "viscous dark plum-purple gastric fluid"). That EXACT color descriptor MUST BE REPEATED in every single beat that features it. Switching colors mid-story (e.g. green in scene 1 and purple in scene 2) or leaving color unstated so the video generator guesses is STRICTLY FORBIDDEN.
-     * PROPS & SWALLOWED / HELD OBJECTS: Explicitly define key objects with exact, singular geometry, material, and dimensions (e.g., "a 1-inch hexagonal galvanized steel bolt with screw threads"). Disjunctive or indecisive phrasing like "like a small bolt or coin", "either X or Y", or "a metal object" is STRICTLY FORBIDDEN.
-     * RECURRING ENVIRONMENT GEOMETRY & ARCHITECTURE: Lock the specific walls, geometry, textures, and color tones of the recurring location (e.g., "cavernous internal organ environment with blocky, textured walls representing organic stomach lining rugae folds with 32-bit flat shading").
+     * FLUIDS, GASES & ENERGETIC SUBSTANCES: If acid, gastric fluid, poison, potion, fire, blood, or energy is present, you MUST explicitly declare its EXACT color up front in Scene 1. That EXACT color descriptor MUST BE REPEATED in every single beat that features it.
+     * PROPS & SWALLOWED / HELD OBJECTS: Explicitly define key objects with exact, singular geometry, material, and dimensions.
+     * RECURRING ENVIRONMENT GEOMETRY & ARCHITECTURE: Lock the specific walls, geometry, textures, and color tones of the recurring location.
 
-6. 100% SELF-CONTAINED PROMPTS FOR DOWNSTREAM VIDEO GENERATORS (GOOGLE FLOW / VEO / KLING):
+8. 100% SELF-CONTAINED PROMPTS FOR DOWNSTREAM VIDEO GENERATORS (GOOGLE FLOW / VEO / KLING):
    - Downstream video generation tools render each clip in isolation without access to previous scenes.
    - Therefore, NEVER output empty references like "(matching established look from Scene 1)" or "(matching established look)" in any videoPrompt or beat imagePrompt without the full concrete visual details!
    - Every single beat prompt MUST be completely self-contained with its visual DNA (art style, environment architecture, subject/object geometry, and locked fluid color).
 
-7. FRONT-LOADED VISUAL FOUNDATION (FIRST 15-20 TOKENS):
+9. FRONT-LOADED VISUAL FOUNDATION (FIRST 15-20 TOKENS):
    - Video diffusion models give the highest attention weight to the first 15 to 20 tokens.
    - In all beat prompts and scene video prompts, FRONT-LOAD the visual foundation at the start:
      [${characterStyle || 'cinematic'}, 32-bit flat-shaded] [Environment Anchor] [Subject & Locked Color/Material]: [Action kinematics & movement]. Camera: [Shot Type], [Camera Angle], [Camera Movement]. Lighting: [...]. Physics: [...]. Audio: no dialogue, ambient sound only. ${defaultAspectRatio}.
-   - NEVER bury the environment description in a trailing parenthetical at the end like "Location Continuity (...)" where video diffusion engines will ignore it.`;
+   - NEVER bury the environment description in a trailing parenthetical at the end where video diffusion engines will ignore it.`;
 
   const systemPrompt = isVideoMode
     ? `You are an expert film director, cinematographer, and AI video prompt engineer.

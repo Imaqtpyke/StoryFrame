@@ -159,12 +159,24 @@ CLAUSE & MICRO-ACTION BEAT SEGMENTATION RULES (CRITICAL):
 1. Grammar is NOT equal to Scene: Never force an entire long sentence with multiple actions into a single 4-second clip.
 2. Commas, Clauses & Item Lists MUST Form Distinct Beats:
    - When a sentence contains commas separating distinct actions, items, transactions, or emotional pivots (e.g. "spending ₱150 on lunch, ₱100 on coffee, ₱80 on transportation, and a few other small purchases"), EACH distinct item or clause MUST be its own distinct visual beat!
+   - For example: Beat 1: "after spending ₱150 on lunch", Beat 2: "₱100 on coffee", Beat 3: "₱80 on transportation", Beat 4: "and a few other small purchases". DO NOT lump them together!
    - Contrasting conjunctions and pivots ("when you first receive it", "but somehow disappears", "thinking you can buy food", "save some", "and maybe even treat yourself", "your money suddenly starts looking dangerously low", "The strange part is", "none of those expenses felt expensive", "when you paid for them", "That's because your brain notices", "big purchases more easily than small ones", "even though several small purchases", "can quietly drain your wallet", "So next time you have ₱1,000", "don't just ask what you can buy with it", "ask what you want that ₱1,000 to become") MUST trigger separate visual beats!
 3. Dynamic Scene Grouping for ${targetVideoDuration}-Second Clips:
    - Each Scene represents ONE video clip of approximately ${targetVideoDuration} seconds.
-   - Each Scene contains 1 to 3 micro-beats (e.g. 2 beats of ~2.0s each, or 3 beats of ~1.3s each) totaling ${targetVideoDuration} seconds.
-   - If a sentence has 6 or 8 distinct action beats, DO NOT squeeze them all into one scene! Splay them across multiple successive 4-second scenes (e.g. Scene A handles the first 2-3 beats, Scene B handles the next 2-3 beats, Scene C handles the resolution).
-4. No Empty Text Spans:
+   - Each Scene contains 2 to 3 micro-beats (e.g. 2 beats of ~2.0s each, or 3 snappy beats of ~1.3s each) totaling ${targetVideoDuration} seconds.
+   - If a sentence has 6 or 8 distinct action beats, DO NOT squeeze them all into one scene! Splay them across multiple successive 4-second scenes.
+4. MANDATORY CINEMATOGRAPHY & SHOT DIVERSITY (STRICT BAN ON REPETITIVE MEDIUM SHOTS):
+   - You are STRICTLY FORBIDDEN from using "medium shot, eye-level" across consecutive beats!
+   - You MUST vary the camera framing dynamically between beats:
+     * Macro / Extreme Close-Up: On banknotes (textures, security thread, serials), tapping coins, coffee cup, phone screen payment confirmation.
+     * Point-of-View (POV) & Over-the-Shoulder: Looking down into an empty leather wallet, looking at cashier counter, glancing at street menu.
+     * High-Angle / Low-Angle Hero: Low angle when confident holding fresh money; high-angle looking down when feeling depleted.
+     * Wide Establishing: When showcasing setting, outdoor food stall, street with jeepney, or contrasting visual scale (giant fridge vs small coins).
+     * Close-Up / Reaction: Facial expression shifts (hopeful eyes, subtle brow furrow, realization).
+5. Clean, Focused Prompts (NO REDUNDANT BOILERPLATE REPETITIONS):
+   - In each beat's "imagePrompt", describe the precise visual moment, camera framing, subject pose, and action directly.
+   - DO NOT copy-paste the entire character sheet paragraph three times inside the same prompt.
+6. No Empty Text Spans:
    - Every single beat's "textSpan" MUST contain the exact spoken phrase/words from that moment in the story. Empty strings ("") or phantom beats are strictly forbidden.
 
 SCHEMA AND STRUCTURE REQUIREMENTS:
@@ -297,8 +309,13 @@ CLAUSE & MICRO-ACTION BEAT SEGMENTATION RULES (CRITICAL):
 2. Commas, Clauses & Item Lists MUST Form Distinct Beats:
    - When a sentence lists distinct items, transactions, or actions (e.g. "after spending ₱150 on lunch, ₱100 on coffee, ₱80 on transportation, and a few other small purchases"), EACH distinct item or action clause MUST be its own distinct visual beat!
    - Contrasting conjunctions and pivots ("when you first receive it", "but somehow disappears", "thinking you can buy food", "save some", "and maybe even treat yourself", "your money suddenly starts looking dangerously low", "The strange part is", "none of those expenses felt expensive", "when you paid for them", "That's because your brain notices", "big purchases more easily than small ones", "even though several small purchases", "can quietly drain your wallet", "So next time you have ₱1,000", "don't just ask what you can buy with it", "ask what you want that ₱1,000 to become") MUST trigger separate visual beats!
-3. Pacing and Variety:
-   - Break scenes so each scene has 2 to 4 distinct, engaging visual beats with varied shot types (e.g. alternating between Wide Establishing, Medium Action, Macro Detail, and Over-the-Shoulder).
+3. Pacing and Variety (STRICT BAN ON REPETITIVE MEDIUM SHOTS):
+   - You are STRICTLY FORBIDDEN from generating repetitive "medium shot, eye-level" frames.
+   - Break scenes so each scene has 2 to 4 distinct, engaging visual beats with varied shot types:
+     * Macro / Extreme Close-Up: Hand clutching currency, steam rising from food, coin slipping into slot.
+     * POV / Over-The-Shoulder: Looking down into wallet, gazing at storefront or cafe register.
+     * High-Angle / Low-Angle: Dynamic angles emphasizing scale, emotion, or tension.
+     * Wide Shot: Setting the environment or contrasting big vs small elements.
    - If a sentence is long, divide it into multiple coherent scenes or multiple detailed beats so the viewer is never staring at the same visual idea for more than 2-3 seconds.
 4. No Empty Text Spans:
    - Every single beat's "textSpan" MUST contain the exact spoken phrase/words from that moment in the story. Never output empty strings ("").
@@ -535,11 +552,13 @@ ${durationInstruction}${customBeatsPrompt}`;
       const cameraAngle = removeEmDashes(beat.cameraAngle || beat.camera_angle || inferCameraAngle(imagePrompt, beatIndex));
       const cameraMovement = removeEmDashes(beat.cameraMovement || beat.camera_movement || inferCameraMovement(imagePrompt, beatIndex));
 
-      const matchedCharClauses: string[] = [];
+    const matchedCharClauses: string[] = [];
       for (const [charName, visualDesc] of Object.entries(sanitizedCharacterSheet)) {
         const regex = new RegExp(`\\b${charName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
         if (regex.test(textSpan) || regex.test(imagePrompt)) {
-          if (!imagePrompt.includes(visualDesc)) {
+          // Avoid appending if visual details are already inside the prompt
+          const snippet = visualDesc.slice(0, 25);
+          if (!imagePrompt.toLowerCase().includes(snippet.toLowerCase())) {
             matchedCharClauses.push(`${charName}: ${visualDesc}`);
           }
         }
@@ -549,7 +568,8 @@ ${durationInstruction}${customBeatsPrompt}`;
       for (const [locName, visualDesc] of Object.entries(sanitizedLocationSheet)) {
         const regex = new RegExp(`\\b${locName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
         if (regex.test(textSpan) || regex.test(imagePrompt)) {
-          if (!imagePrompt.includes(visualDesc)) {
+          const snippet = visualDesc.slice(0, 25);
+          if (!imagePrompt.toLowerCase().includes(snippet.toLowerCase())) {
             matchedLocClauses.push(`${locName} environment: ${visualDesc}`);
           }
         }
@@ -560,16 +580,19 @@ ${durationInstruction}${customBeatsPrompt}`;
         finalImagePrompt += '.';
       }
 
-      // Exact original continuity behavior
-      if (matchedCharClauses.length > 0) {
+      // Append continuity only if not already embedded
+      if (matchedCharClauses.length > 0 && !finalImagePrompt.toLowerCase().includes('character continuity')) {
         finalImagePrompt += ` Character Continuity (${matchedCharClauses.join('. ')}).`;
       }
 
-      if (matchedLocClauses.length > 0) {
+      if (matchedLocClauses.length > 0 && !finalImagePrompt.toLowerCase().includes('location continuity')) {
         finalImagePrompt += ` Location Continuity (${matchedLocClauses.join('. ')}).`;
       }
 
-      if (!finalImagePrompt.includes(sanitizedStyleProfile.artStyle)) {
+      if (
+        !finalImagePrompt.toLowerCase().includes(sanitizedStyleProfile.artStyle.toLowerCase().slice(0, 20)) &&
+        !finalImagePrompt.toLowerCase().includes('visual style:')
+      ) {
         finalImagePrompt += ` ${styleProfileWording}`;
       }
 
