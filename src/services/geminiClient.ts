@@ -197,19 +197,20 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - "eraAndSetting": historical or fictional period, geography, and environmental backdrop
    - "lensAndFilmStock": lens and film stock descriptor (e.g., "Shot on 35mm anamorphic prime lens, subtle 35mm Kodak 5219 film grain, high dynamic range")
 
-2. Continuity Sheets (MANDATORY RESOLUTION):
+2. Continuity Sheets & Locked Wardrobe Token (MANDATORY RESOLUTION):
    Generate the full breakdown in one model call that has the entire story in view.
-   - "characterSheet": Create a top-level object mapping each recurring character name to ONE fixed, highly detailed visual description. You MUST resolve any unstated attributes (gender, age, build, hair) into concrete, locked choices. Ambiguity is forbidden. Side characters appearing more than once must be included, keyed by role (e.g., "the jockey") if unnamed.
-   - "locationSheet": Create a top-level object mapping any specific place returned to more than once (a particular room, a specific ridge) to ONE fixed, highly detailed visual description.
+   - "characterSheet": Create a top-level object mapping each recurring character name to ONE fixed, highly detailed visual description. You MUST resolve any unstated attributes (gender, age, build, hair, and SPECIFIC PERMANENT WARDROBE/CLOTHING) into concrete, locked choices. Ambiguity is strictly forbidden.
+   - MANDATORY WARDROBE LOCK: You MUST lock the exact clothing (e.g. "wearing a plain crewneck white cotton t-shirt, blue denim shorts, and blue rubber slippers").
+   - "locationSheet": Create a top-level object mapping any specific place returned to more than once to ONE fixed, highly detailed visual description.
 
-3. Character and Setting Continuity (MANDATORY ANCHOR-SHOT RULE):
-   - Mark the first scene where each character or setting is established.
-   - In that first scene, the character/setting is described in full detail.
-   - In EVERY later videoPrompt for that character/location, reference it as matching the established look rather than re-describing it from scratch (e.g., "Subject: Kael (matching established look from Scene 1)").
+3. Character and Setting Continuity (STRICT BAN ON "MATCHING ESTABLISHED LOOK"):
+   - DOWNSTREAM DIFFUSION MODELS (KLING, RUNWAY, SORA, FLUX, MIDJOURNEY) HAVE ZERO MEMORY BETWEEN CLIPS!
+   - You are STRICTLY FORBIDDEN from writing shortcut phrases like "(matching established look from Scene 1)" or "(matching established look)"! That causes models to hallucinate random new clothes (like a collared polo shirt instead of a t-shirt).
+   - In EVERY scene's "videoPrompt", "startFramePrompt", and every beat's "imagePrompt" where the character appears, you MUST EXPLICITLY state their core visual identity and locked clothing (e.g., "Kael, Filipino male in his 20s, wearing plain crewneck white t-shirt and blue slippers"). NEVER allow the outfit to change without story reason!
 
 4. Mandatory 8-Part Master Scene "videoPrompt" Structure:
    For EACH scene, construct "videoPrompt" adhering strictly to these exact 8 components:
-   - subject: (from characterSheet for recurring characters. First scene uses full visual description; subsequent scenes state "matching established look from Scene [X]").
+   - subject: Explicit character description with locked outfit (e.g. "Kael, 3D clay-style Filipino male in his 20s, wearing plain crewneck white t-shirt"). NEVER write "(matching established look)".
    - action: described in temporal order across the shot with FULL ANATOMICAL & KINEMATIC SPECIFICITY:
      * BODY ANGLE & ORIENTATION: Exact torso and hip angle relative to the lens (e.g. "torso angled three-quarters profile to screen-left", "full frontal square stance facing camera", "turned away in sharp dorsal three-quarter view").
      * GAZE & FACING DIRECTION: Precise head turn and eye gaze vector (e.g. "head tilted 15 degrees downward with gaze fixed sharply on the object on the desk", "eyes darting toward off-screen right").
@@ -341,11 +342,14 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - "eraAndSetting": historical or fictional period, geography, and environmental backdrop of the story
    - "lensAndFilmStock": lens and film stock descriptor (e.g. "Shot on 35mm prime lens, fine film grain")
 
-2. Continuity Sheets (MANDATORY RESOLUTION):
+2. Continuity Sheets & Locked Wardrobe Token (MANDATORY RESOLUTION):
    Generate the full breakdown in one model call that has the entire story in view.
-   - "characterSheet": Create a top-level object mapping each recurring character name to ONE fixed, highly detailed visual description.
+   - "characterSheet": Create a top-level object mapping each recurring character name to ONE fixed, highly detailed visual description with PERMANENT WARDROBE (e.g. "wearing a plain crewneck white t-shirt, denim shorts, and blue rubber slippers").
    - "locationSheet": Create a top-level object mapping any specific place returned to more than once to ONE fixed, highly detailed visual description.
-   CRITICAL CONTINUITY RULE: Whenever any character or location from these sheets appears in any beat's imagePrompt, you MUST reuse that exact visual description wording word-for-word in that imagePrompt to guarantee consistency across every frame.
+   CRITICAL CONTINUITY RULE (STRICT BAN ON SHORTCUTS):
+   - Downstream image diffusion models have NO memory between frames.
+   - NEVER write "(matching established look from Scene 1)" or "(matching established look)". That causes the AI to guess and change their clothes (e.g. from a white t-shirt to a polo).
+   - In EVERY single beat's imagePrompt where the character appears, state their locked appearance and exact clothing explicitly (e.g. "Kael, wearing a plain crewneck white t-shirt and blue slippers").
 
 3. Nested Scenes and Beats:
    Break the story into a sequence of scenes with rich, dynamic visual beats.
@@ -558,7 +562,15 @@ ${durationInstruction}${customBeatsPrompt}`;
     const sanitizedBeats: Beat[] = rawBeats.map((beat: any, bIdx: number) => {
       const beatIndex = typeof beat.beatIndex === 'number' ? beat.beatIndex : bIdx + 1;
       const textSpan = removeEmDashes(beat.textSpan || '');
-      const imagePrompt = removeEmDashes(beat.imagePrompt || '');
+      let imagePrompt = removeEmDashes(beat.imagePrompt || '');
+
+      // Replace any residual lazy AI shortcut phrases with actual character descriptions
+      for (const [charName, visualDesc] of Object.entries(sanitizedCharacterSheet)) {
+        const shortcutRegex = new RegExp(`\\(${charName}\\s*\\(matching established look[^)]*\\)\\)`, 'gi');
+        imagePrompt = imagePrompt.replace(shortcutRegex, `${charName} (${visualDesc})`);
+        const shortcutRegex2 = new RegExp(`\\b${charName}\\s*\\(matching established look[^)]*\\)`, 'gi');
+        imagePrompt = imagePrompt.replace(shortcutRegex2, `${charName} (${visualDesc})`);
+      }
 
       const shotType = removeEmDashes(beat.shotType || beat.shot_type || inferShotType(imagePrompt, beatIndex));
       const cameraAngle = removeEmDashes(beat.cameraAngle || beat.camera_angle || inferCameraAngle(imagePrompt, beatIndex));
@@ -695,6 +707,13 @@ ${durationInstruction}${customBeatsPrompt}`;
       const rawVP = scene.videoPrompt ? removeEmDashes(scene.videoPrompt) : '';
       if (rawVP.trim().length > 0) {
         let vp = rawVP.trim();
+        // Scrub shortcut references in video prompt
+        for (const [charName, visualDesc] of Object.entries(sanitizedCharacterSheet)) {
+          const shortcutRegex = new RegExp(`\\(${charName}\\s*\\(matching established look[^)]*\\)\\)`, 'gi');
+          vp = vp.replace(shortcutRegex, `${charName} (${visualDesc})`);
+          const shortcutRegex2 = new RegExp(`\\b${charName}\\s*\\(matching established look[^)]*\\)`, 'gi');
+          vp = vp.replace(shortcutRegex2, `${charName} (${visualDesc})`);
+        }
         if (charactersInScene.length > 0) {
           const charClauses = charactersInScene.map((c) => `${c}: ${sanitizedCharacterSheet[c]}`).join('. ');
           if (!vp.toLowerCase().includes(charClauses.toLowerCase().substring(0, 20))) {
@@ -717,7 +736,14 @@ ${durationInstruction}${customBeatsPrompt}`;
 
       const rawSFP = scene.startFramePrompt ? removeEmDashes(scene.startFramePrompt) : '';
       if (rawSFP.trim().length > 0) {
-        startFramePrompt = rawSFP.trim();
+        let sfp = rawSFP.trim();
+        for (const [charName, visualDesc] of Object.entries(sanitizedCharacterSheet)) {
+          const shortcutRegex = new RegExp(`\\(${charName}\\s*\\(matching established look[^)]*\\)\\)`, 'gi');
+          sfp = sfp.replace(shortcutRegex, `${charName} (${visualDesc})`);
+          const shortcutRegex2 = new RegExp(`\\b${charName}\\s*\\(matching established look[^)]*\\)`, 'gi');
+          sfp = sfp.replace(shortcutRegex2, `${charName} (${visualDesc})`);
+        }
+        startFramePrompt = sfp;
       } else {
         const leadSubject = charactersInScene[0] ? sanitizedCharacterSheet[charactersInScene[0]] : 'Main subject';
         startFramePrompt = `Cinematic establishing frame of ${leadSubject}, dynamic initial pose in ${sanitizedStyleProfile.eraAndSetting}, ${sanitizedStyleProfile.lighting}, ${sanitizedStyleProfile.colorPalette}, ${defaultAspectRatio}, ${sanitizedStyleProfile.artStyle}.`;

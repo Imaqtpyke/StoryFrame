@@ -273,14 +273,18 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - "eraAndSetting": historical or fictional period, geography, and environmental backdrop
    - "lensAndFilmStock": lens and film stock descriptor (e.g., "Shot on 35mm anamorphic prime lens, subtle 35mm Kodak 5219 film grain, high dynamic range")
 
-2. Continuity Sheets (MANDATORY RESOLUTION):
+2. Continuity Sheets & Locked Wardrobe Token (MANDATORY RESOLUTION):
    Generate the full breakdown in one model call that has the entire story in view.
-   - "characterSheet": Create a top-level object mapping each recurring character name to ONE fixed, highly detailed visual description.
+   - "characterSheet": Create a top-level object mapping each recurring character name to ONE fixed, highly detailed visual description with PERMANENT WARDROBE (e.g. "wearing a plain crewneck white t-shirt, blue denim shorts, and blue rubber slippers").
    - "locationSheet": Create a top-level object mapping any specific place returned to more than once to ONE fixed, highly detailed visual description.
+   - CRITICAL WARDROBE LOCK & STRICT BAN ON "MATCHING ESTABLISHED LOOK":
+     * Downstream diffusion models (Kling, Runway, Sora, Midjourney, Flux) render each shot independently and have NO memory of prior scenes.
+     * You are STRICTLY FORBIDDEN from writing shortcut phrases like "(matching established look from Scene 1)" or "(matching established look)"!
+     * In EVERY beat's "imagePrompt", every scene's "videoPrompt", and "startFramePrompt", you MUST explicitly repeat the character's locked clothing (e.g. "wearing a plain crewneck white t-shirt and blue slippers"). NEVER allow clothes to morph or change without story reason!
 
 3. Mandatory 8-Part Master Scene "videoPrompt" Structure:
    For EACH scene, construct "videoPrompt" adhering strictly to these exact 8 components:
-   - subject: full concrete visual description front-loaded with style and environment.
+   - subject: full concrete visual description with locked clothing (e.g. "Kael, Filipino male in his 20s, wearing plain crewneck white t-shirt"). NEVER write "(matching established look)".
    - action: described in temporal order with anatomical & kinematic specificity.
    - camera: exactly ONE shot type, exactly ONE camera angle, and exactly ONE movement.
    - lighting and environment: atmospheric lighting and environment details.
@@ -369,9 +373,12 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - "eraAndSetting": historical or fictional period, geography, and environmental backdrop
    - "lensAndFilmStock": lens and film stock descriptor
 
-2. Continuity Sheets:
-   - "characterSheet": recurring character descriptions.
+2. Continuity Sheets & Locked Wardrobe Token:
+   - "characterSheet": recurring character descriptions with PERMANENT LOCKED WARDROBE (e.g. "wearing a plain crewneck white t-shirt, blue denim shorts, and blue rubber slippers").
    - "locationSheet": recurring location descriptions.
+   - CRITICAL WARDROBE LOCK & STRICT BAN ON SHORTCUTS:
+     * NEVER write "(matching established look from Scene 1)" or "(matching established look)".
+     * In EVERY single beat's imagePrompt where the character appears, state their locked clothing explicitly (e.g. "Kael, wearing a plain crewneck white t-shirt and blue slippers").
 
 3. Nested Scenes and Beats:
    Each scene has index, narratorLine, estimatedSeconds, and beats array.
