@@ -211,9 +211,9 @@ export default function GeneratorForm({
     const sentences = rawSentences.length > 0 ? rawSentences : [cleaned];
 
     return sentences.map((sentence, sIdx) => {
-      // Split each sentence into phrase beats using commas, semicolons, conjunctions
+      // Split each sentence into phrase beats using commas, semicolons, lists, and conjunctions
       const phrases = sentence
-        .split(/(?<=[,;])\s+|\s+(?=and\s+|but\s+|while\s+|as\s+|when\s+|strapped\s+to\s+)/i)
+        .split(/(?<=[,;:])\s+|\s+(?=and\s+|but\s+|while\s+|as\s+|when\s+|because\s+|even\s+though\s+|so\s+next\s+time\s+|don't\s+just\s+ask\s+|ask\s+what\s+)/i)
         .map((p) => p.trim())
         .filter(Boolean);
 

@@ -155,6 +155,18 @@ export async function generateOriginalStory(
     ? `You are an expert film director, cinematographer, and AI video prompt engineer.
 Your task is to take a story and generate a production-ready, scene-by-scene video generation breakdown with cinematic video prompts, smart video shot beats, narrator lines, a style profile, and visual continuity sheets.
 
+CLAUSE & MICRO-ACTION BEAT SEGMENTATION RULES (CRITICAL):
+1. Grammar is NOT equal to Scene: Never force an entire long sentence with multiple actions into a single 4-second clip.
+2. Commas, Clauses & Item Lists MUST Form Distinct Beats:
+   - When a sentence contains commas separating distinct actions, items, transactions, or emotional pivots (e.g. "spending ₱150 on lunch, ₱100 on coffee, ₱80 on transportation, and a few other small purchases"), EACH distinct item or clause MUST be its own distinct visual beat!
+   - Contrasting conjunctions and pivots ("when you first receive it", "but somehow disappears", "thinking you can buy food", "save some", "and maybe even treat yourself", "your money suddenly starts looking dangerously low", "The strange part is", "none of those expenses felt expensive", "when you paid for them", "That's because your brain notices", "big purchases more easily than small ones", "even though several small purchases", "can quietly drain your wallet", "So next time you have ₱1,000", "don't just ask what you can buy with it", "ask what you want that ₱1,000 to become") MUST trigger separate visual beats!
+3. Dynamic Scene Grouping for ${targetVideoDuration}-Second Clips:
+   - Each Scene represents ONE video clip of approximately ${targetVideoDuration} seconds.
+   - Each Scene contains 1 to 3 micro-beats (e.g. 2 beats of ~2.0s each, or 3 beats of ~1.3s each) totaling ${targetVideoDuration} seconds.
+   - If a sentence has 6 or 8 distinct action beats, DO NOT squeeze them all into one scene! Splay them across multiple successive 4-second scenes (e.g. Scene A handles the first 2-3 beats, Scene B handles the next 2-3 beats, Scene C handles the resolution).
+4. No Empty Text Spans:
+   - Every single beat's "textSpan" MUST contain the exact spoken phrase/words from that moment in the story. Empty strings ("") or phantom beats are strictly forbidden.
+
 SCHEMA AND STRUCTURE REQUIREMENTS:
 1. Style Profile:
    Analyze the whole story to generate a top-level "styleProfile" object containing:
@@ -195,47 +207,41 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
 5. Single Visual Focus & Distinct Beat Progression (NO CONFUSED HYBRID OR REDUNDANT BEATS):
    Every beat MUST focus on exactly ONE clear visual subject or action, and EVERY beat MUST present a distinct visual progression that its neighbor does NOT.
    - NO CONFUSED HYBRIDS: NEVER combine two competing framing requests into a single beat (e.g. DO NOT write one prompt trying to frame a close-up on an object AND a character's reaction in the same image). Split into Beat A (close-up on object) and Beat B (character reaction).
-   - BEAT CEILING IS A MAXIMUM, NOT A MANDATE: The beat duration/word ceiling is a MAXIMUM safety limit, NOT a mandate to force every sentence into extra beats. Do NOT split a sentence into extra phrase beats if adjacent splits would render as the exact same image.
-   - EVERY BEAT MUST BE VISUALLY DISTINCT: Each beat must show something its neighbor does not (a different focal detail, framing distance, moment in the action, or emotional shift in pose/expression). If two adjacent phrase splits would render as the same picture, merge them into ONE beat instead of generating redundant near-duplicates.
+   - EVERY BEAT MUST BE VISUALLY DISTINCT: Each beat must show something its neighbor does not (a different focal detail, framing distance, moment in the action, or emotional shift in pose/expression).
    - STRICT SHOT TYPE & PROSE ALIGNMENT (TIGHT SHOTS): When a beat's shotType is close-up, macro, extreme-close-up, or detail shot, its prompt prose MUST actually describe that tight framing and specific focal detail, NOT the same full-body or wide environmental description used in a wider beat nearby. The camera framing tag and the prompt prose MUST strictly match.
 
 6. Strict Narrative Faithfulness (NO UNSTATED FACTUAL INVENTIONS):
    Do NOT invent fictitious specific story facts, character names, senders, or plot details that are NOT present in the narration or already locked in characterSheet/locationSheet.
-   If the narration mentions "a voice message" without naming who sent it, describe it neutrally as "an audio playback device emitting sound" — NEVER invent a named sender or backstory fact absent from the original story text.
 
 7. Unified Stylistic Register (CONSISTENT ART MEDIUM VOCABULARY):
-   When a specific art style or medium is requested (e.g. "low-poly PS1 graphics", "90s anime cel", "stop-motion felt", "8-bit pixel art", "oil painting"):
+   When a specific art style or medium is requested:
    You MUST apply that art style's specific descriptive vocabulary consistently across ALL parts of the prompt, including characterSheet, locationSheet, subject descriptions, lighting, textures, and backgrounds.
 
 8. NO REAL OR IDENTIFIABLE PERSON NAMES IN VISUAL PROMPTS:
-   NEVER use a real, identifiable person's actual proper name (historical figures, celebrities, private individuals) in characterSheet keys, imagePrompt, videoPrompt, or startFramePrompt — use generic role descriptions instead. Mythological, legendary, and folkloric figures (Hercules, Zeus, King Arthur, Robin Hood) are EXEMPT and should be named normally. Real names are permitted in narratorLine.
+   NEVER use a real, identifiable person's actual proper name in visual prompts.
 
 9. OPENING BEAT VISUAL HOOK RULE (SCENE 1, BEAT 1):
-   The opening beat of the whole story (Scene 1, Beat 1) MUST NOT be pure atmosphere, fog, smoke, an empty landscape/environment, an empty establishing shot, or a slow fade, UNLESS the story's actual first sentence is genuinely and explicitly about that atmospheric element.
-   Scene 1 Beat 1 MUST show something concrete and visually arresting: the main character, a striking action already in motion, or the single most compelling visual subject/element the story possesses.
+   Scene 1 Beat 1 MUST show something concrete and visually arresting: the main character, a striking action already in motion, or the single most compelling visual element.
 
 10. TEMPORAL ANCHOR & ON-SCREEN DATE/YEAR DISPLAY RULE (SINGLE BEAT ONLY):
-   If the narrator line, story sentence, or beat phrase mentions a date, year, century, decade, or elapsed time duration (e.g. "in 1945", "December 24, 1971", "for 29 years"):
-   - The temporal anchor and on-screen date typography MUST ONLY appear in the prompt of the EXACT SINGLE BEAT whose spoken phrase ("textSpan") actually introduces or mentions that date/year. NEVER repeat or duplicate the year/date on other beats in the scene or across subsequent scenes!
-   - You MUST populate "temporalAnchor" on that single beat ONLY with the exact date/year/duration phrase.
-   - In that specific beat's prompt ("imagePrompt"), explicitly instruct the generator to display the text positioned at the top/above with a moderately large, clear font that is easily visible to the naked eye.
+    If the narrator line or beat phrase mentions a date, year, or elapsed duration, populate "temporalAnchor" on that single beat ONLY.
 
-5. Start Frame Ingredients (Text to Image Prompt):
-   For each scene, provide "startFramePrompt": a pristine text-to-image prompt to generate the initial reference keyframe image formatted as:
-   [Shot framing and angle] of [Subject with exact character details], [Initial frame pose] in [Setting/Location Details], [Lighting & Color palette], ${defaultAspectRatio}, ${characterStyle || 'cinematic rendering'}.
+11. Start Frame Ingredients (Text to Image Prompt):
+    For each scene, provide "startFramePrompt": a pristine text-to-image prompt to generate the initial reference keyframe image formatted as:
+    [Shot framing and angle] of [Subject with exact character details], [Initial frame pose] in [Setting/Location Details], [Lighting & Color palette], ${defaultAspectRatio}, ${characterStyle || 'cinematic rendering'}.
 
-6. Smart Video Beats Array ("beats"):
-   For each scene, provide an array of video beats representing the temporal subdivisions of this ${targetVideoDuration}-second clip.
-   Each beat MUST contain:
-   - "beatIndex": integer (1, 2, 3...)
-   - "textSpan": specific phrase or spoken clause from the narrator line. Every beat MUST correspond to actual spoken words from the narrator line. DO NOT create artificial extra beats with empty textSpan ("") or ghost beats. Distribute the ${targetVideoDuration} seconds across the actual phrases of the sentence (e.g. 2 beats of 2.0s each for a 4-second clip).
-   - "estimatedSeconds": estimated duration in seconds for this beat, distributed so the sum of all beats in the scene equals approximately ${targetVideoDuration} seconds.
-   - "shotType": explicit cinematography shot size or transition shot
-   - "cameraAngle": explicit camera angle
-   - "cameraMovement": cinematic camera motion cue
-   - "temporalAnchor": optional string for explicit year, date, or elapsed duration
-   - "transitionHint": optional string describing a shared visual anchor (populated ONLY on last beat of scene or first beat of next scene)
-   - "imagePrompt": complete, standalone text to video prompt capturing this specific beat's action.
+12. Smart Video Beats Array ("beats"):
+    For each scene, provide an array of video beats representing the temporal subdivisions of this ${targetVideoDuration}-second clip.
+    Each beat MUST contain:
+    - "beatIndex": integer (1, 2, 3...)
+    - "textSpan": specific phrase or spoken clause from the narrator line. Every beat MUST correspond to actual spoken words from the narrator line. NO EMPTY STRINGS ("").
+    - "estimatedSeconds": estimated duration in seconds for this beat, distributed so the sum of all beats in the scene equals approximately ${targetVideoDuration} seconds (e.g. 2.0s and 2.0s, or 1.5s and 2.5s).
+    - "shotType": explicit cinematography shot size or transition shot
+    - "cameraAngle": explicit camera angle
+    - "cameraMovement": cinematic camera motion cue
+    - "temporalAnchor": optional string for explicit year, date, or elapsed duration
+    - "transitionHint": optional string describing a shared visual anchor (populated ONLY on last beat of scene or first beat of next scene)
+    - "imagePrompt": complete, standalone text to video prompt capturing this specific beat's action.
 
 STRICT CONSTRAINTS:
 1. DO NOT use em dashes anywhere. Use commas, periods, or parentheses instead.
@@ -286,6 +292,17 @@ Do not include markdown code fences or backticks, just raw JSON.`
     : `You are an expert film director, cinematographer, and storyboard production supervisor.
 Your task is to take a story and generate a production-ready, nested scene-and-beat visual breakdown with exact cinematic image prompts, shot taxonomy tags, narrator lines, a style profile, and visual continuity sheets.
 
+CLAUSE & MICRO-ACTION BEAT SEGMENTATION RULES (CRITICAL):
+1. Do NOT make a boring 1-sentence = 1-image breakdown! A long sentence with multiple items, actions, or psychological turns MUST be broken into granular, rhythmic visual beats.
+2. Commas, Clauses & Item Lists MUST Form Distinct Beats:
+   - When a sentence lists distinct items, transactions, or actions (e.g. "after spending ₱150 on lunch, ₱100 on coffee, ₱80 on transportation, and a few other small purchases"), EACH distinct item or action clause MUST be its own distinct visual beat!
+   - Contrasting conjunctions and pivots ("when you first receive it", "but somehow disappears", "thinking you can buy food", "save some", "and maybe even treat yourself", "your money suddenly starts looking dangerously low", "The strange part is", "none of those expenses felt expensive", "when you paid for them", "That's because your brain notices", "big purchases more easily than small ones", "even though several small purchases", "can quietly drain your wallet", "So next time you have ₱1,000", "don't just ask what you can buy with it", "ask what you want that ₱1,000 to become") MUST trigger separate visual beats!
+3. Pacing and Variety:
+   - Break scenes so each scene has 2 to 4 distinct, engaging visual beats with varied shot types (e.g. alternating between Wide Establishing, Medium Action, Macro Detail, and Over-the-Shoulder).
+   - If a sentence is long, divide it into multiple coherent scenes or multiple detailed beats so the viewer is never staring at the same visual idea for more than 2-3 seconds.
+4. No Empty Text Spans:
+   - Every single beat's "textSpan" MUST contain the exact spoken phrase/words from that moment in the story. Never output empty strings ("").
+
 SCHEMA AND STRUCTURE REQUIREMENTS:
 1. Style Profile:
    Analyze the whole story to generate a top-level "styleProfile" object containing:
@@ -302,7 +319,7 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    CRITICAL CONTINUITY RULE: Whenever any character or location from these sheets appears in any beat's imagePrompt, you MUST reuse that exact visual description wording word-for-word in that imagePrompt to guarantee consistency across every frame.
 
 3. Nested Scenes and Beats:
-   Break the story into a sequence of scenes.
+   Break the story into a sequence of scenes with rich, dynamic visual beats.
    Each scene has index, narratorLine, estimatedSeconds, and beats array.
 
 STRICT CONSTRAINTS:
@@ -457,7 +474,25 @@ ${durationInstruction}${customBeatsPrompt}`;
     const sceneIndex = typeof scene.index === 'number' ? scene.index : sIdx + 1;
     const narratorLine = removeEmDashes(scene.narratorLine || '');
 
-    const rawBeats = Array.isArray(scene.beats) ? scene.beats : [];
+    const rawBeats = (Array.isArray(scene.beats) ? scene.beats : [])
+      .filter((beat: any) => {
+        const span = typeof beat.textSpan === 'string' ? beat.textSpan.trim() : '';
+        const prompt = typeof beat.imagePrompt === 'string' ? beat.imagePrompt.trim() : '';
+        return span.length > 0 || prompt.length > 0;
+      });
+
+    // If all beats were filtered out, create at least one valid beat from the narratorLine
+    if (rawBeats.length === 0 && narratorLine.trim().length > 0) {
+      rawBeats.push({
+        beatIndex: 1,
+        textSpan: narratorLine.trim(),
+        imagePrompt: scene.videoPrompt || scene.startFramePrompt || narratorLine.trim(),
+        shotType: 'Medium Shot',
+        cameraAngle: 'eye-level',
+        cameraMovement: 'Slow forward push-in',
+        estimatedSeconds: isVideoMode ? targetVideoDuration : 3,
+      });
+    }
 
     // Pre-pass: map temporal anchors directly to beats that speak them
     const assignedBeatAnchorMap = new Map<number, string>();
