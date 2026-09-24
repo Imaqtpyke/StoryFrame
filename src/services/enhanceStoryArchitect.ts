@@ -232,18 +232,22 @@ You MUST take their raw premise, question, draft, or concept and perform compreh
      : `- HARD CEILING RULE: No single beat may represent more than 2 seconds of estimated narration or 8 words, whichever is smaller.
    - Partition each scene's spoken sentence across 2 to 4 distinct visual beats with dynamic camera variety (wide → medium → close-up).`}
 
-7. MANDATORY GLOBAL VISUAL TOKEN BIBLE & UNBREAKABLE COLOR/MATERIAL CONSISTENCY:
+7. LITERAL VISUAL KINEMATICS & TRANSFORMATION RULE (CRITICAL - SHOW, DO NOT JUST TELL):
+   - When the narration verbs describe physical or metaphorical actions, loss, or transformations (e.g. "disappears", "vanishes", "dissolves", "melts", "drains away", "bursts", "transforms into"), the AI visual prompt MUST LITERALLY SHOW THAT ACTION HAPPENING TO THE OBJECT!
+   - NEVER be lazy! If the narration says "₱1,000 disappears after only a few purchases", DO NOT leave the character holding a crumpled banknote! The prompt MUST explicitly show: the banknote in his hand dissolving into thin air or vanishing, leaving his fingers clutching completely empty space while his eyes widen in shock.
+
+8. MANDATORY GLOBAL VISUAL TOKEN BIBLE & UNBREAKABLE COLOR/MATERIAL CONSISTENCY:
    - Establish and strictly enforce a unified, permanent visual anchor palette across all scenes and beats:
      * FLUIDS, GASES & ENERGETIC SUBSTANCES: If acid, gastric fluid, poison, potion, fire, blood, or energy is present, you MUST explicitly declare its EXACT color up front in Scene 1. That EXACT color descriptor MUST BE REPEATED in every single beat that features it.
      * PROPS & SWALLOWED / HELD OBJECTS: Explicitly define key objects with exact, singular geometry, material, and dimensions.
      * RECURRING ENVIRONMENT GEOMETRY & ARCHITECTURE: Lock the specific walls, geometry, textures, and color tones of the recurring location.
 
-8. 100% SELF-CONTAINED PROMPTS FOR DOWNSTREAM VIDEO GENERATORS (GOOGLE FLOW / VEO / KLING):
+9. 100% SELF-CONTAINED PROMPTS FOR DOWNSTREAM VIDEO GENERATORS (GOOGLE FLOW / VEO / KLING):
    - Downstream video generation tools render each clip in isolation without access to previous scenes.
    - Therefore, NEVER output empty references like "(matching established look from Scene 1)" or "(matching established look)" in any videoPrompt or beat imagePrompt without the full concrete visual details!
    - Every single beat prompt MUST be completely self-contained with its visual DNA (art style, environment architecture, subject/object geometry, and locked fluid color).
 
-9. FRONT-LOADED VISUAL FOUNDATION (FIRST 15-20 TOKENS):
+10. FRONT-LOADED VISUAL FOUNDATION (FIRST 15-20 TOKENS):
    - Video diffusion models give the highest attention weight to the first 15 to 20 tokens.
    - In all beat prompts and scene video prompts, FRONT-LOAD the visual foundation at the start:
      [${characterStyle || 'cinematic'}, 32-bit flat-shaded] [Environment Anchor] [Subject & Locked Color/Material]: [Action kinematics & movement]. Camera: [Shot Type], [Camera Angle], [Camera Movement]. Lighting: [...]. Physics: [...]. Audio: no dialogue, ambient sound only. ${defaultAspectRatio}.

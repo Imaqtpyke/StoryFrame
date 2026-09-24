@@ -173,10 +173,19 @@ CLAUSE & MICRO-ACTION BEAT SEGMENTATION RULES (CRITICAL):
      * High-Angle / Low-Angle Hero: Low angle when confident holding fresh money; high-angle looking down when feeling depleted.
      * Wide Establishing: When showcasing setting, outdoor food stall, street with jeepney, or contrasting visual scale (giant fridge vs small coins).
      * Close-Up / Reaction: Facial expression shifts (hopeful eyes, subtle brow furrow, realization).
-5. Clean, Focused Prompts (NO REDUNDANT BOILERPLATE REPETITIONS):
+
+5. LITERAL VISUAL KINEMATICS & TRANSFORMATION RULE (CRITICAL - SHOW, DO NOT JUST TELL):
+   - When the narration verbs describe physical or metaphorical actions, loss, or transformations (e.g. "disappears", "vanishes", "dissolves", "melts", "drains away", "bursts", "transforms into"), the AI visual prompt MUST LITERALLY SHOW THAT ACTION HAPPENING TO THE OBJECT!
+   - NEVER be lazy! For example:
+     * If the narration says "₱1,000 disappears after a few purchases", DO NOT leave the character still holding a crumpled banknote! The prompt MUST explicitly describe: "The crisp ₱1,000 banknote in his hand dissolves into thin air / vanishes into fine particles, leaving his fingers clutching completely empty space as his eyes widen in disbelief."
+     * If an object melts, dissolves, or breaks, show the exact physical progression of it turning into liquid, breaking into fragments, or vanishing from the frame.
+     * In subsequent scenes, respect that state: an empty hand is empty, an empty wallet is hollow and void.
+
+6. Clean, Focused Prompts (NO REDUNDANT BOILERPLATE REPETITIONS):
    - In each beat's "imagePrompt", describe the precise visual moment, camera framing, subject pose, and action directly.
    - DO NOT copy-paste the entire character sheet paragraph three times inside the same prompt.
-6. No Empty Text Spans:
+
+7. No Empty Text Spans:
    - Every single beat's "textSpan" MUST contain the exact spoken phrase/words from that moment in the story. Empty strings ("") or phantom beats are strictly forbidden.
 
 SCHEMA AND STRUCTURE REQUIREMENTS:
@@ -317,7 +326,10 @@ CLAUSE & MICRO-ACTION BEAT SEGMENTATION RULES (CRITICAL):
      * High-Angle / Low-Angle: Dynamic angles emphasizing scale, emotion, or tension.
      * Wide Shot: Setting the environment or contrasting big vs small elements.
    - If a sentence is long, divide it into multiple coherent scenes or multiple detailed beats so the viewer is never staring at the same visual idea for more than 2-3 seconds.
-4. No Empty Text Spans:
+4. LITERAL VISUAL KINEMATICS & TRANSFORMATION RULE (CRITICAL - SHOW, DO NOT JUST TELL):
+   - When the narration verbs describe physical or metaphorical actions, loss, or transformations (e.g. "disappears", "vanishes", "dissolves", "melts", "drains away", "bursts", "transforms into"), the AI visual prompt MUST LITERALLY SHOW THAT ACTION HAPPENING TO THE OBJECT!
+   - NEVER be lazy! If the narration says "₱1,000 disappears", DO NOT show the character still holding a crumpled banknote. Show the banknote literally dissolving into thin air or vanishing from an open palm, leaving fingers clutching empty space!
+5. No Empty Text Spans:
    - Every single beat's "textSpan" MUST contain the exact spoken phrase/words from that moment in the story. Never output empty strings ("").
 
 SCHEMA AND STRUCTURE REQUIREMENTS:
