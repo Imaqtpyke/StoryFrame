@@ -26,6 +26,7 @@ function StoryFrameMain() {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
+  const [openModelOptionsTrigger, setOpenModelOptionsTrigger] = useState(0);
 
   // Load history on initial mount
   useEffect(() => {
@@ -120,6 +121,7 @@ function StoryFrameMain() {
               errorMessage={errorMessage}
               onNavigate={setActivePage}
               initialValues={lastRequest}
+              openModelOptionsTrigger={openModelOptionsTrigger}
             />
           )
         ) : (
@@ -171,10 +173,7 @@ function StoryFrameMain() {
         onOpenModelOptions={() => {
           setActivePage('generator');
           setResult(null);
-          setTimeout(() => {
-            const el = document.getElementById('model-options-button') || document.getElementById('model-options-card');
-            el?.scrollIntoView({ behavior: 'smooth' });
-          }, 150);
+          setOpenModelOptionsTrigger((prev) => prev + 1);
         }}
       />
 

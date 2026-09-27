@@ -205,17 +205,9 @@ export default function AssistantChatDrawer({
                   <Sparkles className="w-4 h-4 text-white" />
                 </div>
                 <div>
-                  <div className="flex items-center space-x-2">
-                    <h2 id="assistant-drawer-title" className="text-base sm:text-lg font-display text-white tracking-tight">
-                      StoryFrame Assistant
-                    </h2>
-                    <span className="stamp-chip text-[9px] px-1.5 py-0.5">
-                      PROJECT SCOPE
-                    </span>
-                  </div>
-                  <p className="text-[11px] sm:text-xs text-[#8C8C86] font-mono tracking-tight">
-                    Story ideas, Zack D. Films concepts, styles & FAQs
-                  </p>
+                  <h2 id="assistant-drawer-title" className="text-base sm:text-lg font-display text-white tracking-tight">
+                    StoryFrame Assistant
+                  </h2>
                 </div>
               </div>
 
@@ -257,9 +249,9 @@ export default function AssistantChatDrawer({
                           onClose();
                           onOpenModelOptions();
                         }}
-                        className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-mono text-white underline underline-offset-2 hover:text-[#D4D4D0]"
+                        className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-mono text-white underline underline-offset-2 hover:text-[#D4D4D0] cursor-pointer"
                       >
-                        <span>Open Model Options</span>
+                        <span>Configure Model & API Options</span>
                         <ArrowRight className="w-3 h-3" />
                       </button>
                     )}

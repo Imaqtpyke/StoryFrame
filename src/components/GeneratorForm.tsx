@@ -10,6 +10,7 @@ interface GeneratorFormProps {
   errorMessage: string | null;
   onNavigate?: (page: ActivePage) => void;
   initialValues?: GenerateStoryRequest | null;
+  openModelOptionsTrigger?: number;
 }
 
 const RANDOM_STORIES: string[] = [
@@ -79,6 +80,7 @@ export default function GeneratorForm({
   errorMessage,
   onNavigate,
   initialValues,
+  openModelOptionsTrigger,
 }: GeneratorFormProps) {
   const { apiKey, hasCustomKey, rememberInSession, setCustomApiKey, clearCustomApiKey } = useApiKey();
   const [generationMode, setGenerationMode] = useState<GenerationMode>(initialValues?.generationMode || 'image');
@@ -103,6 +105,19 @@ export default function GeneratorForm({
   const [customVideoSeconds, setCustomVideoSeconds] = useState('');
   const [modelQuality, setModelQuality] = useState<'standard' | 'high'>(initialValues?.modelQuality || 'standard');
   const [showAdvanced, setShowAdvanced] = useState(false);
+
+  // Programmatically expand and scroll to model & API options when triggered (e.g. from Assistant)
+  useEffect(() => {
+    if (openModelOptionsTrigger && openModelOptionsTrigger > 0) {
+      setShowAdvanced(true);
+      setTimeout(() => {
+        const el = document.getElementById('model-options-section');
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 100);
+    }
+  }, [openModelOptionsTrigger]);
 
   // Synchronize when initialValues changes (e.g. Back to Edit from Results)
   useEffect(() => {
@@ -914,7 +929,7 @@ export default function GeneratorForm({
         </div>
 
         {/* Configure Model Options Toggle */}
-        <div className="pt-1 flex flex-col items-center">
+        <div id="model-options-section" className="pt-1 flex flex-col items-center scroll-mt-24">
           <button
             type="button"
             id="toggle-advanced-btn"
