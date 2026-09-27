@@ -1,10 +1,11 @@
 import { ActivePage } from '../types';
-import { History as HistoryIcon } from 'lucide-react';
+import { History as HistoryIcon, Sparkles } from 'lucide-react';
 
 interface HeaderProps {
   activePage: ActivePage;
   onNavigate: (page: ActivePage) => void;
   onOpenHistory: () => void;
+  onOpenAssistant: () => void;
   historyCount?: number;
 }
 
@@ -12,6 +13,7 @@ export default function Header({
   activePage,
   onNavigate,
   onOpenHistory,
+  onOpenAssistant,
   historyCount = 0,
 }: HeaderProps) {
   return (
@@ -31,7 +33,18 @@ export default function Header({
           </span>
         </button>
 
-        <nav className="flex items-center space-x-3 sm:space-x-6 text-[9px] sm:text-sm uppercase font-editorial-meta">
+        <nav className="flex items-center space-x-2 sm:space-x-5 text-[9px] sm:text-sm uppercase font-editorial-meta">
+          <button
+            type="button"
+            id="nav-assistant-btn"
+            onClick={onOpenAssistant}
+            className="min-h-[38px] sm:min-h-[44px] inline-flex items-center gap-1.5 px-2 tracking-wider sm:tracking-widest text-[#B0B0A8] hover:text-white transition-colors focus:outline-none"
+            title="Ask StoryFrame Assistant"
+          >
+            <Sparkles className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#8C8C86]" />
+            <span>Assistant</span>
+          </button>
+
           <button
             type="button"
             id="nav-history-btn"
@@ -39,7 +52,7 @@ export default function Header({
             className="min-h-[38px] sm:min-h-[44px] inline-flex items-center gap-1.5 px-2 tracking-wider sm:tracking-widest text-[#B0B0A8] hover:text-white transition-colors focus:outline-none"
             title="View Previous Story Breakdowns"
           >
-            <HistoryIcon className="w-3 h-3 sm:w-4 sm:h-4 text-[#8C8C86] group-hover:text-white" />
+            <HistoryIcon className="w-3 h-3 sm:w-4 sm:h-4 text-[#8C8C86]" />
             <span>History</span>
             {historyCount > 0 && (
               <span className="ml-0.5 px-1.5 py-0.2 text-[8px] sm:text-[10px] font-mono bg-white/10 text-white rounded-full leading-tight">

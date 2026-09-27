@@ -88,4 +88,11 @@ export interface HistoryItem {
   result: StoryGenerationResult;
 }
 
+export interface AssistantChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: number;
+}
+
 export type ActivePage = 'generator' | 'terms' | 'privacy' | 'guide' | 'byok-security';

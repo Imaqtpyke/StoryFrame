@@ -8,10 +8,12 @@ import LegalView from './components/LegalViews';
 import ScrollToTopButton from './components/ScrollToTopButton';
 import HistoryModal from './components/HistoryModal';
 import HelpGuideModal from './components/HelpGuideModal';
+import AssistantChatDrawer from './components/AssistantChatDrawer';
 import { ApiKeyProvider, useApiKey } from './context/ApiKeyContext';
 import { generateStoryDirectly } from './services/geminiClient';
 import { getHistoryItems, addHistoryItem, deleteHistoryItem, clearAllHistory } from './services/historyStorage';
 import { ActivePage, GenerateStoryRequest, HistoryItem, StoryGenerationResult } from './types';
+import { Sparkles } from 'lucide-react';
 
 function StoryFrameMain() {
   const { apiKey } = useApiKey();
@@ -23,6 +25,7 @@ function StoryFrameMain() {
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [isAssistantOpen, setIsAssistantOpen] = useState(false);
 
   // Load history on initial mount
   useEffect(() => {
@@ -96,6 +99,7 @@ function StoryFrameMain() {
         activePage={activePage} 
         onNavigate={setActivePage} 
         onOpenHistory={() => setIsHistoryOpen(true)}
+        onOpenAssistant={() => setIsAssistantOpen(true)}
         historyCount={historyItems.length}
       />
 
@@ -147,6 +151,44 @@ function StoryFrameMain() {
         isOpen={isHelpOpen}
         onClose={() => setIsHelpOpen(false)}
       />
+
+      {/* Dedicated Project Assistant Drawer */}
+      <AssistantChatDrawer
+        isOpen={isAssistantOpen}
+        onClose={() => setIsAssistantOpen(false)}
+        onApplyStoryIdea={(idea) => {
+          setActivePage('generator');
+          setResult(null);
+          setLastRequest((prev) => ({
+            story: idea,
+            characterStyle: prev?.characterStyle || '',
+            format: prev?.format || 'short',
+            platform: prev?.platform || 'TikTok',
+            durationMode: prev?.durationMode || 'automatic',
+            generationMode: prev?.generationMode || 'image',
+          }));
+        }}
+        onOpenModelOptions={() => {
+          setActivePage('generator');
+          setResult(null);
+          setTimeout(() => {
+            const el = document.getElementById('model-options-button') || document.getElementById('model-options-card');
+            el?.scrollIntoView({ behavior: 'smooth' });
+          }, 150);
+        }}
+      />
+
+      {/* Floating Assistant Trigger Button */}
+      <button
+        type="button"
+        id="floating-assistant-btn"
+        onClick={() => setIsAssistantOpen(true)}
+        className="fixed bottom-5 right-5 sm:bottom-6 sm:right-6 z-30 min-h-[44px] px-3.5 py-2 bg-[#121211]/95 hover:bg-[#1A1A18] text-white border border-white/20 hover:border-white/50 rounded-[2px] shadow-lg backdrop-blur-sm transition-all flex items-center space-x-2 text-xs font-editorial-meta uppercase tracking-wider group cursor-pointer"
+        title="Ask StoryFrame Assistant"
+      >
+        <Sparkles className="w-3.5 h-3.5 text-white group-hover:scale-110 transition-transform" />
+        <span className="hidden xs:inline">Assistant</span>
+      </button>
 
       {/* Up button when scrolled down */}
       <ScrollToTopButton />
