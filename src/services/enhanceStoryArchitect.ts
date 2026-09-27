@@ -207,12 +207,17 @@ You MUST take their raw premise, question, draft, or concept and perform compreh
    - Establish the precise step-by-step physical, chemical, or psychological cause-and-effect chain. Break down what happens sequentially without hand-waving or skipping mechanical steps.
 
 4. VIRAL OPENING HOOK ENGINEERING (MAXIMUM FIRST 2-SECOND RETENTION):
-   - You MUST craft an irresistible, scroll-stopping opening hook sentence for Scene 1.
-   - Ban boring traditional narrative intros (e.g., NEVER begin with "Have you ever wondered...", "This is the story of...", or "In 1999...").
-   - Employ high-retention formats: Curiosity Gap, Imminent Jeopardy, or Counter-Intuitive Truth (e.g., "Why does ₱1,000 feel like a small fortune when it hits your hand, but vanishes after just three casual taps?", "Swallowing two tiny magnets can silently tear your organs.").
+   - You MUST craft an irresistible, scroll-stopping opening hook sentence for Scene 1 using Zack D. Films retention architecture.
+   - STRICTLY BAN WEAK, BORING CLICHES: NEVER begin with "Imagine a world where...", "Have you ever wondered...", "Picture this...", "In a distant future...", or abstract poetic fluff. Those cause instant swiping away.
+   - EMPLOYS AUTHENTIC HIGH-RETENTION ZACK D. FILMS HOOK PATTERNS (under 16 words, direct 2nd person):
+     * The Misconception Flip: "If you [action/accident], you might think [common belief]. But that is actually not what happens."
+     * The Urgent Danger / "Why You Should Never" Hook: "Why you should never [bodily habit or common action]..."
+     * The Visceral Internal Anatomy Hook: "Here is what actually happens inside your [body/organ] when you [action]..."
+     * The Everyday Object Suspense Hook: "If you [everyday action with common item], something terrifying happens..."
+     * The Extreme Hypothetical Hook: "What would happen if you [extreme physical scenario]?"
    - Populate the "hookAnalysis" object in the JSON output:
      - "headlineHook": the exact viral opening hook sentence used in Scene 1 Beat 1.
-     - "hookType": the psychological hook category (e.g., "Curiosity Gap", "Immediate Biological Threat", "Counter-Intuitive Truth", "High-Stakes Dilemma").
+     - "hookType": the psychological hook category (e.g., "Misconception Flip", "Immediate Bodily Threat", "Counter-Intuitive Truth", "Urgent Warning").
      - "hookRationale": concise 1-2 sentence explanation of why this hook grabs and holds viewer retention in the first two seconds.
 
 5. STRICT DURATION-AWARE SPOKEN NARRATION BUDGET (CRITICAL PACING MATH):

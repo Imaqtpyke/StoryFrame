@@ -392,7 +392,22 @@ export default function AssistantChatDrawer({
               {/* Error message callout */}
               {errorMessage && (
                 <div className="p-3 bg-red-950/30 border border-red-500/40 rounded-[2px] text-xs text-red-200">
-                  <p className="font-mono">{errorMessage}</p>
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="font-mono flex-1 leading-relaxed">{errorMessage}</p>
+                    {messages.length > 0 && messages[messages.length - 1].role === 'user' && !isSending && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const lastMsg = messages[messages.length - 1];
+                          setMessages((prev) => prev.slice(0, -1));
+                          handleSend(lastMsg.content);
+                        }}
+                        className="px-2.5 py-1 bg-red-900/60 hover:bg-red-800 text-red-100 rounded-[2px] font-mono text-[11px] shrink-0 transition-colors"
+                      >
+                        Retry
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 

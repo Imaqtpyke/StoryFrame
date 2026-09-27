@@ -327,7 +327,11 @@ export default function GeneratorForm({
     if (generationMode === 'video') {
       if (videoDurationValue === 'custom') {
         const num = parseFloat(customVideoSeconds);
-        targetVideoDuration = num && num > 0 ? Math.round(num) : 5;
+        if (!num || isNaN(num) || num < 1 || num > 60) {
+          setFormValidationNotice('Please enter a custom clip duration between 1 and 60 seconds.');
+          return;
+        }
+        targetVideoDuration = Math.round(num);
       } else {
         targetVideoDuration = parseInt(videoDurationValue, 10) || 5;
       }
@@ -339,8 +343,18 @@ export default function GeneratorForm({
       } else if (durationValue === 'custom') {
         durationMode = 'custom';
         const num = parseFloat(customNumeric);
-        if (num && num > 0) {
-          durationSeconds = format === 'long' ? Math.round(num * 60) : Math.round(num);
+        if (format === 'short') {
+          if (!num || isNaN(num) || num < 1 || num > 600) {
+            setFormValidationNotice('Please enter a custom target duration between 1 and 600 seconds.');
+            return;
+          }
+          durationSeconds = Math.round(num);
+        } else {
+          if (!num || isNaN(num) || num < 1 || num > 120) {
+            setFormValidationNotice('Please enter a custom target duration between 1 and 120 minutes.');
+            return;
+          }
+          durationSeconds = Math.round(num * 60);
         }
       } else {
         durationMode = 'preset';
@@ -432,7 +446,7 @@ export default function GeneratorForm({
         >
           <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
           <div className="text-sm leading-relaxed">
-            <p className="font-semibold mb-0.5 text-white font-display">Gemini API Key Required (BYOK)</p>
+            <p className="font-semibold mb-0.5 text-white font-display">Attention Required</p>
             <p className="text-amber-200/90 font-narrative">{formValidationNotice}</p>
           </div>
         </div>
@@ -761,17 +775,17 @@ export default function GeneratorForm({
                         htmlFor="custom-video-numeric-input"
                         className="block font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96] mb-1.5"
                       >
-                        CUSTOM CLIP DURATION (3 - 60 SECONDS)
+                        CUSTOM CLIP DURATION (1 - 60 SECONDS)
                       </label>
                       <input
                         type="number"
-                        min="3"
+                        min="1"
                         max="60"
                         id="custom-video-numeric-input"
                         value={customVideoSeconds}
                         onChange={(e) => setCustomVideoSeconds(e.target.value)}
                         disabled={isLoading}
-                        placeholder="e.g. 8"
+                        placeholder="e.g. 5"
                         className="w-full px-3 sm:px-4 h-[42px] sm:h-[46px] bg-[#121211] text-[#F5F5F0] placeholder:text-[#666660] border border-white/10 focus:border-white rounded-[2px] focus:outline-none text-xs sm:text-sm font-mono transition-colors"
                         required
                       />
@@ -795,11 +809,11 @@ export default function GeneratorForm({
                         htmlFor="custom-numeric-input"
                         className="block font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96] mb-1.5"
                       >
-                        {format === 'long' ? 'CUSTOM MINUTES (1 - 120)' : 'CUSTOM SECONDS (5 - 600)'}
+                        {format === 'long' ? 'CUSTOM MINUTES (1 - 120)' : 'CUSTOM SECONDS (1 - 600)'}
                       </label>
                       <input
                         type="number"
-                        min="5"
+                        min="1"
                         max={format === 'long' ? '120' : '600'}
                         id="custom-numeric-input"
                         value={customNumeric}
