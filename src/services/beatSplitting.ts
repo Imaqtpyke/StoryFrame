@@ -11,7 +11,19 @@ export function extractTemporalAnchor(text: string): string | null {
   if (!text || !text.trim()) return null;
   const clean = text.trim();
 
-  // Pattern 1: Exact 4-digit years or year ranges with optional 'in/by/around' (e.g. "in 1945", "1945", "1939-1945", "1800s", "the 1920s")
+  // Pattern 1: Specific calendar dates (e.g. "December 24, 1971", "July 4th", "August 1945", "June 6, 1944")
+  const dateMatch = clean.match(/\b((?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember))\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*[12]\d{3})?)\b/i);
+  if (dateMatch && dateMatch[1]) {
+    return dateMatch[1].trim();
+  }
+
+  // Pattern 2: Ancient BC / BCE / AD markers (e.g. "Circa 300 BC", "44 BCE", "AD 79")
+  const bcMatch = clean.match(/\b(?:circa|c\.)?\s*(\d{1,4}\s*(?:BC|BCE|AD|CE))\b/i);
+  if (bcMatch && bcMatch[1]) {
+    return bcMatch[1].trim();
+  }
+
+  // Pattern 3: Exact 4-digit years or year ranges with optional 'in/by/around' (e.g. "in 1945", "1945", "1939-1945", "1800s", "the 1920s")
   const yearMatch = clean.match(/\b(?:in|by|around|during|circa|c\.)?\s*([12]\d{3}s?|[5-9]\d{2}(?:\s*(?:BC|AD|BCE|CE))?)\b/i);
   if (yearMatch && yearMatch[1]) {
     const yr = yearMatch[1].trim();
@@ -22,19 +34,13 @@ export function extractTemporalAnchor(text: string): string | null {
     }
   }
 
-  // Pattern 2: Specific calendar dates (e.g. "December 24, 1971", "July 4th", "August 1945", "June 6, 1944")
-  const dateMatch = clean.match(/\b((?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember))\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*[12]\d{3})?)\b/i);
-  if (dateMatch && dateMatch[1]) {
-    return dateMatch[1].trim();
-  }
-
-  // Pattern 3: Elapsed duration phrases (e.g. "for 29 years", "after 30 years", "over 10 decades", "over 50 years", "for nearly three decades")
+  // Pattern 4: Elapsed duration phrases (e.g. "for 29 years", "after 30 years", "over 10 decades", "over 50 years", "for nearly three decades")
   const durationMatch = clean.match(/\b((?:for|after|nearly|over|past|across)\s+(?:\d+|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|forty|fifty)\s+(?:years|decades|centuries|months))\b/i);
   if (durationMatch && durationMatch[1]) {
     return durationMatch[1].trim();
   }
 
-  // Pattern 4: Standalone year token like "1945" or "1974"
+  // Pattern 5: Standalone year token like "1945" or "1974"
   const standaloneYear = clean.match(/\b([12]\d{3})\b/);
   if (standaloneYear && standaloneYear[1]) {
     const num = parseInt(standaloneYear[1], 10);
@@ -72,7 +78,7 @@ export function sanitizeImagePromptShotFraming(prompt: string): string {
     // "Focusing on the specific detail of '...':"
     // "Shot focusing on the words '...':"
     cleaned = cleaned.replace(/^(?:[a-z0-9\s-]+\s+)?(?:shot\s+)?focusing\s+(?:tightly\s+|directly\s+|closely\s+)?on\s*(?:the\s+words?\s*|phrase\s*|the\s+specific\s+detail\s+of\s*)?['"][^'"]*['"](?:\s*from\s+a\s+[^,.:]+)?\s*[:,-]?\s*/i, '');
-    cleaned = cleaned.replace(/^focusing\s+(?:tightly\s+|directly\s+|closely\s+)?on\s*[^:,.-]+[:,-]\s*/i, '');
+    cleaned = cleaned.replace(/^(?:(?:[a-z0-9\s-]+\s+)?(?:shot\s+)?focusing\s+(?:tightly\s+|directly\s+|closely\s+)?on(?:\s*[^:,.-]+)?)\s*[:,-]\s*/i, '');
     cleaned = cleaned.replace(/^visual\s+moment\s+(?:specifically\s+)?(?:depicting\s+and\s+focusing\s+on|capturing)\s*['"][^'"]*['"]\s*[:,-.]?\s*/i, '');
 
     // 3. Remove opening shot/framing prefixes such as:
