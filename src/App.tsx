@@ -100,7 +100,6 @@ function StoryFrameMain() {
         activePage={activePage} 
         onNavigate={setActivePage} 
         onOpenHistory={() => setIsHistoryOpen(true)}
-        onOpenAssistant={() => setIsAssistantOpen(true)}
         historyCount={historyItems.length}
       />
 
@@ -159,6 +158,7 @@ function StoryFrameMain() {
         isOpen={isAssistantOpen}
         onClose={() => setIsAssistantOpen(false)}
         onApplyStoryIdea={(idea) => {
+          setIsAssistantOpen(false);
           setActivePage('generator');
           setResult(null);
           setLastRequest((prev) => ({
@@ -169,6 +169,13 @@ function StoryFrameMain() {
             durationMode: prev?.durationMode || 'automatic',
             generationMode: prev?.generationMode || 'image',
           }));
+          setTimeout(() => {
+            const inputEl = document.getElementById('story-input-box');
+            if (inputEl) {
+              inputEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              (inputEl as HTMLTextAreaElement).focus();
+            }
+          }, 150);
         }}
         onOpenModelOptions={() => {
           setActivePage('generator');
@@ -177,16 +184,16 @@ function StoryFrameMain() {
         }}
       />
 
-      {/* Floating Assistant Trigger Button */}
+      {/* Floating Assistant Trigger Button - Icon only, left edge */}
       <button
         type="button"
         id="floating-assistant-btn"
         onClick={() => setIsAssistantOpen(true)}
-        className="fixed bottom-5 right-5 sm:bottom-6 sm:right-6 z-30 min-h-[44px] px-3.5 py-2 bg-[#121211]/95 hover:bg-[#1A1A18] text-white border border-white/20 hover:border-white/50 rounded-[2px] shadow-lg backdrop-blur-sm transition-all flex items-center space-x-2 text-xs font-editorial-meta uppercase tracking-wider group cursor-pointer"
+        aria-label="Open StoryFrame Assistant"
+        className="fixed bottom-5 left-5 sm:bottom-6 sm:left-6 z-30 w-10 h-10 min-w-[40px] min-h-[40px] bg-[#141412]/95 hover:bg-[#1E1E1C] active:bg-[#282826] text-white border border-white/20 hover:border-white rounded-[2px] shadow-xl backdrop-blur-sm transition-all flex items-center justify-center group cursor-pointer focus:outline-none focus:ring-1 focus:ring-white"
         title="Ask StoryFrame Assistant"
       >
-        <Sparkles className="w-3.5 h-3.5 text-white group-hover:scale-110 transition-transform" />
-        <span className="hidden xs:inline">Assistant</span>
+        <Sparkles className="w-4 h-4 text-white shrink-0 transition-transform duration-200 group-hover:scale-110" />
       </button>
 
       {/* Up button when scrolled down */}

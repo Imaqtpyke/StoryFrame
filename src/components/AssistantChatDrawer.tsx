@@ -30,7 +30,7 @@ interface AssistantChatDrawerProps {
 
 const STARTER_PROMPTS = [
   { label: 'Who built this project?', query: 'Who built this project?' },
-  { label: 'Zack D. Films story idea', query: 'Give me a captivating, curious story idea inspired by Zack D. Films.' },
+  { label: 'Zack D. Films story idea', query: 'Give me a captivating, curious story idea inspired by Zack D. Films with the complete story narrative from start to finish.' },
   { label: 'Unique character style', query: 'Suggest 3 unique, cinematic character art styles for my story.' },
   { label: 'How does StoryFrame work?', query: 'Explain how StoryFrame converts stories into scenes and visual beats.' },
 ];
@@ -162,6 +162,7 @@ export default function AssistantChatDrawer({
       onApplyStoryIdea(text);
       setAppliedId(id);
       setTimeout(() => setAppliedId(null), 2500);
+      onClose();
     }
   };
 
@@ -405,37 +406,44 @@ export default function AssistantChatDrawer({
                   e.preventDefault();
                   handleSend();
                 }}
-                className="space-y-2"
+                className="w-full"
               >
-                <div className="relative">
+                {/* Unified single container: text input and send button side-by-side */}
+                <div className="flex items-center gap-2 p-2 sm:p-2.5 bg-[#181816] border border-white/15 focus-within:border-white/50 rounded-[4px] transition-colors">
                   <textarea
                     ref={textareaRef}
-                    rows={2}
+                    rows={1}
                     value={inputText}
-                    onChange={(e) => setInputText(e.target.value)}
+                    onChange={(e) => {
+                      setInputText(e.target.value);
+                      e.target.style.height = 'auto';
+                      e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
+                    }}
                     onKeyDown={handleKeyDown}
                     disabled={isSending || !apiKey}
                     placeholder={
                       !apiKey
-                        ? 'Please configure your Gemini API key to chat...'
+                        ? 'Configure Gemini API key in generator...'
                         : 'Ask about Zack D. Films ideas, character styles, or who built this...'
                     }
-                    className="w-full bg-[#181816] border border-white/15 focus:border-white/50 text-white placeholder-[#6E6E68] text-base sm:text-xs p-2.5 rounded-[2px] focus:outline-none resize-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-narrative"
+                    className="flex-1 min-w-0 bg-transparent border-0 text-white placeholder-[#6E6E68] text-sm sm:text-xs px-1 py-1 focus:outline-none resize-none leading-relaxed font-narrative disabled:opacity-50 disabled:cursor-not-allowed max-h-28 overflow-y-auto"
                   />
-                </div>
 
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-mono text-[10px] text-[#6E6E68] hidden sm:inline">
-                    Shift + Enter for new line
-                  </span>
+                  {/* Send button inside, right-aligned, vertically centered, icon-only */}
                   <button
                     type="submit"
                     disabled={!inputText.trim() || isSending || !apiKey}
-                    className="min-h-[40px] px-4 py-1.5 bg-white text-black font-semibold text-xs tracking-wider uppercase font-editorial-meta rounded-[2px] border border-white hover:bg-[#EAEAE5] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center space-x-1.5 ml-auto"
+                    aria-label="Send Message"
+                    title="Send message (Enter)"
+                    className="shrink-0 w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center bg-white hover:bg-[#EAEAE5] active:bg-[#D4D4CE] text-black rounded-[3px] border border-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer focus:outline-none focus:ring-1 focus:ring-white"
                   >
-                    <span>Send</span>
-                    <Send className="w-3 h-3" />
+                    <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-black" />
                   </button>
+                </div>
+
+                <div className="flex items-center justify-between text-[10px] text-[#6E6E68] font-mono mt-1.5 px-1">
+                  <span>Enter to send, Shift + Enter for new line</span>
+                  {inputText.length > 0 && <span>{inputText.length} chars</span>}
                 </div>
               </form>
             </div>
