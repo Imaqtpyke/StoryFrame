@@ -423,8 +423,8 @@ export default function AssistantChatDrawer({
                     disabled={isSending || !apiKey}
                     placeholder={
                       !apiKey
-                        ? 'Configure Gemini API key in generator...'
-                        : 'Ask about Zack D. Films ideas, character styles, or who built this...'
+                        ? 'Configure API key in generator...'
+                        : 'Ask a question...'
                     }
                     className="flex-1 min-w-0 bg-transparent border-0 text-white placeholder-[#6E6E68] text-sm sm:text-xs px-1 py-1 focus:outline-none resize-none leading-relaxed font-narrative disabled:opacity-50 disabled:cursor-not-allowed max-h-28 overflow-y-auto"
                   />
@@ -439,11 +439,6 @@ export default function AssistantChatDrawer({
                   >
                     <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-black" />
                   </button>
-                </div>
-
-                <div className="flex items-center justify-between text-[10px] text-[#6E6E68] font-mono mt-1.5 px-1">
-                  <span>Enter to send, Shift + Enter for new line</span>
-                  {inputText.length > 0 && <span>{inputText.length} chars</span>}
                 </div>
               </form>
             </div>

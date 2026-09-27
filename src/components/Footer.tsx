@@ -15,7 +15,7 @@ export default function Footer({ onNavigate }: FooterProps) {
               StoryFrame
             </p>
             <span className="stamp-chip text-[8px] sm:text-[9px] bg-[#171715] text-[#A8A8A2] border-white/10">
-              v3.5 • Production
+              v3.6
             </span>
           </div>
           <p className="text-[#C4C4BE] sm:text-[#9C9C96] text-xs sm:text-sm leading-relaxed max-w-sm sm:max-w-none">
