@@ -4,6 +4,8 @@ import Footer from './components/Footer';
 import BackgroundEffect from './components/BackgroundEffect';
 import GeneratorForm from './components/GeneratorForm';
 import ResultsView from './components/ResultsView';
+import ResultsSkeleton from './components/ResultsSkeleton';
+import ResultsErrorView from './components/ResultsErrorView';
 import LegalView from './components/LegalViews';
 import ScrollToTopButton from './components/ScrollToTopButton';
 import HistoryModal from './components/HistoryModal';
@@ -37,6 +39,8 @@ function StoryFrameMain() {
     setIsLoading(true);
     setErrorMessage(null);
     setLastRequest(data);
+    setResult(null);
+    window.scrollTo({ top: 0, behavior: 'instant' });
 
     try {
       if (!apiKey || !apiKey.trim()) {
@@ -81,14 +85,18 @@ function StoryFrameMain() {
   };
 
   const handleBackToEdit = () => {
+    setIsLoading(false);
     setResult(null);
     setErrorMessage(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleReset = () => {
+    setIsLoading(false);
     setResult(null);
     setLastRequest(null);
     setErrorMessage(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   return (
@@ -105,7 +113,24 @@ function StoryFrameMain() {
 
       <main className="flex-1 w-full max-w-5xl mx-auto px-3 xs:px-4 sm:px-6 pt-6 sm:pt-14 pb-12 sm:pb-16 relative z-10">
         {activePage === 'generator' ? (
-          result && lastRequest ? (
+          isLoading ? (
+            <ResultsSkeleton
+              request={lastRequest}
+              onBackToEdit={handleBackToEdit}
+            />
+          ) : errorMessage && lastRequest ? (
+            <ResultsErrorView
+              errorMessage={errorMessage}
+              onBackToEdit={handleBackToEdit}
+              onRetry={() => {
+                if (lastRequest) handleGenerateStory(lastRequest);
+              }}
+              onOpenModelOptions={() => {
+                handleBackToEdit();
+                setOpenModelOptionsTrigger((prev) => prev + 1);
+              }}
+            />
+          ) : result && lastRequest ? (
             <ResultsView
               result={result}
               format={lastRequest.format}
