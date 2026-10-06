@@ -1,7 +1,7 @@
 import { Beat, Scene, StyleProfile } from '../types';
 
-export const MAX_BEAT_SECONDS = 2.0;
-export const MAX_BEAT_WORDS = 8;
+export const MAX_BEAT_SECONDS = 1.8;
+export const MAX_BEAT_WORDS = 5;
 
 /**
  * Detects whether a beat's text span or spoken phrase contains a date, year, century, decade, or elapsed time anchor.
@@ -311,7 +311,7 @@ export function splitPhraseIntoSubBeats(phrase: string, maxWordsPerBeat: number 
       const lowerCleanWord = word.toLowerCase().replace(/[^a-z]/g, '');
 
       const isConnector = SPLIT_CONNECTORS.has(lowerCleanWord);
-      const isReachingMax = currentChunk.length >= Math.max(4, Math.floor(maxWordsPerBeat * 0.75));
+      const isReachingMax = currentChunk.length >= Math.max(3, Math.floor(maxWordsPerBeat * 0.75));
       const remainingWords = words.length - i;
 
       if (currentChunk.length >= 2 && (isConnector || isReachingMax) && remainingWords >= 2) {

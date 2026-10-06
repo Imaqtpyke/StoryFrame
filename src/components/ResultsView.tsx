@@ -90,18 +90,16 @@ export default function ResultsView({
     allBeats: Beat[];
   } | null>(null);
 
-  // Normalize scenes with hard beat ceilings (only when Enhance Story mode is active)
+  // Normalize scenes with hard beat ceilings for short-form retention pacing
   const normalizedScenes = useMemo(() => {
     return result.scenes.map((scene) => ({
       ...scene,
-      beats: result.autoArchitectMode
-        ? enforceBeatCeilings(scene.beats || [], scene.index, {
-            isVideoMode: result.generationMode === 'video',
-            targetVideoDuration: result.targetVideoDuration || 5,
-          })
-        : scene.beats || [],
+      beats: enforceBeatCeilings(scene.beats || [], scene.index, {
+        isVideoMode: result.generationMode === 'video',
+        targetVideoDuration: result.targetVideoDuration || 5,
+      }),
     }));
-  }, [result.scenes, result.generationMode, result.targetVideoDuration, result.autoArchitectMode]);
+  }, [result.scenes, result.generationMode, result.targetVideoDuration]);
 
   // Scene collapse state (default: all expanded)
   const [expandedScenes, setExpandedScenes] = useState<Record<number, boolean>>(() => {

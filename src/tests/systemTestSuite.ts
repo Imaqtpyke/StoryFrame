@@ -174,6 +174,20 @@ for (const b of calibratedBeats) {
   assert(wordCount <= 9, 'Beat Ceilings', `Sub-beat word count (${wordCount}) adheres to ceiling limit`);
 }
 
+// Test short-form rapid beat pacing on introductory prepositional sentence
+const forestSentence = 'Above ground, a forest appears as individual trees, standing tall and seemingly alone.';
+const forestSubBeats = splitPhraseIntoSubBeats(forestSentence, 5);
+assert(
+  forestSubBeats.length >= 3,
+  'Short-Form Rapid Pacing',
+  `Partitions "Above ground..." into ${forestSubBeats.length} rapid retention beats (expected >= 3)`
+);
+assert(
+  forestSubBeats[0].toLowerCase().includes('above ground'),
+  'Spatial Anchor Beat',
+  'Preserves "Above ground," as a standalone spatial establishing beat'
+);
+
 // ============================================================================
 // 5. VIDEO SUITABILITY & DURATION CALIBRATION
 // ============================================================================

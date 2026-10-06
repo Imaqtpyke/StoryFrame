@@ -8,6 +8,7 @@ import {
   cleanRedundantOnScreenText,
   sanitizeImagePromptShotFraming,
   populateSceneTransitionHints,
+  enforceBeatCeilings,
 } from './beatSplitting';
 import { generateEnhancedStory } from './enhanceStoryArchitect';
 import { updateVideoPromptDuration } from './videoSuitability';
@@ -211,10 +212,12 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
 4. Mandatory 8-Part Master Scene "videoPrompt" Structure:
    For EACH scene, construct "videoPrompt" adhering strictly to these exact 8 components:
    - subject: Explicit character description with locked outfit (e.g. "Kael, 3D clay-style Filipino male in his 20s, wearing plain crewneck white t-shirt"). NEVER write "(matching established look)".
-   - action: described in temporal order across the shot with FULL ANATOMICAL & KINEMATIC SPECIFICITY:
-     * BODY ANGLE & ORIENTATION: Exact torso and hip angle relative to the lens (e.g. "torso angled three-quarters profile to screen-left", "full frontal square stance facing camera", "turned away in sharp dorsal three-quarter view").
-     * GAZE & FACING DIRECTION: Precise head turn and eye gaze vector (e.g. "head tilted 15 degrees downward with gaze fixed sharply on the object on the desk", "eyes darting toward off-screen right").
-     * HAND & ARM GESTURES: Specific finger, hand, and arm posture (e.g. "trembling right fingers clutching a frayed parchment while left arm hangs rigidly at hip level", "both palms pressed flat against the glass surface, fingers splayed").
+   - action: described in temporal order across the shot with FULL ANATOMICAL, BIOMECHANICAL & KINEMATIC SPECIFICITY:
+     * LIMB PROPORTIONS & ACCURACY: Limbs must strictly maintain accurate human anatomical scale, avoiding elongated, rubbery, or disproportionate distortions.
+     * STANCE, FEET & GROUNDED WEIGHT: Explicitly describe foot contact and gravity (e.g. "body weight anchored 70% onto the back right heel with toes slightly splayed, left foot stepping forward with ankle flexed in mid-stride intent", "both boots planted firmly shoulder-width on the ground"). STRICT BAN ON FLOATING OR WEIGHTLESS FEET.
+     * TORSO & HIP TWIST (CONTRAPPOSTO): Torso and hips must counter-rotate to reflect the arm's motion (e.g. "torso leaning 15 degrees forward with hips counter-angled in natural contrapposto balance to absorb the arm's reaching arc"). STRICT BAN ON STIFF WOODEN MANNEQUIN POSES.
+     * HAND & WRIST BIOMECHANICS: Specific finger curvature arcs, wrist angle, and tendon tension (e.g. "wrist flexed at 25 degrees with fingers curved along a natural anatomical arc, thumb lightly resting against the middle knuckle with visible knuckle tension", "both palms pressed flat against the glass surface with fingers splayed"). STRICT BAN ON FLAT CLAWS OR DISTORTED DIGITS.
+     * GAZE & FACING DIRECTION: Precise head turn, tilt, and eye gaze vector (e.g. "neck angled slightly forward, chin dipped, gaze tracking sharply toward screen-right to lead the motion", "head tilted 15 degrees downward with gaze fixed sharply on the object on the desk").
      * MAIN VS. SIDE CHARACTER POSITIONING & COMPOSITION: When multiple characters appear in the frame:
        - MAIN CHARACTER: Centered or commanding the golden-ratio third of the frame, foreground or midground priority, dominant lighting and eye-lead.
        - SIDE CHARACTER: Placed in the secondary plane (flanking screen-right/left, over-the-shoulder foreground anchor, or subordinate background depth), oriented facing or reacting toward the main character to guide viewer eye-path.
@@ -222,7 +225,7 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - camera: exactly ONE shot type, exactly ONE camera angle, and exactly ONE movement, NEVER stacked movements (e.g., "Medium shot, low-angle, slow forward push-in").
    - lighting and environment: atmospheric lighting and environment details from styleProfile and locationSheet.
    - style: styleProfile artStyle plus the lens/film-stock descriptor.
-   - physics: concrete physical dynamics (e.g. "cloth trailing in wind", "embers drifting upward", "waves crashing against rocks").
+   - physics: concrete physical and environmental dynamics (e.g. "powdery dry snow accumulating in woolen garment seams and dusting tree bark ridges", "subtle breath vapor drifting in cold air", "cloth trailing in wind", "embers drifting upward", "waves crashing against rocks").
    - audio: ALWAYS state "no dialogue, ambient sound only" or "silent".
    - duration: in seconds matching ${targetVideoDuration} seconds.
 
@@ -318,6 +321,8 @@ CLAUSE & MICRO-ACTION BEAT SEGMENTATION RULES (CRITICAL):
 1. Do NOT make a boring 1-sentence = 1-image breakdown! A long sentence with multiple items, actions, or psychological turns MUST be broken into granular, rhythmic visual beats.
 2. Commas, Clauses & Item Lists MUST Form Distinct Beats:
    - When a sentence lists distinct items, transactions, or actions (e.g. "after spending ₱150 on lunch, ₱100 on coffee, ₱80 on transportation, and a few other small purchases"), EACH distinct item or action clause MUST be its own distinct visual beat!
+   - SPATIAL & INTRODUCTORY CLOTHES FORM BEAT 1: Introductory prepositional phrases or setting qualifiers followed by a comma (e.g. "Above ground,", "In the quiet forest,", "Inside the laboratory,") MUST NEVER be merged with the subsequent subject clause! They establish the spatial frame or vantage point and MUST form their own standalone establishing beat.
+   - SHORT-FORM RETENTION PACE (3 TO 5 WORDS / 1.2S TO 1.8S PER BEAT): In short-form vertical video (9:16), viewers swipe away if a static frame lingers for more than 2 seconds. Break sentences so each image prompt represents only 3 to 5 spoken words (~1.2 to 1.8 seconds). Coordinating conjunctions ("and", "but", "while") and participial descriptors ("standing tall", "seemingly alone") MUST trigger distinct visual beats.
    - Contrasting conjunctions and pivots ("when you first receive it", "but somehow disappears", "thinking you can buy food", "save some", "and maybe even treat yourself", "your money suddenly starts looking dangerously low", "The strange part is", "none of those expenses felt expensive", "when you paid for them", "That's because your brain notices", "big purchases more easily than small ones", "even though several small purchases", "can quietly drain your wallet", "So next time you have ₱1,000", "don't just ask what you can buy with it", "ask what you want that ₱1,000 to become") MUST trigger separate visual beats!
 3. Pacing and Variety (STRICT BAN ON REPETITIVE MEDIUM SHOTS):
    - You are STRICTLY FORBIDDEN from generating repetitive "medium shot, eye-level" frames.
@@ -351,7 +356,20 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - NEVER write "(matching established look from Scene 1)" or "(matching established look)". That causes the AI to guess and change their clothes (e.g. from a white t-shirt to a polo).
    - In EVERY single beat's imagePrompt where the character appears, state their locked appearance and exact clothing explicitly (e.g. "Kael, wearing a plain crewneck white t-shirt and blue slippers").
 
-3. Nested Scenes and Beats:
+3. Biomechanical Anatomy, Accurate Gestures & Grounded Stance (CRITICAL ANTI-MANNEQUIN PROTOCOL):
+   When characters appear in imagePrompt:
+   - LIMB PROPORTIONS: Arms, legs, and torso must maintain natural human scale, strictly avoiding stretched or rubbery limb distortions.
+   - GROUNDED STANCE & FEET: Explicitly describe foot contact and gravity (e.g. "weight anchored 75% on the forward left boot sole with right heel slightly lifted", "both boots planted shoulder-width on the ground"). STRICT BAN ON FLOATING OR WEIGHTLESS FEET.
+   - TORSO & HIP TWIST (CONTRAPPOSTO): Shoulders, ribcage, and pelvis must counter-rotate to reflect the arm's motion (e.g. "torso twisted 15 degrees to screen-left with hips counter-angled in natural contrapposto balance"). STRICT BAN ON STIFF WOODEN MANNEQUIN POSES.
+   - HAND & WRIST BIOMECHANICS: Explicitly describe finger curvature arcs, wrist angle, and tendon/knuckle tension (e.g. "wrist flexed at 25 degrees with fingers curled in a natural relaxed arc, thumb lightly resting against the middle knuckle"). STRICT BAN ON FLAT CLAWS OR DISTORTED DIGITS.
+   - HEAD, NECK & GAZE VECTORS: Explicitly describe head tilt and eye gaze (e.g. "neck angled slightly forward, chin dipped, gaze tracking sharply toward screen-right").
+
+4. Atmospheric Micro-Environment & Tactile Physics:
+   Describe tangible physical interactions between characters/objects and the environment:
+   - PARTICLES & WEATHER: (e.g. "powdery dry snow accumulating in the seam creases of dark woolen fabric and clinging to the rough bark ridges", "subtle breath vapor rising in the freezing air", "microscopic dust motes floating through a ray of sunlight").
+   - SURFACE TACTILITY: (e.g. "damp pine needles and crushed leaves compressed underfoot", "glistening frost crystals on rough wood grain", "dappled light filtering through trembling leaves with soft shadows").
+
+5. Nested Scenes and Beats:
    Break the story into a sequence of scenes with rich, dynamic visual beats.
    Each scene has index, narratorLine, estimatedSeconds, and beats array.
 
@@ -765,7 +783,12 @@ ${durationInstruction}${customBeatsPrompt}`;
 
   // Final Storyboard-level safety pass for Original workflow
   const finalScenes = sanitizedScenes.map((scene: any) => {
-    const rawBeats = scene.beats.map((beat: any) => {
+    const ceilingBeats = enforceBeatCeilings(scene.beats || [], scene.index, {
+      isVideoMode,
+      targetVideoDuration,
+    });
+
+    const rawBeats = ceilingBeats.map((beat: any) => {
       // In video mode, do not strip shot framing prefixes so prompt details remain intact
       const prompt = isVideoMode ? beat.imagePrompt : sanitizeImagePromptShotFraming(beat.imagePrompt || '');
 

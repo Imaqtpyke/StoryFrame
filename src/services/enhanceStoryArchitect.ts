@@ -234,10 +234,24 @@ You MUST take their raw premise, question, draft, or concept and perform compreh
      ? `- MANDATORY MULTI-BEAT RULE: A single beat spanning an entire ${targetVideoDuration}-second video clip is STRICTLY FORBIDDEN.
    - Every ${targetVideoDuration}-second scene MUST be subdivided into 2 to 3 sequential micro-beats (${targetVideoDuration <= 6 ? '2 to 3 beats of ~1.0s to 2.0s each' : '3 to 5 beats of ~1.5s to 2.5s each'}).
    - Each beat covers a short 2 to 4 word phrase segment of the narratorLine and presents a distinct visual camera shot, angle, and movement progression (Beat 1: establishing/starting action, Beat 2: dynamic reaction or shift, Beat 3: immediate consequence or visual punchline).`
-     : `- HARD CEILING RULE: No single beat may represent more than 2 seconds of estimated narration or 8 words, whichever is smaller.
-   - Partition each scene's spoken sentence across 2 to 4 distinct visual beats with dynamic camera variety (wide → medium → close-up).`}
+     : `- HARD SHORT-FORM CEILING RULE: No single beat may represent more than 1.8 seconds of estimated narration or 5 words, whichever is smaller.
+   - SPATIAL & INTRODUCTORY CLAUSES: Introductory prepositional or setting qualifiers followed by a comma (e.g. "Above ground,", "In the dark forest,") MUST form their own distinct visual establishing beat (Beat 1).
+   - Partition each scene's spoken sentence across 3 to 4 rapid, snappy visual beats with dynamic camera variety (wide → medium → close-up) so viewers never stare at a static frame for more than 1.8 seconds.`}
 
-7. LITERAL VISUAL KINEMATICS & TRANSFORMATION RULE (CRITICAL - SHOW, DO NOT JUST TELL):
+7. BIOMECHANICAL ANATOMY, ACCURATE GESTURES & GROUNDED POSTURE:
+   When characters appear in prompts:
+   - LIMB PROPORTIONS: Arms, legs, and torso must maintain accurate human proportions, strictly avoiding stretched or rubbery limb distortions.
+   - GROUNDED STANCE & FEET: Explicitly describe foot contact and gravity (e.g. "weight anchored 70% onto the back right heel with toes slightly splayed, left foot stepping forward with ankle flexed in mid-stride intent", "both boots planted firmly shoulder-width on the wet soil"). STRICT BAN ON FLOATING OR WEIGHTLESS FEET.
+   - TORSO & HIP TWIST (CONTRAPPOSTO): Shoulders, ribcage, and pelvis must counter-rotate to reflect the arm's motion (e.g. "torso leaning 15 degrees forward with hips counter-angled in natural contrapposto balance to absorb the arm's reaching arc"). STRICT BAN ON WOODEN MANNEQUIN POSES.
+   - HAND & WRIST BIOMECHANICS: Explicitly describe finger curvature arcs, wrist angle, and tendon/knuckle tension (e.g. "wrist flexed at 25 degrees with fingers curved along a natural anatomical arc, thumb lightly resting against the middle knuckle with visible knuckle tension"). STRICT BAN ON FLAT CLAWS OR DISTORTED DIGITS.
+   - HEAD, NECK & GAZE VECTORS: Explicitly describe head tilt and eye gaze (e.g. "neck angled slightly forward, chin dipped, gaze tracking sharply toward screen-right").
+
+8. ATMOSPHERIC MICRO-ENVIRONMENT & TACTILE PHYSICS:
+   Describe tangible physical interactions between characters/objects and the environment:
+   - PARTICLES & WEATHER: (e.g. "powdery dry snow accumulating in the seam creases of dark woolen fabric and clinging to the rough bark ridges", "subtle breath vapor rising in the freezing air", "microscopic dust motes floating through a ray of sunlight").
+   - SURFACE TACTILITY: (e.g. "damp pine needles and crushed leaves compressed underfoot", "glistening frost crystals on rough wood grain", "dappled light filtering through trembling leaves with soft shadows").
+
+9. LITERAL VISUAL KINEMATICS & TRANSFORMATION RULE (CRITICAL - SHOW, DO NOT JUST TELL):
    - When the narration verbs describe physical or metaphorical actions, loss, or transformations (e.g. "disappears", "vanishes", "dissolves", "melts", "drains away", "bursts", "transforms into"), the AI visual prompt MUST LITERALLY SHOW THAT ACTION HAPPENING TO THE OBJECT!
    - NEVER be lazy! If the narration says "₱1,000 disappears after only a few purchases", DO NOT leave the character holding a crumpled banknote! The prompt MUST explicitly show: the banknote in his hand dissolving into thin air or vanishing, leaving his fingers clutching completely empty space while his eyes widen in shock.
 
