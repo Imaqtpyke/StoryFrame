@@ -111,6 +111,43 @@ function inferCameraMovement(imagePrompt: string, beatIndex: number): string {
 
 export { extractTemporalAnchor, cleanRedundantOnScreenText };
 
+/**
+ * Strips unwanted audio cues from image prompts, deduplicates redundant sentences,
+ * and eliminates trailing repetitive continuity loops.
+ */
+export function cleanAndDeduplicatePrompt(
+  prompt: string,
+  isVideoMode: boolean
+): string {
+  let cleaned = prompt.trim();
+
+  // In Text to Image mode, strictly strip any audio, soundtrack, voice, or sound effect descriptions
+  if (!isVideoMode) {
+    cleaned = cleaned.replace(/\b(?:Audio|Sound|Foley|Soundtrack|Dialogue|Ambient sound)\s*:\s*[^.;\n]+[.;]?/gi, '');
+    cleaned = cleaned.replace(/\b(?:no dialogue,\s*ambient sound only|ambient foley only|with ambient sound|silent|no dialogue)\b[.;]?/gi, '');
+  }
+
+  // Remove redundant explicit Continuity blocks if already integrated into the sentence
+  cleaned = cleaned.replace(/\s*(?:Character|Location) Continuity \([^)]*\)\.?/gi, '');
+
+  // Deduplicate adjacent identical sentences or repeated phrases
+  const sentences = cleaned.split(/(?<=[.!?])\s+/).filter((s) => s.trim().length > 0);
+  const seenSentences = new Set<string>();
+  const uniqueSentences: string[] = [];
+  for (const s of sentences) {
+    const normalized = s.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (normalized.length > 0 && !seenSentences.has(normalized)) {
+      seenSentences.add(normalized);
+      uniqueSentences.push(s.trim());
+    }
+  }
+  cleaned = uniqueSentences.join(' ');
+
+  // Clean trailing punctuation and multiple spaces
+  cleaned = cleaned.replace(/\s+([,.;!?])/g, '$1').replace(/\s{2,}/g, ' ').trim();
+  return cleaned;
+}
+
 // ============================================================================
 // ORIGINAL STORY GENERATOR (Toggle OFF)
 // 100% pure original workflow: natural beat pacing, unforced narrative rhythm,
@@ -200,47 +237,50 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
 
 2. Continuity Sheets & Locked Wardrobe Token (MANDATORY RESOLUTION):
    Generate the full breakdown in one model call that has the entire story in view.
-   - "characterSheet": Create a top-level object mapping each recurring character name to ONE fixed, highly detailed visual description. You MUST resolve any unstated attributes (gender, age, build, hair, and SPECIFIC PERMANENT WARDROBE/CLOTHING) into concrete, locked choices. Ambiguity is strictly forbidden.
-   - MANDATORY WARDROBE LOCK: You MUST lock the exact clothing (e.g. "wearing a plain crewneck white cotton t-shirt, blue denim shorts, and blue rubber slippers").
+   - "characterSheet": Create a top-level object mapping each recurring character name to ONE fixed, highly detailed visual description resolving all 5 visual detail pillars:
+     * FIXED BIOMETRIC IDENTITY: Facial bone structure (e.g. high cheekbones, angular jawline), skin undertones, and hair volume/texture/parting.
+     * TACTILE MATERIALS & TEXTURES: Real-world surface textures (visible skin pores, weathered leather, brushed cotton, brass patina).
+     * LAYERED OUTFIT ARCHITECTURE: Specific outerwear, underlayer, wear/tear condition, footwear, and accessories (e.g. "wearing a plain crewneck white cotton t-shirt with ribbed collar, dark indigo raw denim shorts with copper rivets, and worn blue rubber slippers").
+     * EMOTIONAL POSTURE & GESTURE LANGUAGE: Default stance, posture balance, and characteristic eye gaze.
    - "locationSheet": Create a top-level object mapping any specific place returned to more than once to ONE fixed, highly detailed visual description.
 
 3. Character and Setting Continuity (STRICT BAN ON "MATCHING ESTABLISHED LOOK"):
    - DOWNSTREAM DIFFUSION MODELS (KLING, RUNWAY, SORA, FLUX, MIDJOURNEY) HAVE ZERO MEMORY BETWEEN CLIPS!
-   - You are STRICTLY FORBIDDEN from writing shortcut phrases like "(matching established look from Scene 1)" or "(matching established look)"! That causes models to hallucinate random new clothes (like a collared polo shirt instead of a t-shirt).
-   - In EVERY scene's "videoPrompt", "startFramePrompt", and every beat's "imagePrompt" where the character appears, you MUST EXPLICITLY state their core visual identity and locked clothing (e.g., "Kael, Filipino male in his 20s, wearing plain crewneck white t-shirt and blue slippers"). NEVER allow the outfit to change without story reason!
+   - You are STRICTLY FORBIDDEN from writing shortcut phrases like "(matching established look from Scene 1)" or "(matching established look)"! That causes models to hallucinate random new clothes.
+   - In EVERY scene's "videoPrompt", "startFramePrompt", and every beat's "imagePrompt" where the character appears, you MUST EXPLICITLY state their locked visual identity and exact clothing (e.g., "Kael, Filipino male in his 20s, wearing plain crewneck white t-shirt and blue slippers"). NEVER allow the outfit to change without story reason!
 
-4. Mandatory 8-Part Master Scene "videoPrompt" Structure:
-   For EACH scene, construct "videoPrompt" adhering strictly to these exact 8 components:
-   - subject: Explicit character description with locked outfit (e.g. "Kael, 3D clay-style Filipino male in his 20s, wearing plain crewneck white t-shirt"). NEVER write "(matching established look)".
+4. Mandatory Master Scene "videoPrompt" Structure:
+   For EACH scene, construct "videoPrompt" adhering strictly to these components:
+   - subject: Explicit character description with locked outfit layers (e.g. "Kael, Filipino male in his 20s with angular jaw and dark textured hair, wearing plain crewneck white cotton t-shirt and blue slippers").
    - action: described in temporal order across the shot with FULL ANATOMICAL, BIOMECHANICAL & KINEMATIC SPECIFICITY:
-     * LIMB PROPORTIONS & ACCURACY: Limbs must strictly maintain accurate human anatomical scale, avoiding elongated, rubbery, or disproportionate distortions.
+     * LIMB PROPORTIONS & ACCURACY: Limbs must strictly maintain accurate human anatomical scale.
      * STANCE, FEET & GROUNDED WEIGHT: Explicitly describe foot contact and gravity (e.g. "body weight anchored 70% onto the back right heel with toes slightly splayed, left foot stepping forward with ankle flexed in mid-stride intent", "both boots planted firmly shoulder-width on the ground"). STRICT BAN ON FLOATING OR WEIGHTLESS FEET.
-     * TORSO & HIP TWIST (CONTRAPPOSTO): Torso and hips must counter-rotate to reflect the arm's motion (e.g. "torso leaning 15 degrees forward with hips counter-angled in natural contrapposto balance to absorb the arm's reaching arc"). STRICT BAN ON STIFF WOODEN MANNEQUIN POSES.
-     * HAND & WRIST BIOMECHANICS: Specific finger curvature arcs, wrist angle, and tendon tension (e.g. "wrist flexed at 25 degrees with fingers curved along a natural anatomical arc, thumb lightly resting against the middle knuckle with visible knuckle tension", "both palms pressed flat against the glass surface with fingers splayed"). STRICT BAN ON FLAT CLAWS OR DISTORTED DIGITS.
-     * GAZE & FACING DIRECTION: Precise head turn, tilt, and eye gaze vector (e.g. "neck angled slightly forward, chin dipped, gaze tracking sharply toward screen-right to lead the motion", "head tilted 15 degrees downward with gaze fixed sharply on the object on the desk").
-     * MAIN VS. SIDE CHARACTER POSITIONING & COMPOSITION: When multiple characters appear in the frame:
-       - MAIN CHARACTER: Centered or commanding the golden-ratio third of the frame, foreground or midground priority, dominant lighting and eye-lead.
-       - SIDE CHARACTER: Placed in the secondary plane (flanking screen-right/left, over-the-shoulder foreground anchor, or subordinate background depth), oriented facing or reacting toward the main character to guide viewer eye-path.
-     * PACING & MOTION VELOCITY: Explicit velocity and progression tempo (e.g. "measured, slow-burn deliberate motion transitioning over 3 seconds into a sudden burst of frantic stumbling", "frenetic high-cadence sprint", "slow breathing chest rise and fall at restful pace").
-   - camera: exactly ONE shot type, exactly ONE camera angle, and exactly ONE movement, NEVER stacked movements (e.g., "Medium shot, low-angle, slow forward push-in").
-   - lighting and environment: atmospheric lighting and environment details from styleProfile and locationSheet.
-   - style: styleProfile artStyle plus the lens/film-stock descriptor.
-   - physics: concrete physical and environmental dynamics (e.g. "powdery dry snow accumulating in woolen garment seams and dusting tree bark ridges", "subtle breath vapor drifting in cold air", "cloth trailing in wind", "embers drifting upward", "waves crashing against rocks").
-   - audio: ALWAYS state "no dialogue, ambient sound only" or "silent".
+     * TORSO & HIP TWIST (CONTRAPPOSTO): Torso and hips must counter-rotate to reflect the arm's motion (e.g. "torso leaning 15 degrees forward with hips counter-angled in natural contrapposto balance"). STRICT BAN ON STIFF WOODEN MANNEQUIN POSES.
+     * HAND & WRIST BIOMECHANICS: Specific finger curvature arcs, wrist angle, and tendon tension (e.g. "wrist flexed at 25 degrees with fingers curved along a natural anatomical arc, thumb lightly resting against the middle knuckle with visible knuckle tension"). STRICT BAN ON FLAT CLAWS OR DISTORTED DIGITS.
+     * GAZE & FACING DIRECTION: Precise head turn, tilt, and eye gaze vector (e.g. "neck angled slightly forward, chin dipped, gaze tracking sharply toward screen-right").
+     * MAIN VS. SIDE CHARACTER COMPOSITION: When multiple characters appear, main character commands the primary visual third with dominant eye-lead; side character occupies the secondary plane.
+     * KINETIC PROGRESSION & VELOCITY TEMPO: Explicit velocity and progression tempo (e.g. "Velocity: measured slow-burn deliberate movement transitioning into a sudden sharp pivot").
+   - camera: exactly ONE shot type, exactly ONE camera angle, and exactly ONE movement (e.g., "Medium shot, low-angle, slow forward push-in").
+   - optics: explicit lens focal length and depth of field (e.g. "50mm anamorphic prime lens, shallow depth of field f/2.0 with creamy circular bokeh").
+   - lighting: emotional lighting Kelvin temperature and contrast curve (e.g. "3200K warm tungsten key light with soft 5600K cool ambient fill and high-contrast rim light along jawline").
+   - style: styleProfile artStyle plus film stock descriptor.
+   - physics & environment: concrete physical and environmental dynamics (e.g. "powdery snow clinging to rough bark, breath vapor drifting in cold air, ripples expanding outward").
+   - audio: concrete sound design cues (e.g. "Audio: muffled footsteps on concrete, coins clinking in palm, no dialogue, ambient foley only").
    - duration: in seconds matching ${targetVideoDuration} seconds.
 
-5. Single Visual Focus & Distinct Beat Progression (NO CONFUSED HYBRID OR REDUNDANT BEATS):
+5. Single Visual Focus & Distinct Beat Progression (NO CONFUSED HYBRIDS):
    Every beat MUST focus on exactly ONE clear visual subject or action, and EVERY beat MUST present a distinct visual progression that its neighbor does NOT.
    - NO CONFUSED HYBRIDS: NEVER combine two competing framing requests into a single beat (e.g. DO NOT write one prompt trying to frame a close-up on an object AND a character's reaction in the same image). Split into Beat A (close-up on object) and Beat B (character reaction).
    - EVERY BEAT MUST BE VISUALLY DISTINCT: Each beat must show something its neighbor does not (a different focal detail, framing distance, moment in the action, or emotional shift in pose/expression).
-   - STRICT SHOT TYPE & PROSE ALIGNMENT (TIGHT SHOTS): When a beat's shotType is close-up, macro, extreme-close-up, or detail shot, its prompt prose MUST actually describe that tight framing and specific focal detail, NOT the same full-body or wide environmental description used in a wider beat nearby. The camera framing tag and the prompt prose MUST strictly match.
+   - STRICT SHOT TYPE & PROSE ALIGNMENT (TIGHT SHOTS): When a beat's shotType is close-up, macro, extreme-close-up, or detail shot, its prompt prose MUST actually describe that tight framing and specific focal detail.
 
-6. Strict Narrative Faithfulness (NO UNSTATED FACTUAL INVENTIONS):
-   Do NOT invent fictitious specific story facts, character names, senders, or plot details that are NOT present in the narration or already locked in characterSheet/locationSheet.
+6. Grounded Story Constraint & Anti-Hallucination Engine:
+   - ZERO UNSTATED INVENTIONS: Strictly forbid hallucinating phantom characters, arbitrary weapons, fictional sci-fi devices, or unprompted plot twists not in the user's premise.
+   - CONCRETE NOUNS ONLY: Every noun must be a tangible, real-world object. Never write vague disjunctive placeholders ("holding something like a bag or a book"). Every item must be locked and explicit.
+   - NARRATIVE FAITHFULNESS: Do NOT invent fictitious specific story facts, character names, senders, or plot details not present in the narration or already locked in continuity sheets.
 
 7. Unified Stylistic Register (CONSISTENT ART MEDIUM VOCABULARY):
-   When a specific art style or medium is requested:
-   You MUST apply that art style's specific descriptive vocabulary consistently across ALL parts of the prompt, including characterSheet, locationSheet, subject descriptions, lighting, textures, and backgrounds.
+   When a specific art style or medium is requested, apply that art style's specific descriptive vocabulary consistently across ALL parts of the prompt.
 
 8. NO REAL OR IDENTIFIABLE PERSON NAMES IN VISUAL PROMPTS:
    NEVER use a real, identifiable person's actual proper name in visual prompts.
@@ -253,20 +293,20 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
 
 11. Start Frame Ingredients (Text to Image Prompt):
     For each scene, provide "startFramePrompt": a pristine text-to-image prompt to generate the initial reference keyframe image formatted as:
-    [Shot framing and angle] of [Subject with exact character details], [Initial frame pose] in [Setting/Location Details], [Lighting & Color palette], ${defaultAspectRatio}, ${characterStyle || 'cinematic rendering'}.
+    [Shot framing and angle] of [Subject with exact character details and locked outfit], [Initial frame pose with grounded stance and gaze] in [Setting/Location Details], [3200K/5600K Lighting & Color palette], 50mm f/2.0 lens, ${defaultAspectRatio}, ${characterStyle || 'cinematic rendering'}.
 
 12. Smart Video Beats Array ("beats"):
     For each scene, provide an array of video beats representing the temporal subdivisions of this ${targetVideoDuration}-second clip.
     Each beat MUST contain:
     - "beatIndex": integer (1, 2, 3...)
     - "textSpan": specific phrase or spoken clause from the narrator line. Every beat MUST correspond to actual spoken words from the narrator line. NO EMPTY STRINGS ("").
-    - "estimatedSeconds": estimated duration in seconds for this beat, distributed so the sum of all beats in the scene equals approximately ${targetVideoDuration} seconds (e.g. 2.0s and 2.0s, or 1.5s and 2.5s).
+    - "estimatedSeconds": estimated duration in seconds for this beat, distributed so the sum of all beats in the scene equals approximately ${targetVideoDuration} seconds.
     - "shotType": explicit cinematography shot size or transition shot
     - "cameraAngle": explicit camera angle
     - "cameraMovement": cinematic camera motion cue
     - "temporalAnchor": optional string for explicit year, date, or elapsed duration
     - "transitionHint": optional string describing a shared visual anchor (populated ONLY on last beat of scene or first beat of next scene)
-    - "imagePrompt": complete, standalone text to video prompt capturing this specific beat's action.
+    - "imagePrompt": complete, standalone text to video prompt capturing this specific beat's action (45 to 80 words). MUST include: [Subject with locked outfit] performing [precise kinematic action with biomechanical gestures], Camera: [Shot, Angle, Movement], Optics: [Focal length and f-stop], Lighting: [Kelvin temp and contrast], Audio: [Ambient sound/foley, no dialogue], ${defaultAspectRatio}. DO NOT duplicate boilerplate text.
 
 STRICT CONSTRAINTS:
 1. DO NOT use em dashes anywhere. Use commas, periods, or parentheses instead.
@@ -349,11 +389,15 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
 
 2. Continuity Sheets & Locked Wardrobe Token (MANDATORY RESOLUTION):
    Generate the full breakdown in one model call that has the entire story in view.
-   - "characterSheet": Create a top-level object mapping each recurring character name to ONE fixed, highly detailed visual description with PERMANENT WARDROBE (e.g. "wearing a plain crewneck white t-shirt, denim shorts, and blue rubber slippers").
+   - "characterSheet": Create a top-level object mapping each recurring character name to ONE fixed, highly detailed visual description resolving all 5 visual detail pillars:
+     * FIXED BIOMETRIC IDENTITY: Facial bone structure (e.g. high cheekbones, angular jawline), skin undertones, and hair volume/texture/parting.
+     * TACTILE MATERIALS & TEXTURES: Real-world surface textures (visible skin pores, weathered leather, brushed cotton, brass patina).
+     * LAYERED OUTFIT ARCHITECTURE: Specific outerwear, underlayer, wear/tear condition, footwear, and accessories (e.g. "wearing a plain crewneck white cotton t-shirt with ribbed collar, dark indigo raw denim shorts with copper rivets, and worn blue rubber slippers").
+     * EMOTIONAL POSTURE & GESTURE LANGUAGE: Default stance, posture balance, and characteristic eye gaze.
    - "locationSheet": Create a top-level object mapping any specific place returned to more than once to ONE fixed, highly detailed visual description.
    CRITICAL CONTINUITY RULE (STRICT BAN ON SHORTCUTS):
    - Downstream image diffusion models have NO memory between frames.
-   - NEVER write "(matching established look from Scene 1)" or "(matching established look)". That causes the AI to guess and change their clothes (e.g. from a white t-shirt to a polo).
+   - NEVER write "(matching established look from Scene 1)" or "(matching established look)". That causes the AI to guess and change their clothes.
    - In EVERY single beat's imagePrompt where the character appears, state their locked appearance and exact clothing explicitly (e.g. "Kael, wearing a plain crewneck white t-shirt and blue slippers").
 
 3. Biomechanical Anatomy, Accurate Gestures & Grounded Stance (CRITICAL ANTI-MANNEQUIN PROTOCOL):
@@ -364,12 +408,28 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - HAND & WRIST BIOMECHANICS: Explicitly describe finger curvature arcs, wrist angle, and tendon/knuckle tension (e.g. "wrist flexed at 25 degrees with fingers curled in a natural relaxed arc, thumb lightly resting against the middle knuckle"). STRICT BAN ON FLAT CLAWS OR DISTORTED DIGITS.
    - HEAD, NECK & GAZE VECTORS: Explicitly describe head tilt and eye gaze (e.g. "neck angled slightly forward, chin dipped, gaze tracking sharply toward screen-right").
 
-4. Atmospheric Micro-Environment & Tactile Physics:
+4. Atmospheric Micro-Environment, Tactile Physics & Lighting Kelvin:
    Describe tangible physical interactions between characters/objects and the environment:
    - PARTICLES & WEATHER: (e.g. "powdery dry snow accumulating in the seam creases of dark woolen fabric and clinging to the rough bark ridges", "subtle breath vapor rising in the freezing air", "microscopic dust motes floating through a ray of sunlight").
    - SURFACE TACTILITY: (e.g. "damp pine needles and crushed leaves compressed underfoot", "glistening frost crystals on rough wood grain", "dappled light filtering through trembling leaves with soft shadows").
+   - EMOTIONAL LIGHTING KELVIN & CONTRAST: Specify Kelvin color temperature and lighting ratio (e.g. "3200K warm incandescent tungsten key with moody 5400K daylight rim", "6500K harsh high-contrast overcast light with sharp cast shadows").
 
-5. Nested Scenes and Beats:
+5. Cinematic Optics & Lens Prescriptions:
+   Specify focal length and depth of field in every beat prompt (e.g. "Shot on 85mm f/1.4 portrait prime with shallow depth of field and soft circular bokeh", "24mm f/8 wide lens with crisp deep focus").
+
+6. STRICT BAN ON AUDIO / SOUND CUES IN IMAGE PROMPTS:
+   Diffusion image models (Midjourney, Flux, Stable Diffusion) generate static visuals and CANNOT render sound. DO NOT include audio cues, sound effects, foley descriptions, or music tracks in image prompts.
+
+7. Grounded Story Constraint & Anti-Hallucination Engine:
+   - ZERO UNSTATED INVENTIONS: Strictly forbid hallucinating phantom characters, arbitrary weapons, fictional sci-fi devices, or unprompted plot twists not in the user's premise.
+   - CONCRETE NOUNS ONLY: Every noun must be a tangible real-world item. Never write vague disjunctive placeholders ("holding something like a bag or a book").
+   - SINGLE VISUAL FOCUS PER BEAT: Exactly ONE clear visual focus per beat. No conflicting hybrid framing.
+
+8. Token Economy & Deduplication:
+   - Prompts must remain punchy and evocative (45 to 75 descriptive words per beat).
+   - DO NOT copy-paste the entire character sheet paragraph multiple times within the prompt. Weave locked traits directly into the scene action.
+
+9. Nested Scenes and Beats:
    Break the story into a sequence of scenes with rich, dynamic visual beats.
    Each scene has index, narratorLine, estimatedSeconds, and beats array.
 
@@ -622,13 +682,23 @@ ${durationInstruction}${customBeatsPrompt}`;
         finalImagePrompt += '.';
       }
 
-      // Append continuity only if not already embedded
+      // Append continuity only if details are not already embedded in prompt
       if (matchedCharClauses.length > 0 && !finalImagePrompt.toLowerCase().includes('character continuity')) {
-        finalImagePrompt += ` Character Continuity (${matchedCharClauses.join('. ')}).`;
+        const charMissing = matchedCharClauses.filter(
+          (c) => !finalImagePrompt.toLowerCase().includes(c.slice(0, 20).toLowerCase())
+        );
+        if (charMissing.length > 0) {
+          finalImagePrompt += ` Character Continuity (${charMissing.join('. ')}).`;
+        }
       }
 
       if (matchedLocClauses.length > 0 && !finalImagePrompt.toLowerCase().includes('location continuity')) {
-        finalImagePrompt += ` Location Continuity (${matchedLocClauses.join('. ')}).`;
+        const locMissing = matchedLocClauses.filter(
+          (l) => !finalImagePrompt.toLowerCase().includes(l.slice(0, 20).toLowerCase())
+        );
+        if (locMissing.length > 0) {
+          finalImagePrompt += ` Location Continuity (${locMissing.join('. ')}).`;
+        }
       }
 
       if (
@@ -666,6 +736,23 @@ ${durationInstruction}${customBeatsPrompt}`;
         finalImagePrompt = cleanRedundantOnScreenText(finalImagePrompt);
       }
 
+      // Clean redundant duplications and enforce strict mode isolation (no audio in image mode)
+      finalImagePrompt = cleanAndDeduplicatePrompt(finalImagePrompt, isVideoMode);
+
+      let soundCue: string | undefined = undefined;
+      if (isVideoMode) {
+        const audioMatch = finalImagePrompt.match(/\bAudio:\s*([^.;\n]+)/i);
+        if (audioMatch && audioMatch[1]) {
+          soundCue = removeEmDashes(audioMatch[1].trim());
+        }
+      }
+
+      let optics: string | undefined = undefined;
+      const opticsMatch = finalImagePrompt.match(/\bOptics:\s*([^.;\n]+)/i) || finalImagePrompt.match(/\b(\d{2,3}mm\s+(?:f\/[0-9.]+|lens|prime)[^,.;]*)/i);
+      if (opticsMatch && opticsMatch[1]) {
+        optics = removeEmDashes(opticsMatch[1].trim());
+      }
+
       const rawTransitionHint = beat.transitionHint || beat.transition_hint;
       const transitionHint = typeof rawTransitionHint === 'string' && rawTransitionHint.trim().length > 0
         ? removeEmDashes(rawTransitionHint.trim())
@@ -680,6 +767,8 @@ ${durationInstruction}${customBeatsPrompt}`;
         visualSoundEffect,
         temporalAnchor,
         transitionHint,
+        soundCue,
+        optics,
         imagePrompt: removeEmDashes(finalImagePrompt),
         estimatedSeconds: typeof beat.estimatedSeconds === 'number' && beat.estimatedSeconds > 0
           ? beat.estimatedSeconds
@@ -744,6 +833,7 @@ ${durationInstruction}${customBeatsPrompt}`;
         if (!vp.includes(sanitizedStyleProfile.artStyle)) {
           vp += ` ${styleProfileWording}`;
         }
+        vp = cleanAndDeduplicatePrompt(vp, true);
         videoPrompt = updateVideoPromptDuration(vp, targetVideoDuration, calculatedSceneSeconds);
       } else {
         const charDesc = charactersInScene.length > 0
@@ -761,7 +851,8 @@ ${durationInstruction}${customBeatsPrompt}`;
           const shortcutRegex2 = new RegExp(`\\b${charName}\\s*\\(matching established look[^)]*\\)`, 'gi');
           sfp = sfp.replace(shortcutRegex2, `${charName} (${visualDesc})`);
         }
-        startFramePrompt = sfp;
+        // Keyframe image prompt must not contain audio cues
+        startFramePrompt = cleanAndDeduplicatePrompt(sfp, false);
       } else {
         const leadSubject = charactersInScene[0] ? sanitizedCharacterSheet[charactersInScene[0]] : 'Main subject';
         startFramePrompt = `Cinematic establishing frame of ${leadSubject}, dynamic initial pose in ${sanitizedStyleProfile.eraAndSetting}, ${sanitizedStyleProfile.lighting}, ${sanitizedStyleProfile.colorPalette}, ${defaultAspectRatio}, ${sanitizedStyleProfile.artStyle}.`;

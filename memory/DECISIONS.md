@@ -29,3 +29,22 @@
 - **Context:** Opening 2 seconds determine short-form video retention; abstract openers cause immediate swipe-away.
 - **Date:** 2026-09-27
 - **Status:** Active
+
+## Five Visual Detail Pillars & Optics Prescriptions
+- **Fact/Decision:** Embedded fixed biometric identity (facial bone structure, hair volume/texture), tactile materials (skin pores, textured fabrics like ribbed knit/raw denim/weathered leather, brass patina), emotional lighting Kelvin and contrast curve (explicit Kelvin e.g. 3200K vs 5600K vs 6500K with key-to-fill ratio), expression/posture/biomechanical gestures (gaze vector, contrapposto, finger tendon tension, grounded foot contact), and layered outfit architecture directly into prompts without cluttering the UI. Lens optics prescriptions specify focal length and f-stop depth of field.
+- **Context:** Eliminates mannequin poses and visual drift in downstream diffusion models while maintaining a clean, spacious UI.
+- **Date:** 2026-10-07
+- **Status:** Active
+
+## Audio Cue Mode Isolation & Kinetic Velocity
+- **Fact/Decision:** Audio, sound design, and foley cues are strictly mandated for Text-to-Video prompts and video beats, and strictly prohibited and stripped from Text-to-Image prompts. Video beats incorporate explicit kinetic velocity and tempo progression cues.
+- **Context:** Diffusion image models cannot render audio and waste tokens if audio instructions are included, whereas video generation and post-production editing rely on explicit sound design and motion velocity.
+- **Date:** 2026-10-07
+- **Status:** Active
+
+## Grounded Anti-Hallucination & Deduplication Engine
+- **Fact/Decision:** Strict zero-unstated-inventions constraint forbidding unprompted characters, random weapons, or plot twists not in the user's premise. Automated post-processing deduplication removes duplicate sentences, redundant continuity blocks, and trailing boilerplate loops.
+- **Context:** Prevents token bloat, keeps prompts punchy (45 to 80 words), and guarantees downstream image and video models render faithful visuals without hallucinations.
+- **Date:** 2026-10-07
+- **Status:** Active
+

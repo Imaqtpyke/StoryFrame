@@ -20,6 +20,8 @@ export interface Beat {
   visualSoundEffect?: string;
   temporalAnchor?: string;
   transitionHint?: string;
+  soundCue?: string;
+  optics?: string;
 }
 
 export interface Scene {

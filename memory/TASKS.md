@@ -14,6 +14,14 @@
   - Verified clean compilation (`npm run build`) and clean type-checking (`tsc --noEmit`).
 - [x] **Persistent Memory System Setup:**
   - Created persistent memory structure (`INDEX.md`, `MEMORY.md`, `PROJECTS.md`, `DECISIONS.md`, `KNOWLEDGE.md`, `TASKS.md`) capturing all approved conventions and decisions.
+- [x] **Five Visual Detail Pillars, Optics, Audio Isolation & Anti-Hallucination Engine:**
+  - Embedded fixed biometric identity, tactile materials, Kelvin lighting curves, biomechanical posture/gestures, and layered outfit architecture into prompts.
+  - Added lens optics prescriptions (focal length and f-stop depth of field).
+  - Enforced strict audio cue isolation: mandated for Text-to-Video prompts and video beats; strictly prohibited and stripped from Text-to-Image prompts.
+  - Implemented kinetic velocity progression for video shots.
+  - Built grounded anti-hallucination constraint (zero unstated inventions, concrete nouns only).
+  - Implemented automated prompt deduplication removing duplicate sentences and redundant continuity blocks.
+  - Verified with 47 automated system tests passing and clean compilation.
 
 ## Next Steps / Active Tasks
 - [ ] Monitor user workflow and generation results for further style, duration, or camera refinement.

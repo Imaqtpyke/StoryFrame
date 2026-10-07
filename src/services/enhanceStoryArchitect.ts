@@ -15,6 +15,7 @@ import {
   populateSceneTransitionHints,
 } from './beatSplitting';
 import { updateVideoPromptDuration } from './videoSuitability';
+import { cleanAndDeduplicatePrompt } from './geminiClient';
 
 function removeEmDashes(text: string): string {
   if (!text) return text;
@@ -240,37 +241,53 @@ You MUST take their raw premise, question, draft, or concept and perform compreh
 
 7. BIOMECHANICAL ANATOMY, ACCURATE GESTURES & GROUNDED POSTURE:
    When characters appear in prompts:
-   - LIMB PROPORTIONS: Arms, legs, and torso must maintain accurate human proportions, strictly avoiding stretched or rubbery limb distortions.
-   - GROUNDED STANCE & FEET: Explicitly describe foot contact and gravity (e.g. "weight anchored 70% onto the back right heel with toes slightly splayed, left foot stepping forward with ankle flexed in mid-stride intent", "both boots planted firmly shoulder-width on the wet soil"). STRICT BAN ON FLOATING OR WEIGHTLESS FEET.
-   - TORSO & HIP TWIST (CONTRAPPOSTO): Shoulders, ribcage, and pelvis must counter-rotate to reflect the arm's motion (e.g. "torso leaning 15 degrees forward with hips counter-angled in natural contrapposto balance to absorb the arm's reaching arc"). STRICT BAN ON WOODEN MANNEQUIN POSES.
+   - FIXED BIOMETRIC IDENTITY: Face bone structure (high cheekbones, angular jawline), skin undertones, and hair volume/texture/parting.
+   - TACTILE MATERIALS & TEXTURES: Real-world surface textures (visible skin pores, weathered leather, brushed cotton, brass patina).
+   - LAYERED OUTFIT ARCHITECTURE: Specific outerwear, underlayer, wear condition, footwear, and accessories locked across all scenes.
+   - LIMB PROPORTIONS: Arms, legs, and torso must maintain accurate human proportions.
+   - GROUNDED STANCE & FEET: Explicitly describe foot contact and gravity (e.g. "weight anchored 70% onto the back right heel with toes slightly splayed, left foot stepping forward with ankle flexed in mid-stride intent", "both boots planted firmly shoulder-width on the ground"). STRICT BAN ON FLOATING OR WEIGHTLESS FEET.
+   - TORSO & HIP TWIST (CONTRAPPOSTO): Shoulders, ribcage, and pelvis must counter-rotate to reflect the arm's motion (e.g. "torso leaning 15 degrees forward with hips counter-angled in natural contrapposto balance"). STRICT BAN ON WOODEN MANNEQUIN POSES.
    - HAND & WRIST BIOMECHANICS: Explicitly describe finger curvature arcs, wrist angle, and tendon/knuckle tension (e.g. "wrist flexed at 25 degrees with fingers curved along a natural anatomical arc, thumb lightly resting against the middle knuckle with visible knuckle tension"). STRICT BAN ON FLAT CLAWS OR DISTORTED DIGITS.
    - HEAD, NECK & GAZE VECTORS: Explicitly describe head tilt and eye gaze (e.g. "neck angled slightly forward, chin dipped, gaze tracking sharply toward screen-right").
 
-8. ATMOSPHERIC MICRO-ENVIRONMENT & TACTILE PHYSICS:
-   Describe tangible physical interactions between characters/objects and the environment:
-   - PARTICLES & WEATHER: (e.g. "powdery dry snow accumulating in the seam creases of dark woolen fabric and clinging to the rough bark ridges", "subtle breath vapor rising in the freezing air", "microscopic dust motes floating through a ray of sunlight").
-   - SURFACE TACTILITY: (e.g. "damp pine needles and crushed leaves compressed underfoot", "glistening frost crystals on rough wood grain", "dappled light filtering through trembling leaves with soft shadows").
+8. ATMOSPHERIC MICRO-ENVIRONMENT, TACTILE PHYSICS & LIGHTING KELVIN:
+   - PARTICLES & WEATHER: (e.g. "powdery dry snow accumulating in seam creases of dark woolen fabric, subtle breath vapor rising in freezing air").
+   - SURFACE TACTILITY: (e.g. "damp pine needles and crushed leaves compressed underfoot, glistening frost crystals on wood grain").
+   - EMOTIONAL LIGHTING KELVIN & CONTRAST CURVE: Explicit light angle, Kelvin temperature (3000K warm tungsten vs 6500K overcast daylight), and key-to-fill contrast ratio matched to dramatic beat.
 
-9. LITERAL VISUAL KINEMATICS & TRANSFORMATION RULE (CRITICAL - SHOW, DO NOT JUST TELL):
-   - When the narration verbs describe physical or metaphorical actions, loss, or transformations (e.g. "disappears", "vanishes", "dissolves", "melts", "drains away", "bursts", "transforms into"), the AI visual prompt MUST LITERALLY SHOW THAT ACTION HAPPENING TO THE OBJECT!
-   - NEVER be lazy! If the narration says "₱1,000 disappears after only a few purchases", DO NOT leave the character holding a crumpled banknote! The prompt MUST explicitly show: the banknote in his hand dissolving into thin air or vanishing, leaving his fingers clutching completely empty space while his eyes widen in shock.
+9. CINEMATIC OPTICS & LENS PRESCRIPTIONS:
+   Specify focal length and aperture/f-stop in every prompt (e.g. "50mm anamorphic prime lens, f/2.0 shallow depth of field with soft bokeh", "24mm f/8 deep focus").
 
-8. MANDATORY GLOBAL VISUAL TOKEN BIBLE & UNBREAKABLE COLOR/MATERIAL CONSISTENCY:
-   - Establish and strictly enforce a unified, permanent visual anchor palette across all scenes and beats:
-     * FLUIDS, GASES & ENERGETIC SUBSTANCES: If acid, gastric fluid, poison, potion, fire, blood, or energy is present, you MUST explicitly declare its EXACT color up front in Scene 1. That EXACT color descriptor MUST BE REPEATED in every single beat that features it.
-     * PROPS & SWALLOWED / HELD OBJECTS: Explicitly define key objects with exact, singular geometry, material, and dimensions.
-     * RECURRING ENVIRONMENT GEOMETRY & ARCHITECTURE: Lock the specific walls, geometry, textures, and color tones of the recurring location.
+10. MODE ISOLATION FOR AUDIO & FOLEY CUES:
+    ${isVideoMode
+      ? `- VIDEO MODE MANDATORY SOUND DESIGN: Every video prompt and video beat MUST specify ambient foley, sound effects, footsteps, or handling cues (e.g. "Audio: muffled footsteps in wet gravel, metallic coin drop, no dialogue, ambient foley only").`
+      : `- IMAGE MODE STRICT AUDIO PROHIBITION: Diffusion image models (Midjourney, Flux) cannot render sound. DO NOT include audio descriptions, soundtrack cues, or sound effects in image prompts.`}
 
-9. 100% SELF-CONTAINED PROMPTS FOR DOWNSTREAM VIDEO GENERATORS (GOOGLE FLOW / VEO / KLING):
-   - Downstream video generation tools render each clip in isolation without access to previous scenes.
-   - Therefore, NEVER output empty references like "(matching established look from Scene 1)" or "(matching established look)" in any videoPrompt or beat imagePrompt without the full concrete visual details!
-   - Every single beat prompt MUST be completely self-contained with its visual DNA (art style, environment architecture, subject/object geometry, and locked fluid color).
+11. KINETIC PROGRESSION & VELOCITY TEMPO:
+    ${isVideoMode ? `- Explicit velocity and tempo progression (e.g. "Velocity: measured deliberate movement accelerating into a sharp sudden pivot").` : ''}
 
-10. FRONT-LOADED VISUAL FOUNDATION (FIRST 15-20 TOKENS):
-   - Video diffusion models give the highest attention weight to the first 15 to 20 tokens.
-   - In all beat prompts and scene video prompts, FRONT-LOAD the visual foundation at the start:
-     [${characterStyle || 'cinematic'}, 32-bit flat-shaded] [Environment Anchor] [Subject & Locked Color/Material]: [Action kinematics & movement]. Camera: [Shot Type], [Camera Angle], [Camera Movement]. Lighting: [...]. Physics: [...]. Audio: no dialogue, ambient sound only. ${defaultAspectRatio}.
-   - NEVER bury the environment description in a trailing parenthetical at the end where video diffusion engines will ignore it.`;
+12. LITERAL VISUAL KINEMATICS & TRANSFORMATION RULE (SHOW, DO NOT JUST TELL):
+    - When narration verbs describe actions or losses (e.g. "disappears", "melts", "vanishes"), the AI visual prompt MUST LITERALLY SHOW THAT ACTION HAPPENING TO THE OBJECT!
+
+13. GROUNDED STORY CONSTRAINT & ANTI-HALLUCINATION ENGINE:
+    - ZERO UNSTATED INVENTIONS: Strictly forbid hallucinating phantom characters, arbitrary weapons, fictional sci-fi devices, or unprompted plot twists not in the user's premise.
+    - CONCRETE NOUNS ONLY: Every noun must be a tangible real-world item. Never write vague disjunctive placeholders ("holding something like a bag or a book").
+    - SINGLE VISUAL FOCUS PER BEAT: Exactly ONE clear visual focus per beat. No conflicting hybrid prompts.
+
+14. TOKEN ECONOMY & DEDUPLICATION:
+    - Every beat prompt must be punchy and self-contained (45 to 80 descriptive words).
+    - DO NOT copy-paste the entire character sheet paragraph multiple times within the prompt. Weave locked traits directly into the scene action.
+
+15. MANDATORY GLOBAL VISUAL TOKEN BIBLE & UNBREAKABLE COLOR/MATERIAL CONSISTENCY:
+    - Establish and strictly enforce a unified, permanent visual anchor palette across all scenes and beats.
+    - RECURRING ENVIRONMENT GEOMETRY: Lock specific walls, textures, and architecture.
+
+16. 100% SELF-CONTAINED PROMPTS FOR DOWNSTREAM VIDEO GENERATORS:
+    - NEVER output empty references like "(matching established look from Scene 1)" or "(matching established look)". Every prompt must be fully self-contained.
+
+17. FRONT-LOADED VISUAL FOUNDATION (FIRST 15-20 TOKENS):
+    - In all prompts, front-load the visual foundation at the start:
+      [${characterStyle || 'cinematic'}, 32-bit flat-shaded] [Environment Anchor] [Subject & Locked Color/Material]: [Action kinematics & movement]. Camera: [Shot Type], [Camera Angle], [Camera Movement]. Optics: [...]. Lighting: [...]. Physics: [...]. ${isVideoMode ? 'Audio: no dialogue, ambient sound only. ' : ''}${defaultAspectRatio}.`;
 
   const systemPrompt = isVideoMode
     ? `You are an expert film director, cinematographer, and AI video prompt engineer.
@@ -552,6 +569,7 @@ ${durationInstruction}`;
     if (videoPrompt) {
       videoPrompt = resolveEstablishedLookPlaceholders(videoPrompt, sanitizedCharacterSheet, sanitizedLocationSheet);
       videoPrompt = resolveDisjunctivePhrasing(videoPrompt);
+      videoPrompt = cleanAndDeduplicatePrompt(videoPrompt, true);
       if (isVideoMode) {
         videoPrompt = updateVideoPromptDuration(videoPrompt, targetVideoDuration, targetVideoDuration);
       }
@@ -559,6 +577,7 @@ ${durationInstruction}`;
     if (startFramePrompt) {
       startFramePrompt = resolveEstablishedLookPlaceholders(startFramePrompt, sanitizedCharacterSheet, sanitizedLocationSheet);
       startFramePrompt = resolveDisjunctivePhrasing(startFramePrompt);
+      startFramePrompt = cleanAndDeduplicatePrompt(startFramePrompt, false);
     }
 
     const rawBeats = Array.isArray(scene.beats) ? scene.beats : [];
@@ -576,6 +595,23 @@ ${durationInstruction}`;
         imagePrompt = `[${sanitizedStyleProfile.artStyle}] ${imagePrompt}`;
       }
 
+      // Deduplicate and clean prompt, stripping any audio cues in image mode
+      imagePrompt = cleanAndDeduplicatePrompt(imagePrompt, isVideoMode);
+
+      let soundCue: string | undefined = undefined;
+      if (isVideoMode) {
+        const audioMatch = imagePrompt.match(/\bAudio:\s*([^.;\n]+)/i);
+        if (audioMatch && audioMatch[1]) {
+          soundCue = removeEmDashes(audioMatch[1].trim());
+        }
+      }
+
+      let optics: string | undefined = undefined;
+      const opticsMatch = imagePrompt.match(/\bOptics:\s*([^.;\n]+)/i) || imagePrompt.match(/\b(\d{2,3}mm\s+(?:f\/[0-9.]+|lens|prime)[^,.;]*)/i);
+      if (opticsMatch && opticsMatch[1]) {
+        optics = removeEmDashes(opticsMatch[1].trim());
+      }
+
       const shotType = removeEmDashes(beat.shotType || inferShotType(imagePrompt, beatIndex));
       const cameraAngle = removeEmDashes(beat.cameraAngle || inferCameraAngle(imagePrompt, beatIndex));
       const cameraMovement = removeEmDashes(beat.cameraMovement || inferCameraMovement(imagePrompt, beatIndex));
@@ -590,6 +626,8 @@ ${durationInstruction}`;
         cameraMovement,
         temporalAnchor: directAnchor,
         transitionHint: beat.transitionHint ? removeEmDashes(beat.transitionHint) : undefined,
+        soundCue,
+        optics,
         imagePrompt: imagePrompt.trim(),
         estimatedSeconds: typeof beat.estimatedSeconds === 'number' && beat.estimatedSeconds > 0
           ? beat.estimatedSeconds

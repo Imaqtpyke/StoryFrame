@@ -18,6 +18,7 @@ import {
 import {
   extractStoryTitle,
 } from '../services/historyStorage';
+import { cleanAndDeduplicatePrompt } from '../services/geminiClient';
 import { Scene, Beat, StyleProfile, StoryGenerationResult } from '../types';
 
 interface TestResult {
@@ -340,6 +341,32 @@ assert(title1.length <= 60, 'History Storage', 'Extracts title within 60 charact
 
 const emptyTitle = extractStoryTitle('');
 assert(emptyTitle === 'Untitled Story', 'History Storage', 'Provides fallback title for empty story');
+
+// ============================================================================
+// 9. PROMPT DEDUPLICATION & AUDIO CUE MODE ISOLATION
+// ============================================================================
+console.log('--- Running Test Suite 9: Prompt Deduplication & Audio Cue Isolation ---');
+
+// 9.1 Strips audio cues from image mode
+const imgPromptWithAudio = 'Kael standing on the wet pavement. Audio: muffled rain and passing cars, no dialogue, ambient foley only. 50mm f/1.8 lens.';
+const cleanedImgPrompt = cleanAndDeduplicatePrompt(imgPromptWithAudio, false);
+assert(!cleanedImgPrompt.toLowerCase().includes('audio:') && !cleanedImgPrompt.toLowerCase().includes('ambient foley'), 'Prompt Deduplication', 'Strips audio cues from Text to Image mode');
+
+// 9.2 Preserves audio cues in video mode
+const vidPromptWithAudio = 'Kael standing on the wet pavement. Audio: muffled rain and passing cars, no dialogue, ambient foley only. 50mm f/1.8 lens.';
+const cleanedVidPrompt = cleanAndDeduplicatePrompt(vidPromptWithAudio, true);
+assert(cleanedVidPrompt.includes('Audio: muffled rain and passing cars'), 'Prompt Deduplication', 'Preserves audio cues in Text to Video mode');
+
+// 9.3 Removes redundant duplicate sentences
+const duplicateSentencePrompt = 'Kael is wearing a white cotton t-shirt. Kael is wearing a white cotton t-shirt. He looks down at his hand.';
+const dedupedPrompt = cleanAndDeduplicatePrompt(duplicateSentencePrompt, false);
+const occurrences = (dedupedPrompt.match(/white cotton t-shirt/g) || []).length;
+assert(occurrences === 1, 'Prompt Deduplication', 'Deduplicates identical sentences in prompts');
+
+// 9.4 Removes redundant explicit Character Continuity trailer if present
+const continuityPrompt = 'Kael wearing white cotton shirt and blue slippers. Character Continuity (Kael: white cotton shirt and blue slippers).';
+const cleanedContinuityPrompt = cleanAndDeduplicatePrompt(continuityPrompt, false);
+assert(!cleanedContinuityPrompt.includes('Character Continuity'), 'Prompt Deduplication', 'Cleans redundant Character Continuity trailer');
 
 // ============================================================================
 // SUMMARY & TEST METRICS
