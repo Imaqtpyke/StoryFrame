@@ -54,3 +54,9 @@
 - **Date:** 2026-10-08
 - **Status:** Active
 
+## Assistant Model Respect, Friendly Error Masking & Prompt Edit
+- **Fact/Decision:** StoryFrame Assistant strictly respects the user-configured model quality tier (Standard: gemini-3.8-flash, Pro: gemini-3.1-pro-preview) without unrequested model fallback switching. Server errors (such as 503 or 504) halt the assistant immediately, completely mask raw error codes, display the friendly text "An error occurred, please try again.", and render a prominent "Retry Again" button. User message bubbles feature an "Edit" button accessible after the assistant completes responding to modify and resubmit prompts.
+- **Context:** Protects user agency in choosing model tiers, eliminates unsightly technical stack codes from the UI, and provides frictionless editing and retry flows.
+- **Date:** 2026-10-08
+- **Status:** Active
+

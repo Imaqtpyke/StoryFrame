@@ -1,21 +1,26 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
 const SESSION_STORAGE_KEY = 'byok_gemini_key';
+const MODEL_QUALITY_STORAGE_KEY = 'storyframe_model_quality_tier';
 
 interface ApiKeyContextType {
   apiKey: string;
   hasCustomKey: boolean;
   rememberInSession: boolean;
+  modelQuality: 'standard' | 'high';
   setCustomApiKey: (key: string, remember: boolean) => void;
   clearCustomApiKey: () => void;
+  setModelQuality: (quality: 'standard' | 'high') => void;
 }
 
 const ApiKeyContext = createContext<ApiKeyContextType>({
   apiKey: '',
   hasCustomKey: false,
   rememberInSession: false,
+  modelQuality: 'standard',
   setCustomApiKey: () => {},
   clearCustomApiKey: () => {},
+  setModelQuality: () => {},
 });
 
 export const ApiKeyProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -25,6 +30,7 @@ export const ApiKeyProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const [apiKey, setApiKey] = useState<string>(envDefaultKey);
   const [rememberInSession, setRememberInSession] = useState<boolean>(Boolean(envDefaultKey));
+  const [modelQuality, setModelQualityState] = useState<'standard' | 'high'>('standard');
 
   useEffect(() => {
     try {
@@ -36,10 +42,24 @@ export const ApiKeyProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         setApiKey(envDefaultKey);
         setRememberInSession(true);
       }
+
+      const storedQuality = sessionStorage.getItem(MODEL_QUALITY_STORAGE_KEY);
+      if (storedQuality === 'high' || storedQuality === 'standard') {
+        setModelQualityState(storedQuality);
+      }
     } catch {
       // Ignore sessionStorage access errors
     }
   }, [envDefaultKey]);
+
+  const setModelQuality = (quality: 'standard' | 'high') => {
+    setModelQualityState(quality);
+    try {
+      sessionStorage.setItem(MODEL_QUALITY_STORAGE_KEY, quality);
+    } catch {
+      // Ignore storage errors
+    }
+  };
 
   const setCustomApiKey = (newKey: string, remember: boolean) => {
     const trimmed = newKey.trim();

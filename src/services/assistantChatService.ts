@@ -133,7 +133,8 @@ Your core identity, boundaries, and rules:
 export async function sendChatMessage(
   history: AssistantChatMessage[],
   newMessage: string,
-  apiKey: string
+  apiKey: string,
+  modelQuality: 'standard' | 'high' = 'standard'
 ): Promise<string> {
   const trimmedKey = (apiKey || '').trim();
   if (!trimmedKey) {
@@ -159,78 +160,41 @@ export async function sendChatMessage(
     parts: [{ text: newMessage.trim() }],
   });
 
-  const candidateModels = [
-    'gemini-3.8-flash',
-    'gemini-flash-latest',
-    'gemini-2.5-flash',
-  ];
+  // Use the exact model chosen by the user in Model Options (no fallback switching)
+  const targetModel = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-3.8-flash';
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${trimmedKey}`;
 
-  let replyText = '';
-  let lastError: Error | null = null;
+  const payload = {
+    contents,
+    systemInstruction: {
+      parts: [{ text: SYSTEM_INSTRUCTION }],
+    },
+    generationConfig: {
+      temperature: 0.6,
+      topP: 0.9,
+      maxOutputTokens: 1200,
+    },
+  };
 
-  for (const modelName of candidateModels) {
-    try {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${trimmedKey}`;
+  try {
+    const resp = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
 
-      const payload = {
-        contents,
-        systemInstruction: {
-          parts: [{ text: SYSTEM_INSTRUCTION }],
-        },
-        generationConfig: {
-          temperature: 0.6,
-          topP: 0.9,
-          maxOutputTokens: 1200,
-        },
-      };
-
-      const resp = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      if (!resp.ok) {
-        const errBody = await resp.text();
-        throw new Error(`API error (${resp.status}): ${errBody}`);
-      }
-
-      const resJson = await resp.json();
-      const content = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!content || !content.trim()) {
-        throw new Error('The model returned an empty response.');
-      }
-
-      replyText = content.trim();
-      break;
-    } catch (err: any) {
-      lastError = err;
+    if (!resp.ok) {
+      throw new Error('An error occurred, please try again.');
     }
+
+    const resJson = await resp.json();
+    const content = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!content || !content.trim()) {
+      throw new Error('An error occurred, please try again.');
+    }
+
+    return cleanAssistantText(content.trim());
+  } catch {
+    throw new Error('An error occurred, please try again.');
   }
-
-  if (!replyText) {
-    const rawMsg = lastError?.message || '';
-    const lower = rawMsg.toLowerCase();
-
-    if (lower.includes('429') || lower.includes('quota') || lower.includes('resource has been exhausted')) {
-      throw new Error('Gemini API rate limit or quota exceeded. Please wait a moment before trying again.');
-    }
-    if (lower.includes('permission_denied') || lower.includes('caller does not have permission') || lower.includes('403')) {
-      throw new Error('Permission denied. Please verify your Gemini API key has the Generative Language API enabled.');
-    }
-    if (lower.includes('503') || lower.includes('overloaded') || lower.includes('service unavailable')) {
-      throw new Error('Google Gemini servers are temporarily busy (503). Please wait 10 seconds and try again.');
-    }
-    if (lower.includes('failed to fetch') || lower.includes('networkerror') || lower.includes('network request failed')) {
-      throw new Error('Network connection error. Please check your internet connection and try again.');
-    }
-
-    let cleanMsg = rawMsg || 'Failed to receive a response from the assistant. Please try again.';
-    if (trimmedKey.length > 6) {
-      cleanMsg = cleanMsg.replaceAll(trimmedKey, '[REDACTED]');
-    }
-    throw new Error(cleanMsg);
-  }
-
-  return cleanAssistantText(replyText);
 }

@@ -10,7 +10,9 @@ import {
   Copy, 
   Key, 
   MessageSquare,
-  ArrowRight
+  ArrowRight,
+  Pencil,
+  RotateCcw
 } from 'lucide-react';
 import { AssistantChatMessage } from '../types';
 import { 
@@ -41,11 +43,12 @@ export default function AssistantChatDrawer({
   onApplyStoryIdea,
   onOpenModelOptions,
 }: AssistantChatDrawerProps) {
-  const { apiKey } = useApiKey();
+  const { apiKey, modelQuality } = useApiKey();
   const [messages, setMessages] = useState<AssistantChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [lastAttemptedMessage, setLastAttemptedMessage] = useState<string>('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [appliedId, setAppliedId] = useState<string | null>(null);
 
@@ -116,21 +119,34 @@ export default function AssistantChatDrawer({
     }
 
     setErrorMessage(null);
+    setLastAttemptedMessage(messageContent);
 
-    const userMessage: AssistantChatMessage = {
-      id: `user-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      role: 'user',
-      content: messageContent,
-      timestamp: Date.now(),
-    };
+    // If this is a retry of the last message in history, avoid duplicating the user bubble
+    const lastMsg = messages[messages.length - 1];
+    const isRetryOfLastMessage = lastMsg && lastMsg.role === 'user' && lastMsg.content === messageContent;
 
-    const newHistory = [...messages, userMessage];
-    setMessages(newHistory);
+    let historyToSend = messages;
+    let newHistory = messages;
+
+    if (!isRetryOfLastMessage) {
+      const userMessage: AssistantChatMessage = {
+        id: `user-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        role: 'user',
+        content: messageContent,
+        timestamp: Date.now(),
+      };
+      newHistory = [...messages, userMessage];
+      setMessages(newHistory);
+      historyToSend = messages;
+    } else {
+      historyToSend = messages.slice(0, -1);
+    }
+
     setInputText('');
     setIsSending(true);
 
     try {
-      const reply = await sendChatMessage(messages, messageContent, apiKey);
+      const reply = await sendChatMessage(historyToSend, messageContent, apiKey, modelQuality);
       const assistantMessage: AssistantChatMessage = {
         id: `assistant-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
         role: 'assistant',
@@ -138,11 +154,25 @@ export default function AssistantChatDrawer({
         timestamp: Date.now(),
       };
       setMessages([...newHistory, assistantMessage]);
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Could not communicate with the assistant. Please try again.');
+    } catch {
+      setErrorMessage('An error occurred, please try again.');
     } finally {
       setIsSending(false);
     }
+  };
+
+  const handleEditPrompt = (text: string) => {
+    if (isSending) return;
+    setInputText(text);
+    setErrorMessage(null);
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+        textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
+        textareaRef.current.focus();
+        textareaRef.current.setSelectionRange(text.length, text.length);
+      }
+    }, 50);
   };
 
   const handleClearHistory = () => {
@@ -319,6 +349,21 @@ export default function AssistantChatDrawer({
                     >
                       {msg.content}
 
+                      {/* User message edit button - only accessible when assistant is done responding */}
+                      {msg.role === 'user' && !isSending && (
+                        <div className="mt-2.5 pt-2 border-t border-white/10 flex items-center justify-end">
+                          <button
+                            type="button"
+                            onClick={() => handleEditPrompt(msg.content)}
+                            className="inline-flex items-center gap-1.5 text-[11px] font-mono text-[#8C8C86] hover:text-white transition-colors py-0.5 px-2 rounded-[2px] hover:bg-white/5 cursor-pointer"
+                            title="Edit this prompt"
+                          >
+                            <Pencil className="w-3 h-3" />
+                            <span>Edit</span>
+                          </button>
+                        </div>
+                      )}
+
                       {/* Assistant message action buttons */}
                       {msg.role === 'assistant' && (
                         <div className="mt-3 pt-2.5 border-t border-white/10 flex items-center justify-between text-[11px] font-mono text-[#8C8C86]">
@@ -392,19 +437,21 @@ export default function AssistantChatDrawer({
               {/* Error message callout */}
               {errorMessage && (
                 <div className="p-3 bg-red-950/30 border border-red-500/40 rounded-[2px] text-xs text-red-200">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="font-mono flex-1 leading-relaxed">{errorMessage}</p>
-                    {messages.length > 0 && messages[messages.length - 1].role === 'user' && !isSending && (
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-mono flex-1 leading-relaxed">
+                      {errorMessage}
+                    </p>
+                    {lastAttemptedMessage && !isSending && (
                       <button
                         type="button"
                         onClick={() => {
-                          const lastMsg = messages[messages.length - 1];
-                          setMessages((prev) => prev.slice(0, -1));
-                          handleSend(lastMsg.content);
+                          setErrorMessage(null);
+                          handleSend(lastAttemptedMessage);
                         }}
-                        className="px-2.5 py-1 bg-red-900/60 hover:bg-red-800 text-red-100 rounded-[2px] font-mono text-[11px] shrink-0 transition-colors"
+                        className="px-3 py-1.5 bg-red-900/70 hover:bg-red-800 text-white rounded-[2px] font-mono text-[11px] shrink-0 transition-colors flex items-center gap-1.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-red-400"
                       >
-                        Retry
+                        <RotateCcw className="w-3 h-3" />
+                        <span>Retry Again</span>
                       </button>
                     )}
                   </div>

@@ -82,7 +82,7 @@ export default function GeneratorForm({
   initialValues,
   openModelOptionsTrigger,
 }: GeneratorFormProps) {
-  const { apiKey, hasCustomKey, rememberInSession, setCustomApiKey, clearCustomApiKey } = useApiKey();
+  const { apiKey, hasCustomKey, rememberInSession, setCustomApiKey, clearCustomApiKey, modelQuality, setModelQuality } = useApiKey();
   const [generationMode, setGenerationMode] = useState<GenerationMode>(initialValues?.generationMode || 'image');
   const [autoArchitectMode, setAutoArchitectMode] = useState<boolean>(initialValues?.autoArchitectMode || false);
   const [beatMode, setBeatMode] = useState<'automatic' | 'custom'>(initialValues?.beatMode || 'automatic');
@@ -103,7 +103,6 @@ export default function GeneratorForm({
   );
   const [customNumeric, setCustomNumeric] = useState('');
   const [customVideoSeconds, setCustomVideoSeconds] = useState('');
-  const [modelQuality, setModelQuality] = useState<'standard' | 'high'>(initialValues?.modelQuality || 'standard');
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   // Programmatically expand and scroll to model & API options when triggered (e.g. from Assistant)
