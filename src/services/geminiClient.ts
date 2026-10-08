@@ -33,8 +33,7 @@ function sanitizeErrorMessage(errorText: string, apiKey: string): string {
 3. If using an AI Studio key, ensure it is active at https://aistudio.google.com/app/apikey.`;
   }
   if (cleaned.toLowerCase().includes('503') || cleaned.toLowerCase().includes('overloaded') || cleaned.toLowerCase().includes('service unavailable')) {
-    return `Google Gemini servers are temporarily overloaded (503 Service Unavailable).
-Automatic retries were attempted, but Google's cluster is experiencing high demand. Please wait 10-20 seconds and click "Generate Breakdown" again — server capacity usually clears up quickly.`;
+    return 'Google Gemini servers are temporarily busy. Please wait a moment and click Retry Breakdown.';
   }
   if (cleaned.toLowerCase().includes('429') || cleaned.toLowerCase().includes('quota') || cleaned.toLowerCase().includes('resource has been exhausted')) {
     return `Gemini API rate limit or quota exceeded (429).
@@ -551,7 +550,7 @@ ${durationInstruction}${customBeatsPrompt}`;
   let rawText = '';
   let parsedData: any = null;
 
-  // Calculate adaptive timeout: base 60s, +30s per 100 words in story, capped at 180s (3 full minutes)
+  // Calculate adaptive per-attempt timeout: base 60s, +30s per 100 words in story, capped at 180s (3 full minutes)
   const storyWordCount = (story || '').trim().split(/\s+/).length;
   const timeoutMs = Math.min(180_000, Math.max(60_000, 60_000 + Math.floor(storyWordCount / 100) * 30_000));
 
@@ -559,71 +558,113 @@ ${durationInstruction}${customBeatsPrompt}`;
     throw new DOMException('Generation request was cancelled by user.', 'AbortError');
   }
 
-  // Controller tied to user signal + adaptive timeout
-  const attemptController = new AbortController();
-  const timeoutId = setTimeout(() => {
-    attemptController.abort();
-  }, timeoutMs);
-
-  const onUserAbort = () => {
-    attemptController.abort();
-  };
-  if (userSignal) {
-    userSignal.addEventListener('abort', onUserAbort, { once: true });
-  }
-
-  try {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
-    const payload = {
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
-        },
-      ],
-      generationConfig: {
-        temperature: 0.3,
-        topP: 0.85,
-        responseMimeType: 'application/json',
-      },
-    };
-
-    const resp = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: attemptController.signal,
-    });
-
-    clearTimeout(timeoutId);
-    if (userSignal) {
-      userSignal.removeEventListener('abort', onUserAbort);
-    }
-
-    if (!resp.ok) {
-      const errText = await resp.text();
-      throw new Error(`API error (${resp.status}): ${errText}`);
-    }
-
-    const resJson = await resp.json();
-    const contentCandidate = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!contentCandidate) {
-      throw new Error('Empty response from model');
-    }
-
-    rawText = contentCandidate;
-    parsedData = JSON.parse(rawText);
-  } catch (err: any) {
-    clearTimeout(timeoutId);
-    if (userSignal) {
-      userSignal.removeEventListener('abort', onUserAbort);
-    }
-
+  // Silent retry loop for transient 503 / server overload without artificial retry ceiling
+  // Keeps trying smoothly while preserving the user's selected model until results display or user cancels
+  let attemptNumber = 0;
+  while (!parsedData) {
     if (userSignal?.aborted) {
       throw new DOMException('Generation request was cancelled by user.', 'AbortError');
     }
 
-    throw new Error(sanitizeErrorMessage(err?.message || 'Failed to generate story breakdown.', apiKey));
+    attemptNumber++;
+    const attemptController = new AbortController();
+    const timeoutId = setTimeout(() => {
+      attemptController.abort();
+    }, timeoutMs);
+
+    const onUserAbort = () => {
+      attemptController.abort();
+    };
+    if (userSignal) {
+      userSignal.addEventListener('abort', onUserAbort, { once: true });
+    }
+
+    try {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
+      const payload = {
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.3,
+          topP: 0.85,
+          responseMimeType: 'application/json',
+        },
+      };
+
+      const resp = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: attemptController.signal,
+      });
+
+      clearTimeout(timeoutId);
+      if (userSignal) {
+        userSignal.removeEventListener('abort', onUserAbort);
+      }
+
+      if (!resp.ok) {
+        const errText = await resp.text();
+        const is503OrOverloaded = resp.status === 503 || resp.status === 504 || errText.toLowerCase().includes('overloaded') || errText.toLowerCase().includes('service unavailable');
+        
+        // If transient 503 / server overload, silently back off and retry until success or user cancels
+        if (is503OrOverloaded && !userSignal?.aborted) {
+          const delayMs = Math.min(6000, 1500 + Math.min(attemptNumber * 1000, 3500) + Math.random() * 500);
+          await new Promise<void>((resolve, reject) => {
+            const timer = setTimeout(resolve, delayMs);
+            if (userSignal) {
+              userSignal.addEventListener('abort', () => {
+                clearTimeout(timer);
+                reject(new DOMException('Generation request was cancelled by user.', 'AbortError'));
+              }, { once: true });
+            }
+          });
+          continue;
+        }
+
+        throw new Error(`API error (${resp.status}): ${errText}`);
+      }
+
+      const resJson = await resp.json();
+      const contentCandidate = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!contentCandidate) {
+        throw new Error('Empty response from model');
+      }
+
+      rawText = contentCandidate;
+      parsedData = JSON.parse(rawText);
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      if (userSignal) {
+        userSignal.removeEventListener('abort', onUserAbort);
+      }
+
+      if (userSignal?.aborted || err?.name === 'AbortError') {
+        throw new DOMException('Generation request was cancelled by user.', 'AbortError');
+      }
+
+      const errString = String(err?.message || '');
+      const isTransient503 = errString.includes('503') || errString.toLowerCase().includes('overloaded') || errString.toLowerCase().includes('service unavailable');
+      if (isTransient503 && !userSignal?.aborted) {
+        const delayMs = Math.min(6000, 1500 + Math.min(attemptNumber * 1000, 3500) + Math.random() * 500);
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(resolve, delayMs);
+          if (userSignal) {
+            userSignal.addEventListener('abort', () => {
+              clearTimeout(timer);
+              reject(new DOMException('Generation request was cancelled by user.', 'AbortError'));
+            }, { once: true });
+          }
+        });
+        continue;
+      }
+
+      throw new Error(sanitizeErrorMessage(err?.message || 'Failed to generate story breakdown.', apiKey));
+    }
   }
 
   // Sanitize styleProfile

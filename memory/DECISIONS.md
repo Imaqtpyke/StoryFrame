@@ -66,4 +66,11 @@
 - **Date:** 2026-10-08
 - **Status:** Active
 
+## Silent Auto-Retry on 503 Overload (No 3-Retry Ceiling, User Cancellation Preserved)
+- **Fact/Decision:** When Google Gemini returns a transient 503 Service Unavailable or server overloaded response, the system does not display a 503 error or halt abruptly with a hard 3-retry cap. Instead, it continuously and silently re-executes using the user's chosen model with adaptive backoff until the response successfully arrives. The loading screen remains active, and the user can click "Cancel Request" at any time. If an unrecoverable non-transient error occurs, friendly non-technical copy is displayed without raw 503 codes.
+- **Context:** Eliminates jarring 503 error screens during temporary Google cluster spikes, respects user model selection without fallback switching, and gives the user full control to wait or cancel.
+- **Date:** 2026-10-08
+- **Status:** Active
+
+
 
