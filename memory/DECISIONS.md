@@ -60,3 +60,10 @@
 - **Date:** 2026-10-08
 - **Status:** Active
 
+## Strict Zero Fallback Policy & Direct User Model Choice
+- **Fact/Decision:** Both the AI Assistant and the main Story Breakdown generators (Standard and Enhance Architect pipelines) strictly execute using the exact model selected by the user in Model Options (Standard = gemini-3.8-flash, Pro Quality = gemini-3.1-pro-preview). All candidate-model fallback loops have been completely eliminated from the codebase. If an upstream service error (e.g. 503) occurs, the app stops cleanly and allows the user to retry or select an alternate model manually. Fixed the `TypeError: w is not a function` bug by exposing `setModelQuality` and `modelQuality` inside the `ApiKeyContext.Provider` value prop.
+- **Context:** Guarantees total user control over which model processes their data and prevents unexpected background model switches.
+- **Date:** 2026-10-08
+- **Status:** Active
+
+

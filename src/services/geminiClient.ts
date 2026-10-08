@@ -546,94 +546,84 @@ Format: ${isLongForm ? 'Long form (16:9)' : 'Short form (9:16)'}
 Platform: ${platform}
 ${durationInstruction}${customBeatsPrompt}`;
 
-  const candidateModels = modelQuality === 'high'
-    ? ['gemini-3.1-pro-preview', 'gemini-3.8-flash', 'gemini-flash-latest']
-    : ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-pro-preview'];
+  const targetModel = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-3.8-flash';
 
   let rawText = '';
   let parsedData: any = null;
-  let lastError: Error | null = null;
 
   // Calculate adaptive timeout: base 60s, +30s per 100 words in story, capped at 180s (3 full minutes)
   const storyWordCount = (story || '').trim().split(/\s+/).length;
   const timeoutMs = Math.min(180_000, Math.max(60_000, 60_000 + Math.floor(storyWordCount / 100) * 30_000));
 
-  for (const modelName of candidateModels) {
+  if (userSignal?.aborted) {
+    throw new DOMException('Generation request was cancelled by user.', 'AbortError');
+  }
+
+  // Controller tied to user signal + adaptive timeout
+  const attemptController = new AbortController();
+  const timeoutId = setTimeout(() => {
+    attemptController.abort();
+  }, timeoutMs);
+
+  const onUserAbort = () => {
+    attemptController.abort();
+  };
+  if (userSignal) {
+    userSignal.addEventListener('abort', onUserAbort, { once: true });
+  }
+
+  try {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
+    const payload = {
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
+        },
+      ],
+      generationConfig: {
+        temperature: 0.3,
+        topP: 0.85,
+        responseMimeType: 'application/json',
+      },
+    };
+
+    const resp = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: attemptController.signal,
+    });
+
+    clearTimeout(timeoutId);
+    if (userSignal) {
+      userSignal.removeEventListener('abort', onUserAbort);
+    }
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      throw new Error(`API error (${resp.status}): ${errText}`);
+    }
+
+    const resJson = await resp.json();
+    const contentCandidate = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!contentCandidate) {
+      throw new Error('Empty response from model');
+    }
+
+    rawText = contentCandidate;
+    parsedData = JSON.parse(rawText);
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    if (userSignal) {
+      userSignal.removeEventListener('abort', onUserAbort);
+    }
+
     if (userSignal?.aborted) {
       throw new DOMException('Generation request was cancelled by user.', 'AbortError');
     }
 
-    // Per-attempt controller tied to user signal + adaptive timeout
-    const attemptController = new AbortController();
-    const timeoutId = setTimeout(() => {
-      attemptController.abort();
-    }, timeoutMs);
-
-    const onUserAbort = () => {
-      attemptController.abort();
-    };
-    if (userSignal) {
-      userSignal.addEventListener('abort', onUserAbort, { once: true });
-    }
-
-    try {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-      const payload = {
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.3,
-          topP: 0.85,
-          responseMimeType: 'application/json',
-        },
-      };
-
-      const resp = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        signal: attemptController.signal,
-      });
-
-      clearTimeout(timeoutId);
-      if (userSignal) {
-        userSignal.removeEventListener('abort', onUserAbort);
-      }
-
-      if (!resp.ok) {
-        const errText = await resp.text();
-        throw new Error(`API error (${resp.status}): ${errText}`);
-      }
-
-      const resJson = await resp.json();
-      const contentCandidate = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!contentCandidate) {
-        throw new Error('Empty response from model');
-      }
-
-      rawText = contentCandidate;
-      parsedData = JSON.parse(rawText);
-      break;
-    } catch (err: any) {
-      clearTimeout(timeoutId);
-      if (userSignal) {
-        userSignal.removeEventListener('abort', onUserAbort);
-      }
-
-      if (userSignal?.aborted) {
-        throw new DOMException('Generation request was cancelled by user.', 'AbortError');
-      }
-
-      lastError = err;
-    }
-  }
-
-  if (!parsedData) {
-    throw new Error(sanitizeErrorMessage(lastError?.message || 'Failed to generate story breakdown.', apiKey));
+    throw new Error(sanitizeErrorMessage(err?.message || 'Failed to generate story breakdown.', apiKey));
   }
 
   // Sanitize styleProfile

@@ -93,8 +93,10 @@ export const ApiKeyProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         apiKey,
         hasCustomKey: Boolean(apiKey && apiKey.trim().length > 0),
         rememberInSession,
+        modelQuality,
         setCustomApiKey,
         clearCustomApiKey,
+        setModelQuality,
       }}
     >
       {children}
