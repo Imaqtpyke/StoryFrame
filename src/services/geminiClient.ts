@@ -550,16 +550,12 @@ ${durationInstruction}${customBeatsPrompt}`;
   let rawText = '';
   let parsedData: any = null;
 
-  // Calculate adaptive per-attempt timeout: base 60s, +30s per 100 words in story, capped at 180s (3 full minutes)
-  const storyWordCount = (story || '').trim().split(/\s+/).length;
-  const timeoutMs = Math.min(180_000, Math.max(60_000, 60_000 + Math.floor(storyWordCount / 100) * 30_000));
-
   if (userSignal?.aborted) {
     throw new DOMException('Generation request was cancelled by user.', 'AbortError');
   }
 
-  // Silent retry loop for transient 503 / server overload without artificial retry ceiling
-  // Keeps trying smoothly while preserving the user's selected model until results display or user cancels
+  // Resilient retry loop for transient 503 / server overload without artificial timeout abort
+  // Keeps trying smoothly with user's selected model until Google responds or user cancels
   let attemptNumber = 0;
   while (!parsedData) {
     if (userSignal?.aborted) {
@@ -567,17 +563,6 @@ ${durationInstruction}${customBeatsPrompt}`;
     }
 
     attemptNumber++;
-    const attemptController = new AbortController();
-    const timeoutId = setTimeout(() => {
-      attemptController.abort();
-    }, timeoutMs);
-
-    const onUserAbort = () => {
-      attemptController.abort();
-    };
-    if (userSignal) {
-      userSignal.addEventListener('abort', onUserAbort, { once: true });
-    }
 
     try {
       const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
@@ -599,19 +584,14 @@ ${durationInstruction}${customBeatsPrompt}`;
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-        signal: attemptController.signal,
+        signal: userSignal,
       });
-
-      clearTimeout(timeoutId);
-      if (userSignal) {
-        userSignal.removeEventListener('abort', onUserAbort);
-      }
 
       if (!resp.ok) {
         const errText = await resp.text();
         const is503OrOverloaded = resp.status === 503 || resp.status === 504 || errText.toLowerCase().includes('overloaded') || errText.toLowerCase().includes('service unavailable');
         
-        // If transient 503 / server overload, silently back off and retry until success or user cancels
+        // If transient 503 / server overload, smoothly back off and retry until success or user cancels
         if (is503OrOverloaded && !userSignal?.aborted) {
           const delayMs = Math.min(6000, 1500 + Math.min(attemptNumber * 1000, 3500) + Math.random() * 500);
           await new Promise<void>((resolve, reject) => {
@@ -638,11 +618,6 @@ ${durationInstruction}${customBeatsPrompt}`;
       rawText = contentCandidate;
       parsedData = JSON.parse(rawText);
     } catch (err: any) {
-      clearTimeout(timeoutId);
-      if (userSignal) {
-        userSignal.removeEventListener('abort', onUserAbort);
-      }
-
       if (userSignal?.aborted || err?.name === 'AbortError') {
         throw new DOMException('Generation request was cancelled by user.', 'AbortError');
       }
