@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Header from './components/Header';
 import Footer from './components/Footer';
 import BackgroundEffect from './components/BackgroundEffect';
@@ -29,6 +29,7 @@ function StoryFrameMain() {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
   const [openModelOptionsTrigger, setOpenModelOptionsTrigger] = useState(0);
+  const activeAbortControllerRef = useRef<AbortController | null>(null);
 
   // Load history on initial mount
   useEffect(() => {
@@ -36,6 +37,12 @@ function StoryFrameMain() {
   }, []);
 
   const handleGenerateStory = async (data: GenerateStoryRequest) => {
+    if (activeAbortControllerRef.current) {
+      activeAbortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    activeAbortControllerRef.current = controller;
+
     setIsLoading(true);
     setErrorMessage(null);
     setLastRequest(data);
@@ -47,8 +54,8 @@ function StoryFrameMain() {
         throw new Error('Gemini API key is required. Please apply your key under Model Options before generating a breakdown.');
       }
 
-      // Direct client-side generation using BYOK
-      const responseData = await generateStoryDirectly(data, apiKey.trim());
+      // Direct client-side generation using BYOK with user signal support
+      const responseData = await generateStoryDirectly(data, apiKey.trim(), controller.signal);
       setResult(responseData);
 
       // Save to local history
@@ -57,13 +64,27 @@ function StoryFrameMain() {
 
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: any) {
+      if (err?.name === 'AbortError' || err?.message?.includes('cancelled')) {
+        setIsLoading(false);
+        return;
+      }
       const errorMsg = err?.message || 'An unexpected failure occurred while connecting to Google Gemini.';
       // Ensure API keys are never exposed in error states
       const safeErrorMsg = apiKey && apiKey.length > 6 ? errorMsg.replaceAll(apiKey, '[REDACTED]') : errorMsg;
       setErrorMessage(safeErrorMsg);
     } finally {
       setIsLoading(false);
+      activeAbortControllerRef.current = null;
     }
+  };
+
+  const handleCancelRequest = () => {
+    if (activeAbortControllerRef.current) {
+      activeAbortControllerRef.current.abort();
+      activeAbortControllerRef.current = null;
+    }
+    setIsLoading(false);
+    setErrorMessage(null);
   };
 
   const handleSelectFromHistory = (item: HistoryItem) => {
@@ -117,6 +138,7 @@ function StoryFrameMain() {
             <ResultsSkeleton
               request={lastRequest}
               onBackToEdit={handleBackToEdit}
+              onCancelRequest={handleCancelRequest}
             />
           ) : errorMessage && lastRequest ? (
             <ResultsErrorView

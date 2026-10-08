@@ -10,11 +10,13 @@ import {
   Layers,
   Film,
   Camera,
+  XCircle,
 } from 'lucide-react';
 
 interface ResultsSkeletonProps {
   request?: GenerateStoryRequest | null;
   onBackToEdit: () => void;
+  onCancelRequest?: () => void;
 }
 
 const PHASES = [
@@ -25,9 +27,10 @@ const PHASES = [
   'Synthesizing visual prompts & cinematic anchors...',
 ];
 
-export default function ResultsSkeleton({ request, onBackToEdit }: ResultsSkeletonProps) {
+export default function ResultsSkeleton({ request, onBackToEdit, onCancelRequest }: ResultsSkeletonProps) {
   const [phaseIndex, setPhaseIndex] = useState(0);
   const [progress, setProgress] = useState(8);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   const isVideoMode = request?.generationMode === 'video';
   const autoArchitectMode = request?.autoArchitectMode || false;
@@ -40,12 +43,13 @@ export default function ResultsSkeleton({ request, onBackToEdit }: ResultsSkelet
       setPhaseIndex((prev) => (prev + 1) % PHASES.length);
     }, 2800);
 
-    // Smooth progress bar simulation
+    // Smooth progress bar simulation & elapsed timer
     const startTime = performance.now();
     const progressInterval = setInterval(() => {
       const elapsed = (performance.now() - startTime) / 1000;
+      setElapsedSeconds(Math.floor(elapsed));
       // Asymptote towards 95%
-      const target = 95 * (1 - Math.exp(-elapsed / 5));
+      const target = 95 * (1 - Math.exp(-elapsed / 6));
       setProgress(Math.min(95, Math.max(8, target)));
     }, 120);
 
@@ -54,6 +58,12 @@ export default function ResultsSkeleton({ request, onBackToEdit }: ResultsSkelet
       clearInterval(progressInterval);
     };
   }, []);
+
+  const formatElapsed = (sec: number) => {
+    const mins = Math.floor(sec / 60);
+    const remaining = sec % 60;
+    return `${mins}:${remaining < 10 ? '0' : ''}${remaining}`;
+  };
 
   return (
     <div
@@ -99,6 +109,17 @@ export default function ResultsSkeleton({ request, onBackToEdit }: ResultsSkelet
           <span className="stamp-chip bg-white/10 text-white animate-pulse">
             GENERATING...
           </span>
+          {onCancelRequest && (
+            <button
+              type="button"
+              onClick={onCancelRequest}
+              className="inline-flex items-center px-2.5 py-1 text-xs font-mono rounded-[2px] bg-red-950/40 text-red-300 border border-red-800/60 hover:bg-red-900/60 hover:text-white transition-all cursor-pointer"
+              title="Cancel current generation and return to editor"
+            >
+              <XCircle size={12} className="mr-1.5 shrink-0 text-red-400" />
+              Cancel Request
+            </button>
+          )}
         </div>
       </div>
 
@@ -115,9 +136,10 @@ export default function ResultsSkeleton({ request, onBackToEdit }: ResultsSkelet
               {autoArchitectMode ? 'ARCHITECTING STORY & SCENE BREAKDOWN' : 'GENERATING CINEMATIC STORYBOARD'}
             </span>
           </div>
-          <span className="font-mono text-xs text-[#888882]">
-            {Math.round(progress)}%
-          </span>
+          <div className="flex items-center space-x-3 text-xs font-mono text-[#888882]">
+            <span>Elapsed: {formatElapsed(elapsedSeconds)}</span>
+            <span className="text-[#A0A09A] font-semibold">{Math.round(progress)}%</span>
+          </div>
         </div>
 
         {/* Phase Description */}
@@ -136,6 +158,24 @@ export default function ResultsSkeleton({ request, onBackToEdit }: ResultsSkelet
             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent animate-liquid-shimmer" />
           </div>
         </div>
+
+        {/* Long story informative notice */}
+        {elapsedSeconds >= 35 && (
+          <div className="pt-2 text-xs text-[#9C9C96] flex items-center justify-between border-t border-white/5">
+            <span>
+              Detailed cinematic breakdown in progress. Long-form stories take extra time to calibrate.
+            </span>
+            {onCancelRequest && (
+              <button
+                type="button"
+                onClick={onCancelRequest}
+                className="text-xs text-red-400 hover:text-red-300 underline underline-offset-2 ml-2 cursor-pointer shrink-0"
+              >
+                Cancel Request
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Visual Pacing Timeline Bar Skeleton */}

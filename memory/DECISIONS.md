@@ -48,3 +48,9 @@
 - **Date:** 2026-10-07
 - **Status:** Active
 
+## "The Difference" Juxtaposition & User Request Abort Control
+- **Fact/Decision:** In hypothetical, comparative, and counterfactual story premises, visual beats strictly delineate baseline reality (e.g. temperate modern biosphere) from the what-if divergence (e.g. untamed primeval mega-flora and apex predators). Consecutive beats enforce progression with >75% similarity checks rewriting repetitive angles. Network requests feature user-facing "Cancel Request" controls via AbortController and adaptive timeouts scaled to story length (up to 180s for long-form scripts).
+- **Context:** Eliminates duplicated scenes across consecutive micro-beats, prevents socket stalls from freezing the UI indefinitely, and guarantees user control during long narrative generations.
+- **Date:** 2026-10-08
+- **Status:** Active
+

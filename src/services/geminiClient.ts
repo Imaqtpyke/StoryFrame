@@ -113,7 +113,7 @@ export { extractTemporalAnchor, cleanRedundantOnScreenText };
 
 /**
  * Strips unwanted audio cues from image prompts, deduplicates redundant sentences,
- * and eliminates trailing repetitive continuity loops.
+ * eliminates trailing repetitive continuity loops, and cleans redundant style profile dumps.
  */
 export function cleanAndDeduplicatePrompt(
   prompt: string,
@@ -148,6 +148,50 @@ export function cleanAndDeduplicatePrompt(
   return cleaned;
 }
 
+/**
+ * Ensures consecutive beats never repeat the exact same framing or visual subject.
+ * If Beat N and Beat N-1 are nearly identical (>75% token overlap), adapts Beat N
+ * to an evolving camera angle and distinct visual perspective.
+ */
+export function enforceBeatToBeatProgression(beats: any[]): any[] {
+  if (!Array.isArray(beats) || beats.length <= 1) return beats;
+
+  for (let i = 1; i < beats.length; i++) {
+    const prev = beats[i - 1];
+    const curr = beats[i];
+    if (!prev.imagePrompt || !curr.imagePrompt) continue;
+
+    // Check word token overlap
+    const prevWords = new Set(prev.imagePrompt.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3));
+    const currWords = curr.imagePrompt.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3);
+    if (prevWords.size === 0 || currWords.length === 0) continue;
+
+    let overlapCount = 0;
+    for (const w of currWords) {
+      if (prevWords.has(w)) overlapCount++;
+    }
+    const overlapRatio = overlapCount / Math.max(prevWords.size, currWords.length);
+
+    // If prompts are > 75% identical, force visual distinction & camera progression
+    if (overlapRatio > 0.75) {
+      const distinctAngles = [
+        'Close-Up reaction angle focusing on the evolving consequence',
+        'Wide panoramic establishing perspective showing the altered environment',
+        'Low-Angle hero framing emphasizing scale and dynamic shift',
+        'Macro detail view focusing on immediate physical interaction',
+        'High-angle vantage perspective looking down across the transformed scene',
+      ];
+      const newFraming = distinctAngles[i % distinctAngles.length];
+      const subjectSpan = curr.textSpan ? `"${curr.textSpan}"` : 'the unfolding moment';
+
+      curr.imagePrompt = `${newFraming}. Distinct visual progression capturing ${subjectSpan}, shifting from the previous shot with altered lighting and dynamic camera placement. ${curr.imagePrompt.replace(/^(A |An |The )[^,.]*[,.]/i, '')}`.trim();
+      curr.cameraMovement = curr.cameraMovement === prev.cameraMovement ? 'Tracking Subject' : curr.cameraMovement;
+    }
+  }
+
+  return beats;
+}
+
 // ============================================================================
 // ORIGINAL STORY GENERATOR (Toggle OFF)
 // 100% pure original workflow: natural beat pacing, unforced narrative rhythm,
@@ -155,7 +199,8 @@ export function cleanAndDeduplicatePrompt(
 // ============================================================================
 export async function generateOriginalStory(
   req: GenerateStoryRequest,
-  apiKey: string
+  apiKey: string,
+  userSignal?: AbortSignal
 ): Promise<StoryGenerationResult> {
   const {
     story,
@@ -429,7 +474,14 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - Prompts must remain punchy and evocative (45 to 75 descriptive words per beat).
    - DO NOT copy-paste the entire character sheet paragraph multiple times within the prompt. Weave locked traits directly into the scene action.
 
-9. Nested Scenes and Beats:
+9. "THE DIFFERENCE" & COUNTERFACTUAL JUXTAPOSITION RULE (STRICT NO-DUPLICATION BEAT PROGRESSION):
+   - When the story presents a hypothetical, comparative, or "what if" premise (e.g. "What would happen if...", "Instead of X, Y...", "The ecosystems of Earth would have evolved completely differently..."):
+     * BASELINE BEAT ("What would happen", "The ecosystems of Earth would"): Visually depict the KNOWN BASELINE REALITY (e.g., familiar modern Earth, temperate recognizable biosphere, bustling human civilization).
+     * DIVERGENCE / WHAT-IF PIVOT BEAT ("if the meteor never hit", "have evolved completely differently"): Visually cut to the STARK ALTERNATE REALITY with a new camera angle and distinct thematic contrast (e.g., the meteor missing Earth into vast deep space, or towering colossal mega-flora and apex predatory dinosaurs dominating the wild terrain).
+     * CONSEQUENCE BEATS ("preventing humans from ever becoming the dominant species"): Focus exclusively on the aftermath (e.g., small, cloaked human scavengers huddled in fortified stone cliff crevices, watching dinosaur shadows).
+   - NEVER repeat or duplicate the previous beat's imagePrompt! Every beat MUST represent a new stage, a different subject perspective, or an evolving dramatic reaction.
+
+10. Nested Scenes and Beats:
    Break the story into a sequence of scenes with rich, dynamic visual beats.
    Each scene has index, narratorLine, estimatedSeconds, and beats array.
 
@@ -495,14 +547,35 @@ Platform: ${platform}
 ${durationInstruction}${customBeatsPrompt}`;
 
   const candidateModels = modelQuality === 'high'
-    ? ['gemini-3.1-pro-preview', 'gemini-3.8-flash', 'gemini-flash-latest', 'gemini-2.5-flash']
-    : ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-3.1-pro-preview'];
+    ? ['gemini-3.1-pro-preview', 'gemini-3.8-flash', 'gemini-flash-latest']
+    : ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-pro-preview'];
 
   let rawText = '';
   let parsedData: any = null;
   let lastError: Error | null = null;
 
+  // Calculate adaptive timeout: base 60s, +30s per 100 words in story, capped at 180s (3 full minutes)
+  const storyWordCount = (story || '').trim().split(/\s+/).length;
+  const timeoutMs = Math.min(180_000, Math.max(60_000, 60_000 + Math.floor(storyWordCount / 100) * 30_000));
+
   for (const modelName of candidateModels) {
+    if (userSignal?.aborted) {
+      throw new DOMException('Generation request was cancelled by user.', 'AbortError');
+    }
+
+    // Per-attempt controller tied to user signal + adaptive timeout
+    const attemptController = new AbortController();
+    const timeoutId = setTimeout(() => {
+      attemptController.abort();
+    }, timeoutMs);
+
+    const onUserAbort = () => {
+      attemptController.abort();
+    };
+    if (userSignal) {
+      userSignal.addEventListener('abort', onUserAbort, { once: true });
+    }
+
     try {
       const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
       const payload = {
@@ -523,7 +596,13 @@ ${durationInstruction}${customBeatsPrompt}`;
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        signal: attemptController.signal,
       });
+
+      clearTimeout(timeoutId);
+      if (userSignal) {
+        userSignal.removeEventListener('abort', onUserAbort);
+      }
 
       if (!resp.ok) {
         const errText = await resp.text();
@@ -540,6 +619,15 @@ ${durationInstruction}${customBeatsPrompt}`;
       parsedData = JSON.parse(rawText);
       break;
     } catch (err: any) {
+      clearTimeout(timeoutId);
+      if (userSignal) {
+        userSignal.removeEventListener('abort', onUserAbort);
+      }
+
+      if (userSignal?.aborted) {
+        throw new DOMException('Generation request was cancelled by user.', 'AbortError');
+      }
+
       lastError = err;
     }
   }
@@ -701,11 +789,13 @@ ${durationInstruction}${customBeatsPrompt}`;
         }
       }
 
+      // Avoid appending repetitive style boilerplate if already covered or if prompts are concise
       if (
-        !finalImagePrompt.toLowerCase().includes(sanitizedStyleProfile.artStyle.toLowerCase().slice(0, 20)) &&
+        !finalImagePrompt.toLowerCase().includes(sanitizedStyleProfile.artStyle.toLowerCase().slice(0, 15)) &&
         !finalImagePrompt.toLowerCase().includes('visual style:')
       ) {
-        finalImagePrompt += ` ${styleProfileWording}`;
+        // Keep style append concise without dumping full paragraph
+        finalImagePrompt += ` Visual Style: ${sanitizedStyleProfile.artStyle}.`;
       }
 
       // Sanitize visualSoundEffect (Image mode only; illustrated / comic styles only)
@@ -898,9 +988,11 @@ ${durationInstruction}${customBeatsPrompt}`;
       };
     });
 
+    const progressedBeats = enforceBeatToBeatProgression(rawBeats);
+
     return {
       ...scene,
-      beats: rawBeats,
+      beats: progressedBeats,
     };
   });
 
@@ -929,10 +1021,11 @@ ${durationInstruction}${customBeatsPrompt}`;
 // ============================================================================
 export async function generateStoryDirectly(
   req: GenerateStoryRequest,
-  apiKey: string
+  apiKey: string,
+  userSignal?: AbortSignal
 ): Promise<StoryGenerationResult> {
   if (req.autoArchitectMode) {
-    return generateEnhancedStory(req, apiKey);
+    return generateEnhancedStory(req, apiKey, userSignal);
   }
-  return generateOriginalStory(req, apiKey);
+  return generateOriginalStory(req, apiKey, userSignal);
 }

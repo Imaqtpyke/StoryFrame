@@ -15,7 +15,7 @@ import {
   populateSceneTransitionHints,
 } from './beatSplitting';
 import { updateVideoPromptDuration } from './videoSuitability';
-import { cleanAndDeduplicatePrompt } from './geminiClient';
+import { cleanAndDeduplicatePrompt, enforceBeatToBeatProgression } from './geminiClient';
 
 function removeEmDashes(text: string): string {
   if (!text) return text;
@@ -151,7 +151,8 @@ function resolveDisjunctivePhrasing(prompt: string): string {
 
 export async function generateEnhancedStory(
   req: GenerateStoryRequest,
-  apiKey: string
+  apiKey: string,
+  userSignal?: AbortSignal
 ): Promise<StoryGenerationResult> {
   const {
     story,
@@ -477,14 +478,34 @@ Platform: ${platform}
 ${durationInstruction}`;
 
   const candidateModels = modelQuality === 'high'
-    ? ['gemini-3.1-pro-preview', 'gemini-3.8-flash', 'gemini-flash-latest', 'gemini-2.5-flash']
-    : ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-3.1-pro-preview'];
+    ? ['gemini-3.1-pro-preview', 'gemini-3.8-flash', 'gemini-flash-latest']
+    : ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-pro-preview'];
 
   let rawText = '';
   let parsedData: any = null;
   let lastError: Error | null = null;
 
+  // Calculate adaptive timeout: base 60s, +30s per 100 words in story, capped at 180s (3 full minutes)
+  const storyWordCount = (story || '').trim().split(/\s+/).length;
+  const timeoutMs = Math.min(180_000, Math.max(60_000, 60_000 + Math.floor(storyWordCount / 100) * 30_000));
+
   for (const modelName of candidateModels) {
+    if (userSignal?.aborted) {
+      throw new DOMException('Generation request was cancelled by user.', 'AbortError');
+    }
+
+    const attemptController = new AbortController();
+    const timeoutId = setTimeout(() => {
+      attemptController.abort();
+    }, timeoutMs);
+
+    const onUserAbort = () => {
+      attemptController.abort();
+    };
+    if (userSignal) {
+      userSignal.addEventListener('abort', onUserAbort, { once: true });
+    }
+
     try {
       const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
       const payload = {
@@ -505,7 +526,13 @@ ${durationInstruction}`;
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        signal: attemptController.signal,
       });
+
+      clearTimeout(timeoutId);
+      if (userSignal) {
+        userSignal.removeEventListener('abort', onUserAbort);
+      }
 
       if (!resp.ok) {
         const errText = await resp.text();
@@ -522,6 +549,15 @@ ${durationInstruction}`;
       parsedData = JSON.parse(rawText);
       break;
     } catch (err: any) {
+      clearTimeout(timeoutId);
+      if (userSignal) {
+        userSignal.removeEventListener('abort', onUserAbort);
+      }
+
+      if (userSignal?.aborted) {
+        throw new DOMException('Generation request was cancelled by user.', 'AbortError');
+      }
+
       lastError = err;
     }
   }
@@ -641,11 +677,13 @@ ${durationInstruction}`;
       targetVideoDuration,
     });
 
+    const progressedBeats = enforceBeatToBeatProgression(ceilingEnforcedBeats);
+
     return {
       index: sceneIndex,
       narratorLine,
-      estimatedSeconds: isVideoMode ? targetVideoDuration : Math.round(ceilingEnforcedBeats.reduce((s, b) => s + (b.estimatedSeconds || 1.5), 0)),
-      beats: ceilingEnforcedBeats,
+      estimatedSeconds: isVideoMode ? targetVideoDuration : Math.round(progressedBeats.reduce((s, b) => s + (b.estimatedSeconds || 1.5), 0)),
+      beats: progressedBeats,
       videoPrompt,
       startFramePrompt,
       establishedCharacters: Array.isArray(scene.establishedCharacters) ? scene.establishedCharacters : [],
