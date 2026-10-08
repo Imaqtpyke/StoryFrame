@@ -451,20 +451,6 @@ export default function GeneratorForm({
         </div>
       )}
 
-      {errorMessage && (
-        <div
-          id="error-alert-banner"
-          className="mb-8 p-4 bg-[#181111] border border-red-900/60 text-white flex items-start space-x-3"
-          role="alert"
-        >
-          <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
-          <div className="text-sm leading-relaxed">
-            <p className="font-semibold mb-0.5 font-display">Generation Error</p>
-            <p className="text-[#F5F5F0] font-narrative">{errorMessage}</p>
-          </div>
-        </div>
-      )}
-
       <form onSubmit={handleSubmit} id="story-generator-form" className="space-y-6 sm:space-y-8 font-narrative">
         {/* Prominent Mode Toggle: Text to Image vs Text to Video */}
         <div className="bg-[#121211] border border-white/15 p-2.5 sm:p-3 space-y-2">

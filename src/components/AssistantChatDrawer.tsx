@@ -434,30 +434,6 @@ export default function AssistantChatDrawer({
                 </div>
               )}
 
-              {/* Error message callout */}
-              {errorMessage && (
-                <div className="p-3 bg-red-950/30 border border-red-500/40 rounded-[2px] text-xs text-red-200">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="font-mono flex-1 leading-relaxed">
-                      {errorMessage}
-                    </p>
-                    {lastAttemptedMessage && !isSending && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setErrorMessage(null);
-                          handleSend(lastAttemptedMessage);
-                        }}
-                        className="px-3 py-1.5 bg-red-900/70 hover:bg-red-800 text-white rounded-[2px] font-mono text-[11px] shrink-0 transition-colors flex items-center gap-1.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-red-400"
-                      >
-                        <RotateCcw className="w-3 h-3" />
-                        <span>Retry Again</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
-
               <div ref={messagesEndRef} />
             </div>
 

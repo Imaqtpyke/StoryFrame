@@ -176,45 +176,25 @@ export async function sendChatMessage(
     },
   };
 
-  // Silent retry loop for transient 503 / server overload without artificial retry ceiling
-  // Keeps trying smoothly while preserving the user's selected model until a response arrives
-  let attemptNumber = 0;
-  while (true) {
-    attemptNumber++;
-    try {
-      const resp = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+  try {
+    const resp = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
 
-      if (!resp.ok) {
-        const errText = await resp.text().catch(() => '');
-        const is503OrOverloaded = resp.status === 503 || resp.status === 504 || errText.toLowerCase().includes('overloaded') || errText.toLowerCase().includes('service unavailable');
-        if (is503OrOverloaded) {
-          const delayMs = Math.min(6000, 1500 + Math.min(attemptNumber * 1000, 3500) + Math.random() * 500);
-          await new Promise((resolve) => setTimeout(resolve, delayMs));
-          continue;
-        }
-        throw new Error('An error occurred, please try again.');
-      }
-
-      const resJson = await resp.json();
-      const content = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!content || !content.trim()) {
-        throw new Error('An error occurred, please try again.');
-      }
-
-      return cleanAssistantText(content.trim());
-    } catch (err: any) {
-      const errString = String(err?.message || '');
-      const isTransient503 = errString.includes('503') || errString.toLowerCase().includes('overloaded') || errString.toLowerCase().includes('service unavailable');
-      if (isTransient503) {
-        const delayMs = Math.min(6000, 1500 + Math.min(attemptNumber * 1000, 3500) + Math.random() * 500);
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-        continue;
-      }
+    if (!resp.ok) {
       throw new Error('An error occurred, please try again.');
     }
+
+    const resJson = await resp.json();
+    const content = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!content || !content.trim()) {
+      throw new Error('An error occurred, please try again.');
+    }
+
+    return cleanAssistantText(content.trim());
+  } catch (err: any) {
+    throw new Error('An error occurred, please try again.');
   }
 }
