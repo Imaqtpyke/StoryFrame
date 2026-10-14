@@ -12,6 +12,7 @@ import {
 } from './beatSplitting';
 import { generateEnhancedStory } from './enhanceStoryArchitect';
 import { updateVideoPromptDuration } from './videoSuitability';
+import { fetchWithExponentialBackoff } from '../utils/retryFetch';
 
 function removeEmDashes(text: string): string {
   if (!text) return text;
@@ -199,7 +200,8 @@ export function enforceBeatToBeatProgression(beats: any[]): any[] {
 export async function generateOriginalStory(
   req: GenerateStoryRequest,
   apiKey: string,
-  userSignal?: AbortSignal
+  userSignal?: AbortSignal,
+  onStatusMessage?: (msg: string) => void
 ): Promise<StoryGenerationResult> {
   const {
     story,
@@ -574,12 +576,22 @@ ${durationInstruction}${customBeatsPrompt}`;
       },
     };
 
-    const resp = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: userSignal,
-    });
+    const resp = await fetchWithExponentialBackoff(
+      () => fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: userSignal,
+      }),
+      {
+        onRetry: (attempt, maxAttempts, delayMs) => {
+          if (onStatusMessage) {
+            const sec = Math.ceil(delayMs / 1000);
+            onStatusMessage(`Server busy (503/429). Retrying in ${sec}s (Attempt ${attempt} of ${maxAttempts})...`);
+          }
+        }
+      }
+    );
 
     if (!resp.ok) {
       const errText = await resp.text().catch(() => '');
@@ -987,10 +999,11 @@ ${durationInstruction}${customBeatsPrompt}`;
 export async function generateStoryDirectly(
   req: GenerateStoryRequest,
   apiKey: string,
-  userSignal?: AbortSignal
+  userSignal?: AbortSignal,
+  onStatusMessage?: (msg: string) => void
 ): Promise<StoryGenerationResult> {
   if (req.autoArchitectMode) {
-    return generateEnhancedStory(req, apiKey, userSignal);
+    return generateEnhancedStory(req, apiKey, userSignal, onStatusMessage);
   }
-  return generateOriginalStory(req, apiKey, userSignal);
+  return generateOriginalStory(req, apiKey, userSignal, onStatusMessage);
 }

@@ -17,6 +17,7 @@ interface ResultsSkeletonProps {
   request?: GenerateStoryRequest | null;
   onBackToEdit: () => void;
   onCancelRequest?: () => void;
+  statusMessage?: string | null;
 }
 
 const PHASES = [
@@ -27,7 +28,7 @@ const PHASES = [
   'Synthesizing visual prompts & cinematic anchors...',
 ];
 
-export default function ResultsSkeleton({ request, onBackToEdit, onCancelRequest }: ResultsSkeletonProps) {
+export default function ResultsSkeleton({ request, onBackToEdit, onCancelRequest, statusMessage }: ResultsSkeletonProps) {
   const [phaseIndex, setPhaseIndex] = useState(0);
   const [progress, setProgress] = useState(8);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -142,9 +143,9 @@ export default function ResultsSkeleton({ request, onBackToEdit, onCancelRequest
           </div>
         </div>
 
-        {/* Phase Description */}
-        <p className="text-xs sm:text-sm text-[#C4C4BE] font-narrative transition-all duration-300 min-h-[20px]">
-          {PHASES[phaseIndex]}
+        {/* Phase Description or Retry Status Message */}
+        <p className={`text-xs sm:text-sm font-narrative transition-all duration-300 min-h-[20px] ${statusMessage ? 'text-amber-300 font-medium' : 'text-[#C4C4BE]'}`}>
+          {statusMessage || PHASES[phaseIndex]}
         </p>
 
         {/* Shimmering Progress Bar */}

@@ -16,6 +16,7 @@ import {
 } from './beatSplitting';
 import { updateVideoPromptDuration } from './videoSuitability';
 import { cleanAndDeduplicatePrompt, enforceBeatToBeatProgression } from './geminiClient';
+import { fetchWithExponentialBackoff } from '../utils/retryFetch';
 
 function removeEmDashes(text: string): string {
   if (!text) return text;
@@ -151,7 +152,8 @@ function resolveDisjunctivePhrasing(prompt: string): string {
 export async function generateEnhancedStory(
   req: GenerateStoryRequest,
   apiKey: string,
-  userSignal?: AbortSignal
+  userSignal?: AbortSignal,
+  onStatusMessage?: (msg: string) => void
 ): Promise<StoryGenerationResult> {
   const {
     story,
@@ -505,12 +507,22 @@ ${durationInstruction}`;
       },
     };
 
-    const resp = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: userSignal,
-    });
+    const resp = await fetchWithExponentialBackoff(
+      () => fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: userSignal,
+      }),
+      {
+        onRetry: (attempt, maxAttempts, delayMs) => {
+          if (onStatusMessage) {
+            const sec = Math.ceil(delayMs / 1000);
+            onStatusMessage(`Server busy (503/429). Retrying in ${sec}s (Attempt ${attempt} of ${maxAttempts})...`);
+          }
+        }
+      }
+    );
 
     if (!resp.ok) {
       const errText = await resp.text().catch(() => '');

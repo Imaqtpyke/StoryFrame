@@ -1,4 +1,5 @@
 import { AssistantChatMessage } from '../types';
+import { fetchWithExponentialBackoff } from '../utils/retryFetch';
 
 const CHAT_STORAGE_KEY = 'storyframe_assistant_chat_history_v1';
 
@@ -161,14 +162,14 @@ export async function sendChatMessage(
   };
 
   try {
-    const resp = await fetch(endpoint, {
+    const resp = await fetchWithExponentialBackoff(() => fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-    });
+    }));
 
     if (!resp.ok) {
-      throw new Error('An error occurred, please try again.');
+      throw new Error('Server is temporarily busy or unavailable (503). Please try again shortly.');
     }
 
     const resJson = await resp.json();
@@ -179,6 +180,6 @@ export async function sendChatMessage(
 
     return cleanAssistantText(content.trim());
   } catch (err: any) {
-    throw new Error('An error occurred, please try again.');
+    throw new Error(err?.message || 'An error occurred, please try again.');
   }
 }

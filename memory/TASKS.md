@@ -41,6 +41,10 @@
 - [x] **Bugfix: Resolved ReferenceError for expandedDesktopBeats:**
   - Removed lingering references and unused expansion helper functions (`expandedDesktopBeats`, `handleCollapseDesktopBeat`, `handleToggleAllBeatsInScene`) in `ResultsView.tsx` after defaulting exclusively to the compact matrix view.
   - Verified clean compilation and zero TypeScript errors with `lint_applet`.
+- [x] **Exponential Backoff Retry for 503 Service Unavailable / 429 Errors:**
+  - Implemented robust `fetchWithExponentialBackoff` utility in `src/utils/retryFetch.ts` with progressive delay doubling (2s initial, up to 30s max, 4 attempts).
+  - Integrated retry logic into `geminiClient.ts`, `enhanceStoryArchitect.ts`, and `assistantChatService.ts`.
+  - Added real-time retry status message feedback displaying server busy warnings in both the loading screen (`ResultsSkeleton.tsx`) and AI assistant chat (`AssistantChatDrawer.tsx`).
 - [ ] Monitor user feedback on storyboard layout and model prompt copy workflows.
 
 

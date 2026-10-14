@@ -29,6 +29,7 @@ function StoryFrameMain() {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
   const [openModelOptionsTrigger, setOpenModelOptionsTrigger] = useState(0);
+  const [generationStatusMessage, setGenerationStatusMessage] = useState<string | null>(null);
   const activeAbortControllerRef = useRef<AbortController | null>(null);
 
   // Load history on initial mount
@@ -45,6 +46,7 @@ function StoryFrameMain() {
 
     setIsLoading(true);
     setErrorMessage(null);
+    setGenerationStatusMessage(null);
     setLastRequest(data);
     setResult(null);
     window.scrollTo({ top: 0, behavior: 'instant' });
@@ -54,8 +56,13 @@ function StoryFrameMain() {
         throw new Error('Gemini API key is required. Please apply your key under Model Options before generating a breakdown.');
       }
 
-      // Direct client-side generation using BYOK with user signal support
-      const responseData = await generateStoryDirectly(data, apiKey.trim(), controller.signal);
+      // Direct client-side generation using BYOK with user signal support and retry status callback
+      const responseData = await generateStoryDirectly(
+        data,
+        apiKey.trim(),
+        controller.signal,
+        (msg) => setGenerationStatusMessage(msg)
+      );
       setResult(responseData);
 
       // Save to local history
@@ -139,6 +146,7 @@ function StoryFrameMain() {
               request={lastRequest}
               onBackToEdit={handleBackToEdit}
               onCancelRequest={handleCancelRequest}
+              statusMessage={generationStatusMessage}
             />
           ) : errorMessage && lastRequest ? (
             <ResultsErrorView
