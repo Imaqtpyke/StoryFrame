@@ -36,8 +36,6 @@ import {
   CheckCheck,
   ExternalLink,
   Users,
-  LayoutList,
-  LayoutGrid,
 } from 'lucide-react';
 
 interface ResultsViewProps {
@@ -95,12 +93,6 @@ export default function ResultsView({
   const [selectedTargetModel, setSelectedTargetModel] = useState<TargetModel>('universal');
   const [isRefModalOpen, setIsRefModalOpen] = useState<boolean>(false);
   const [isStyleModalOpen, setIsStyleModalOpen] = useState<boolean>(false);
-
-  // View Mode: 'detailed' (default: full cards with prompts visible from Scene 1 to N) vs 'compact' (dense chips)
-  const [viewMode, setViewMode] = useState<'detailed' | 'compact'>('detailed');
-
-  // Desktop beat inline expansion override state (per-card toggle if user clicks an individual card)
-  const [expandedDesktopBeats, setExpandedDesktopBeats] = useState<Record<string, boolean>>({});
 
   // Mobile bottom sheet beat breakdown state
   const [mobileActiveBeat, setMobileActiveBeat] = useState<{
@@ -208,21 +200,9 @@ export default function ResultsView({
     }
   };
 
-  // Beat interaction handlers: respects viewMode, expands/collapses inline on desktop/tablet, bottom sheet on mobile if in compact
+  // Beat click handler opens bottom sheet modal with full prompt details
   const handleBeatClick = (sceneIndex: number, sceneRoman: string, beat: Beat, allBeats: Beat[]) => {
-    const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
-    if (isMobile && viewMode === 'compact') {
-      setMobileActiveBeat({ sceneIndex, sceneRoman, beat, allBeats });
-    } else {
-      const beatKey = `scene-${sceneIndex}-beat-${beat.beatIndex}`;
-      const currentlyExpanded = expandedDesktopBeats[beatKey] !== undefined 
-        ? expandedDesktopBeats[beatKey] 
-        : (viewMode === 'detailed');
-      setExpandedDesktopBeats((prev) => ({
-        ...prev,
-        [beatKey]: !currentlyExpanded,
-      }));
-    }
+    setMobileActiveBeat({ sceneIndex, sceneRoman, beat, allBeats });
   };
 
   const handleCollapseDesktopBeat = (beatKey: string, e: React.MouseEvent) => {
@@ -477,44 +457,6 @@ export default function ResultsView({
 
         {/* Compact Utility Actions Row */}
         <div className="flex items-center gap-1.5 self-start sm:self-auto flex-wrap">
-          {/* View Mode Toggle: Detailed Cards vs Compact Grid */}
-          <div className="flex items-center bg-[#161614] border border-white/15 rounded p-0.5 text-xs">
-            <button
-              type="button"
-              id="view-mode-detailed-btn"
-              onClick={() => {
-                setViewMode('detailed');
-                setExpandedDesktopBeats({});
-              }}
-              className={`inline-flex items-center px-2 py-1 rounded text-[11px] font-display transition-colors min-h-[26px] ${
-                viewMode === 'detailed'
-                  ? 'bg-white text-black font-semibold'
-                  : 'text-[#A0A09A] hover:text-white'
-              }`}
-              title="Show all beat prompts and details directly"
-            >
-              <LayoutList size={11} className="mr-1" />
-              <span>Detailed</span>
-            </button>
-            <button
-              type="button"
-              id="view-mode-compact-btn"
-              onClick={() => {
-                setViewMode('compact');
-                setExpandedDesktopBeats({});
-              }}
-              className={`inline-flex items-center px-2 py-1 rounded text-[11px] font-display transition-colors min-h-[26px] ${
-                viewMode === 'compact'
-                  ? 'bg-white text-black font-semibold'
-                  : 'text-[#A0A09A] hover:text-white'
-              }`}
-              title="Compact matrix overview"
-            >
-              <LayoutGrid size={11} className="mr-1" />
-              <span>Compact</span>
-            </button>
-          </div>
-
           {/* Target Model Selector Dropdown */}
           <div className="flex items-center bg-[#161614] border border-white/15 rounded px-2 py-1 text-xs min-h-[28px]">
             <Sliders size={11} className="mr-1.5 text-[#9C9C96]" />
@@ -740,328 +682,96 @@ export default function ResultsView({
                       </div>
                     </div>
 
-                    {/* DETAILED VIEW: Full Storyboard Cards across Scenes 1 to N */}
-                    {viewMode === 'detailed' ? (
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 sm:gap-4">
+                    {/* COMPACT VIEW: Dense Chips Matrix with Tap-to-View (Default & Sole Layout) */}
+                    <>
+                      {/* Mobile Filmstrip Row */}
+                      <div className="block sm:hidden space-y-2">
+                        <div className="flex overflow-x-auto pb-2.5 pt-1 gap-2.5 snap-x snap-mandatory scrollbar-thin overscroll-x-contain -mx-1 px-1">
+                          {beats.map((beat) => (
+                            <div
+                              key={beat.beatIndex}
+                              id={`mobile-beat-card-${scene.index}-${beat.beatIndex}`}
+                              onClick={() => handleBeatClick(scene.index, romanScene, beat, beats)}
+                              className={`flex-none w-[160px] xs:w-[175px] snap-start border active:bg-[#1E1E1C] p-2.5 flex flex-col justify-between min-h-[96px] cursor-pointer transition-all rounded-[2px] ${
+                                isVideoMode ? 'bg-[#141310] border-amber-900/30 active:border-amber-400/50' : 'bg-[#080D14] border-sky-900/15 active:border-sky-400/30'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-1 border-b border-white/5 pb-1">
+                                <span className={`stamp-chip font-bold text-[8px] ${isVideoMode ? 'bg-amber-950/70 text-amber-300 border-amber-800/80' : 'bg-sky-950/25 text-sky-200/70 border-sky-800/25'}`}>
+                                  B{String(beat.beatIndex).padStart(2, '0')}
+                                </span>
+                                <span className="font-editorial-meta text-[8px] text-emerald-400/90">
+                                  ~{beat.estimatedSeconds}s
+                                </span>
+                              </div>
+                              <div className="my-1.5 space-y-0.5">
+                                <div className="flex items-center gap-1 text-[8px] font-editorial-meta text-[#C4C4C0]">
+                                  <Camera size={8} className="text-[#9C9C96] shrink-0" />
+                                  <span className="truncate">{beat.shotType || 'Medium Shot'}</span>
+                                </div>
+                                {beat.cameraMovement && (
+                                  <div className="flex items-center gap-1 text-[8px] font-editorial-meta text-[#8C8C86]">
+                                    <Video size={8} className="text-[#7D7D76] shrink-0" />
+                                    <span className="truncate">{beat.cameraMovement}</span>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="pt-1 border-t border-white/5">
+                                <p className="text-[10px] text-[#E6E6E1] italic font-narrative line-clamp-2 leading-tight">
+                                  &ldquo;{getPreviewText(beat.textSpan, 6)}&rdquo;
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Desktop Compact Matrix */}
+                      <div className="hidden sm:grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-3">
                         {beats.map((beat) => {
                           const beatKey = `scene-${scene.index}-beat-${beat.beatIndex}`;
-                          const isExpandedBeat = expandedDesktopBeats[beatKey] !== undefined
-                            ? expandedDesktopBeats[beatKey]
-                            : true;
-                          const isCopiedPrompt = copiedIndex === `prompt-${beatKey}`;
-                          const isCopiedText = copiedIndex === `text-${beatKey}`;
-                          const compiled = compileBeatPrompt(beat, scene, result.styleProfile, selectedTargetModel, format, result.generationMode);
-                          const isCopiedNegative = copiedIndex === `neg-${beatKey}`;
-
-                          if (!isExpandedBeat) {
-                            return (
-                              <div
-                                key={beat.beatIndex}
-                                id={`beat-chip-collapsed-${scene.index}-${beat.beatIndex}`}
-                                onClick={() => handleBeatClick(scene.index, romanScene, beat, beats)}
-                                className={`border p-3 flex flex-col justify-between min-h-[96px] cursor-pointer transition-all group select-none rounded-[2px] ${
-                                  isVideoMode
-                                    ? 'bg-[#141310] border-amber-900/30 hover:border-amber-700/60 hover:bg-[#1A1813]'
-                                    : 'bg-[#080D14] border-sky-900/15 hover:border-sky-700/30 hover:bg-[#0C141F]'
-                                }`}
-                              >
-                                <div className="flex items-center justify-between gap-1 border-b border-white/5 pb-1.5">
-                                  <span className={`stamp-chip font-bold text-[9px] ${isVideoMode ? 'bg-amber-950/70 text-amber-300 border-amber-800/80' : 'bg-sky-950/25 text-sky-200/70 border-sky-800/25'}`}>
-                                    Beat {String(beat.beatIndex).padStart(2, '0')}
-                                  </span>
-                                  <span className="font-editorial-meta text-[9px] text-emerald-400/90">
-                                    ~{beat.estimatedSeconds}s
-                                  </span>
-                                </div>
-                                <div className="my-1.5 space-y-0.5">
-                                  <div className="flex items-center gap-1 text-[9px] font-editorial-meta text-[#C4C4C0]">
-                                    <Camera size={9} className="text-[#9C9C96] shrink-0" />
-                                    <span className="truncate">{beat.shotType || 'Medium Shot'}</span>
-                                  </div>
-                                </div>
-                                <div className="pt-1.5 border-t border-white/5 flex items-center justify-between gap-1">
-                                  <p className="text-[11px] text-[#E6E6E1] italic font-narrative truncate max-w-[85%]">
-                                    &ldquo;{getPreviewText(beat.textSpan, 6)}&rdquo;
-                                  </p>
-                                  <ChevronDown size={11} className="text-[#7D7D76] group-hover:text-white transition-colors shrink-0" />
-                                </div>
-                              </div>
-                            );
-                          }
-
                           return (
                             <div
                               key={beat.beatIndex}
-                              id={`beat-card-${scene.index}-${beat.beatIndex}`}
-                              className={`border p-3.5 sm:p-4 md:p-5 space-y-3.5 shadow-md transition-all rounded-[2px] flex flex-col justify-between ${
-                                isVideoMode ? 'bg-[#151411] border-amber-900/40' : 'bg-[#060A10] border-sky-900/25'
+                              id={`desktop-beat-chip-${scene.index}-${beat.beatIndex}`}
+                              onClick={() => handleBeatClick(scene.index, romanScene, beat, beats)}
+                              className={`border p-3 flex flex-col justify-between min-h-[105px] cursor-pointer transition-all group select-none rounded-[2px] ${
+                                isVideoMode
+                                  ? 'bg-[#141310] border-amber-900/30 hover:border-amber-700/60 hover:bg-[#1A1813]'
+                                  : 'bg-[#080D14] border-sky-900/15 hover:border-sky-700/30 hover:bg-[#0C141F]'
                               }`}
                             >
-                              <div className="space-y-3">
-                                {/* Card Header Bar */}
-                                <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2.5 flex-wrap">
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className={`stamp-chip font-bold text-[9px] ${isVideoMode ? 'bg-amber-950/70 text-amber-300 border-amber-800/80' : 'bg-sky-950/25 text-sky-200/70 border-sky-800/25'}`}>
-                                      Beat {String(beat.beatIndex).padStart(2, '0')}
-                                    </span>
-                                    {beat.shotType && (
-                                      <span className="stamp-chip text-[9px]">
-                                        <Camera size={9} className="mr-1 text-[#9C9C96] shrink-0" />
-                                        {beat.shotType}
-                                      </span>
-                                    )}
-                                    {beat.cameraAngle && (
-                                      <span className="stamp-chip text-[9px]">
-                                        <Video size={9} className="mr-1 text-[#9C9C96] shrink-0" />
-                                        {beat.cameraAngle}
-                                      </span>
-                                    )}
-                                    {beat.cameraMovement && (
-                                      <span className="stamp-chip text-[9px]">
-                                        <Video size={9} className="mr-1 text-[#9C9C96] shrink-0" />
-                                        {beat.cameraMovement}
-                                      </span>
-                                    )}
-                                    <span className="font-editorial-meta text-[9px] text-emerald-400">
-                                      ~{beat.estimatedSeconds}s
-                                    </span>
-                                  </div>
-
-                                  <div className="flex items-center gap-1.5 shrink-0 ml-auto">
-                                    <button
-                                      type="button"
-                                      id={`copy-beat-prompt-btn-${scene.index}-${beat.beatIndex}`}
-                                      onClick={() => copyToClipboard(compiled.promptText, `prompt-${beatKey}`)}
-                                      className={`inline-flex items-center justify-center font-editorial-meta text-[9px] sm:text-[10px] px-2.5 sm:px-3 py-1 transition-colors whitespace-nowrap min-h-[26px] rounded-[2px] ${
-                                        isVideoMode
-                                          ? 'bg-amber-400 text-black hover:bg-amber-300 font-semibold'
-                                          : 'bg-sky-400/80 text-black hover:bg-sky-300 font-semibold'
-                                      }`}
-                                      title="Copy prompt"
-                                    >
-                                      {isCopiedPrompt ? (
-                                        <>
-                                          <Check size={10} className="mr-1 text-black shrink-0" />
-                                          <span>Copied</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <Copy size={10} className="mr-1 text-black shrink-0" />
-                                          <span>
-                                            {selectedTargetModel !== 'universal'
-                                              ? `Copy ${selectedTargetModel.charAt(0).toUpperCase() + selectedTargetModel.slice(1)}`
-                                              : 'Copy Prompt'}
-                                          </span>
-                                        </>
-                                      )}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => handleCollapseDesktopBeat(beatKey, e)}
-                                      className="p-1 text-[#8C8C86] hover:text-white transition-colors"
-                                      title="Collapse beat card"
-                                    >
-                                      <ChevronUp size={12} />
-                                    </button>
-                                  </div>
+                              <div className="flex items-center justify-between gap-1 border-b border-white/5 pb-1.5">
+                                <span className={`stamp-chip font-bold text-[9px] ${isVideoMode ? 'bg-amber-950/70 text-amber-300 border-amber-800/80' : 'bg-sky-950/25 text-sky-200/70 border-sky-800/25'}`}>
+                                  Beat {String(beat.beatIndex).padStart(2, '0')}
+                                </span>
+                                <span className="font-editorial-meta text-[9px] text-emerald-400/90">
+                                  ~{beat.estimatedSeconds}s
+                                </span>
+                              </div>
+                              <div className="my-1.5 space-y-0.5">
+                                <div className="flex items-center gap-1 text-[9px] font-editorial-meta text-[#C4C4C0]">
+                                  <Camera size={9} className="text-[#9C9C96] shrink-0" />
+                                  <span className="truncate">{beat.shotType || 'Medium Shot'}</span>
                                 </div>
-
-                                {/* Spoken Action / Narration Clause */}
-                                <div className="space-y-1">
-                                  <div className="flex items-center justify-between text-[9px] font-editorial-meta text-[#9C9C96]">
-                                    <span>{isVideoMode ? 'Spoken Action Clause' : 'Spoken Phrase'}</span>
-                                    <button
-                                      type="button"
-                                      onClick={() => copyToClipboard(beat.textSpan, `text-${beatKey}`)}
-                                      className="hover:text-white transition-colors"
-                                    >
-                                      {isCopiedText ? 'Copied' : 'Copy Phrase'}
-                                    </button>
-                                  </div>
-                                  <div className="p-2 bg-[#0A0A09] border border-white/5 text-xs font-narrative italic text-[#F5F5F0] rounded-[2px]">
-                                    {beat.textSpan && beat.textSpan.trim().length > 0 ? (
-                                      <>&ldquo;{beat.textSpan}&rdquo;</>
-                                    ) : (
-                                      <span className="not-italic font-editorial-meta text-[10px] text-amber-400 uppercase tracking-wider">
-                                        [Silent Reaction / Action Beat - No Spoken Dialogue]
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-
-                                {/* SFX & Editing Badges (Solid clean accents, no purple gradients) */}
-                                {beat.visualSoundEffect && (
-                                  <div className="p-2 bg-[#171622] border border-[#382F56] rounded-[2px] flex items-center justify-between text-xs">
-                                    <div className="flex items-center space-x-1.5">
-                                      <Zap size={11} className="text-[#C4B5FD] shrink-0" />
-                                      <span className="font-editorial-meta text-[9px] text-[#DDD6FE] tracking-wider uppercase">SFX:</span>
-                                      <span className="font-bold text-[11px] text-[#EDE9FE]">{beat.visualSoundEffect}</span>
-                                    </div>
-                                    <span className="text-[9px] font-editorial-meta text-[#A78BFA] italic">Visual Sound FX</span>
+                                {beat.cameraAngle && (
+                                  <div className="flex items-center gap-1 text-[8px] font-editorial-meta text-[#A0A098]">
+                                    <Video size={8} className="text-[#8C8C86] shrink-0" />
+                                    <span className="truncate">{beat.cameraAngle}</span>
                                   </div>
                                 )}
-
-                                {beat.transitionHint && (
-                                  <div className="p-2 bg-amber-950/20 border border-amber-800/40 rounded-[2px] space-y-0.5">
-                                    <div className="flex items-center justify-between font-editorial-meta text-[9px] text-amber-300">
-                                      <span className="flex items-center gap-1 uppercase tracking-wider">
-                                        <Scissors size={10} className="text-amber-400" />
-                                        <span>Editing Note</span>
-                                      </span>
-                                    </div>
-                                    <p className="text-[11px] text-amber-100/90 font-sans leading-relaxed">
-                                      {beat.transitionHint}
-                                    </p>
-                                  </div>
-                                )}
-
-                                {/* Compiled Prompt Content */}
-                                <div className="space-y-1">
-                                  <div className="flex items-center justify-between font-editorial-meta text-[9px] text-[#9C9C96]">
-                                    <span>
-                                      {selectedTargetModel !== 'universal'
-                                        ? `${selectedTargetModel.toUpperCase()} PROMPT`
-                                        : isVideoMode
-                                        ? 'VIDEO GENERATION PROMPT'
-                                        : 'VISUAL IMAGE PROMPT'}
-                                    </span>
-                                    <span className={compiled.wordCount > compiled.budgetWordCount ? 'text-amber-400' : ''}>
-                                      {compiled.wordCount} / {compiled.budgetWordCount} Words
-                                    </span>
-                                  </div>
-                                  <div className={`p-2.5 text-xs font-mono leading-relaxed border selection:bg-white selection:text-black rounded-[2px] break-words ${
-                                    isVideoMode ? 'bg-[#0A0A08] border-amber-900/40 text-[#F0EFEA]' : 'bg-[#04070C] border-sky-900/20 text-[#D0DFEB]'
-                                  }`}>
-                                    {compiled.promptText}
-                                  </div>
-
-                                  {/* Negative Prompt if Kling AI */}
-                                  {compiled.negativePrompt && (
-                                    <div className="p-2 bg-red-950/20 border border-red-900/30 rounded-[2px] space-y-1">
-                                      <div className="flex items-center justify-between text-[9px] font-editorial-meta">
-                                        <span className="text-red-300 uppercase tracking-wider">Recommended Negative Prompt</span>
-                                        <button
-                                          type="button"
-                                          onClick={() => copyToClipboard(compiled.negativePrompt || '', `neg-${beatKey}`)}
-                                          className="text-[#A0A09A] hover:text-white"
-                                        >
-                                          {isCopiedNegative ? 'Copied' : 'Copy Negative'}
-                                        </button>
-                                      </div>
-                                      <p className="font-mono text-[11px] text-red-200/90 leading-relaxed break-words">
-                                        {compiled.negativePrompt}
-                                      </p>
-                                    </div>
-                                  )}
-
-                                  {/* Midjourney Parameter Tags */}
-                                  {selectedTargetModel === 'midjourney' && compiled.parameters && (
-                                    <div className="flex items-center gap-2 text-[9px] font-editorial-meta text-[#8C8C86] pt-0.5">
-                                      <span>Aspect Ratio: --ar {compiled.parameters['ar']}</span>
-                                      <span>·</span>
-                                      <span>Model: --v {compiled.parameters['v']}</span>
-                                      <span>·</span>
-                                      <span>Stylize: --stylize {compiled.parameters['stylize']}</span>
-                                    </div>
-                                  )}
-                                </div>
+                              </div>
+                              <div className="pt-1.5 border-t border-white/5 flex items-center justify-between gap-1">
+                                <p className="text-[11px] text-[#E6E6E1] italic font-narrative truncate max-w-[85%]">
+                                  &ldquo;{getPreviewText(beat.textSpan, 6)}&rdquo;
+                                </p>
+                                <ChevronDown size={11} className="text-[#7D7D76] group-hover:text-white transition-colors shrink-0" />
                               </div>
                             </div>
                           );
                         })}
                       </div>
-                    ) : (
-                      /* COMPACT VIEW: Dense Chips Matrix with Tap-to-View */
-                      <>
-                        {/* Mobile Filmstrip Row */}
-                        <div className="block sm:hidden space-y-2">
-                          <div className="flex overflow-x-auto pb-2.5 pt-1 gap-2.5 snap-x snap-mandatory scrollbar-thin overscroll-x-contain -mx-1 px-1">
-                            {beats.map((beat) => (
-                              <div
-                                key={beat.beatIndex}
-                                id={`mobile-beat-card-${scene.index}-${beat.beatIndex}`}
-                                onClick={() => handleBeatClick(scene.index, romanScene, beat, beats)}
-                                className={`flex-none w-[160px] xs:w-[175px] snap-start border active:bg-[#1E1E1C] p-2.5 flex flex-col justify-between min-h-[96px] cursor-pointer transition-all rounded-[2px] ${
-                                  isVideoMode ? 'bg-[#141310] border-amber-900/30 active:border-amber-400/50' : 'bg-[#080D14] border-sky-900/15 active:border-sky-400/30'
-                                }`}
-                              >
-                                <div className="flex items-center justify-between gap-1 border-b border-white/5 pb-1">
-                                  <span className={`stamp-chip font-bold text-[8px] ${isVideoMode ? 'bg-amber-950/70 text-amber-300 border-amber-800/80' : 'bg-sky-950/25 text-sky-200/70 border-sky-800/25'}`}>
-                                    B{String(beat.beatIndex).padStart(2, '0')}
-                                  </span>
-                                  <span className="font-editorial-meta text-[8px] text-emerald-400/90">
-                                    ~{beat.estimatedSeconds}s
-                                  </span>
-                                </div>
-                                <div className="my-1.5 space-y-0.5">
-                                  <div className="flex items-center gap-1 text-[8px] font-editorial-meta text-[#C4C4C0]">
-                                    <Camera size={8} className="text-[#9C9C96] shrink-0" />
-                                    <span className="truncate">{beat.shotType || 'Medium Shot'}</span>
-                                  </div>
-                                  {beat.cameraMovement && (
-                                    <div className="flex items-center gap-1 text-[8px] font-editorial-meta text-[#8C8C86]">
-                                      <Video size={8} className="text-[#7D7D76] shrink-0" />
-                                      <span className="truncate">{beat.cameraMovement}</span>
-                                    </div>
-                                  )}
-                                </div>
-                                <div className="pt-1 border-t border-white/5">
-                                  <p className="text-[10px] text-[#E6E6E1] italic font-narrative line-clamp-2 leading-tight">
-                                    &ldquo;{getPreviewText(beat.textSpan, 6)}&rdquo;
-                                  </p>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Desktop Compact Matrix */}
-                        <div className="hidden sm:grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-3">
-                          {beats.map((beat) => {
-                            const beatKey = `scene-${scene.index}-beat-${beat.beatIndex}`;
-                            return (
-                              <div
-                                key={beat.beatIndex}
-                                id={`desktop-beat-chip-${scene.index}-${beat.beatIndex}`}
-                                onClick={() => handleBeatClick(scene.index, romanScene, beat, beats)}
-                                className={`border p-3 flex flex-col justify-between min-h-[105px] cursor-pointer transition-all group select-none rounded-[2px] ${
-                                  isVideoMode
-                                    ? 'bg-[#141310] border-amber-900/30 hover:border-amber-700/60 hover:bg-[#1A1813]'
-                                    : 'bg-[#080D14] border-sky-900/15 hover:border-sky-700/30 hover:bg-[#0C141F]'
-                                }`}
-                              >
-                                <div className="flex items-center justify-between gap-1 border-b border-white/5 pb-1.5">
-                                  <span className={`stamp-chip font-bold text-[9px] ${isVideoMode ? 'bg-amber-950/70 text-amber-300 border-amber-800/80' : 'bg-sky-950/25 text-sky-200/70 border-sky-800/25'}`}>
-                                    Beat {String(beat.beatIndex).padStart(2, '0')}
-                                  </span>
-                                  <span className="font-editorial-meta text-[9px] text-emerald-400/90">
-                                    ~{beat.estimatedSeconds}s
-                                  </span>
-                                </div>
-                                <div className="my-1.5 space-y-0.5">
-                                  <div className="flex items-center gap-1 text-[9px] font-editorial-meta text-[#C4C4C0]">
-                                    <Camera size={9} className="text-[#9C9C96] shrink-0" />
-                                    <span className="truncate">{beat.shotType || 'Medium Shot'}</span>
-                                  </div>
-                                  {beat.cameraAngle && (
-                                    <div className="flex items-center gap-1 text-[8px] font-editorial-meta text-[#A0A098]">
-                                      <Video size={8} className="text-[#8C8C86] shrink-0" />
-                                      <span className="truncate">{beat.cameraAngle}</span>
-                                    </div>
-                                  )}
-                                </div>
-                                <div className="pt-1.5 border-t border-white/5 flex items-center justify-between gap-1">
-                                  <p className="text-[11px] text-[#E6E6E1] italic font-narrative truncate max-w-[85%]">
-                                    &ldquo;{getPreviewText(beat.textSpan, 6)}&rdquo;
-                                  </p>
-                                  <ChevronDown size={11} className="text-[#7D7D76] group-hover:text-white transition-colors shrink-0" />
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </>
-                    )}
+                    </>
                   </div>
                 </div>
               )}

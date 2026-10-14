@@ -33,8 +33,12 @@
   - Configured progressive illumination and polished stage feedback messages in the generator loading overlay (`GeneratorForm.tsx`).
   - Streamlined JSON schema parsing and response generation overhead in client-side Gemini API calls (`geminiClient.ts` & `enhanceStoryArchitect.ts`).
   - Verified clean compilation and successful build execution.
+- [x] **Compact View Default & Unconditional Zack D. Films Hook Enforcement:**
+  - Removed the detailed view layout and toggle, defaulting the Results View exclusively to the clean compact matrix and mobile filmstrip with tap-to-view bottom sheet modals (`ResultsView.tsx`).
+  - Strengthened Assistant Chat instructions (`assistantChatService.ts`) to mandate that all user story prompts and ideas are unconditionally transformed into high-retention Zack D. Films hook architecture.
 
 ## Next Steps / Active Tasks
 - [ ] Monitor user feedback on storyboard layout and model prompt copy workflows.
+
 
 
