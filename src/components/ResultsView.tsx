@@ -205,27 +205,7 @@ export default function ResultsView({
     setMobileActiveBeat({ sceneIndex, sceneRoman, beat, allBeats });
   };
 
-  const handleCollapseDesktopBeat = (beatKey: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setExpandedDesktopBeats((prev) => ({
-      ...prev,
-      [beatKey]: false,
-    }));
-  };
 
-  const handleToggleAllBeatsInScene = (sceneIndex: number, beatsList: Beat[]) => {
-    const allExpanded = beatsList.every((b) => {
-      const k = `scene-${sceneIndex}-beat-${b.beatIndex}`;
-      return expandedDesktopBeats[k] !== undefined ? expandedDesktopBeats[k] : (viewMode === 'detailed');
-    });
-    setExpandedDesktopBeats((prev) => {
-      const next = { ...prev };
-      beatsList.forEach((b) => {
-        next[`scene-${sceneIndex}-beat-${b.beatIndex}`] = !allExpanded;
-      });
-      return next;
-    });
-  };
 
   const fullScript = normalizedScenes.map((s) => s.narratorLine).join(' ');
   const totalBeatsCount = normalizedScenes.reduce((acc, s) => acc + (s.beats?.length || 0), 0);
@@ -667,18 +647,7 @@ export default function ResultsView({
                             {beats.length} VISUAL SETUPS
                           </span>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => handleToggleAllBeatsInScene(scene.index, beats)}
-                          className="inline-flex items-center font-editorial-meta text-[9px] text-[#A8A8A2] hover:text-white bg-white/5 hover:bg-white/10 px-2.5 py-1 border border-white/10 transition-colors rounded-[2px]"
-                        >
-                          {beats.every((b) => {
-                            const k = `scene-${scene.index}-beat-${b.beatIndex}`;
-                            return expandedDesktopBeats[k] !== undefined ? expandedDesktopBeats[k] : (viewMode === 'detailed');
-                          })
-                            ? 'Collapse All'
-                            : 'Expand All'}
-                        </button>
+
                       </div>
                     </div>
 

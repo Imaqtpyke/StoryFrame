@@ -38,6 +38,9 @@
   - Strengthened Assistant Chat instructions (`assistantChatService.ts`) to mandate that all user story prompts and ideas are unconditionally transformed into high-retention Zack D. Films hook architecture.
 
 ## Next Steps / Active Tasks
+- [x] **Bugfix: Resolved ReferenceError for expandedDesktopBeats:**
+  - Removed lingering references and unused expansion helper functions (`expandedDesktopBeats`, `handleCollapseDesktopBeat`, `handleToggleAllBeatsInScene`) in `ResultsView.tsx` after defaulting exclusively to the compact matrix view.
+  - Verified clean compilation and zero TypeScript errors with `lint_applet`.
 - [ ] Monitor user feedback on storyboard layout and model prompt copy workflows.
 
 
