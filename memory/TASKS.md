@@ -22,13 +22,19 @@
   - Built grounded anti-hallucination constraint (zero unstated inventions, concrete nouns only).
   - Implemented automated prompt deduplication removing duplicate sentences and redundant continuity blocks.
   - Verified with 47 automated system tests passing and clean compilation.
-- [x] **Model Prompt Compiler, Character Continuity Ledger & Production Timeline Export:**
-  - Built `promptCompiler.ts` with live translation to Midjourney v6.1, Kling AI v1.5/v2, Runway Gen-3, and Luma Dream Machine.
-  - Added deterministic pre-flight storyboard linter (L01-L06) catching camera vector conflicts, pacing mismatches, and prompt word budgets.
-  - Built `characterContinuity.ts` and `CharacterReferenceModal.tsx` generating multi-angle reference packets (front portrait, 3/4 medium angle, full body action) with `--cref` likeness-locking instructions.
-  - Built `timelineExport.ts` supporting CMX 3600 EDL export for Premiere Pro / DaVinci Resolve, SRT subtitles with timecodes, and speech pacing calculation (~140 WPM).
-  - Integrated Model Switcher Toolbar, Director's Pre-Flight advisory bar, and EDL/SRT exports into `ResultsView.tsx` and `BeatBottomSheet.tsx`.
-  - Verified 100% clean compilation and TypeScript checks.
+- [x] **Direct Sequential Scene Layout & Streamlined Storyboard View:**
+  - Implemented immediate sequential display from Scene 1 to Scene N upon breakdown completion.
+  - Added default Detailed View with all beat cards, spoken clauses, camera tags, and compiled model prompts visible and directly copyable.
+  - Added segmented view toggle (Detailed vs Compact Grid) in top navigation bar.
+  - Streamlined character continuity: hid duplicate sheets from primary flow; provided on-demand "Character Packets" modal for Midjourney `--cref`.
+  - Enforced design rules: Title Case buttons, 8px/sharp corners (zero pill buttons), zero purple gradients, zero em dashes.
+  - Verified with 47 automated system tests passing, clean TypeScript check, and clean production build.
+- [x] **Streamline JSON Schema Overhead & Clear Stage Feedback in the Loading Screen:**
+  - Configured progressive illumination and polished stage feedback messages in the generator loading overlay (`GeneratorForm.tsx`).
+  - Streamlined JSON schema parsing and response generation overhead in client-side Gemini API calls (`geminiClient.ts` & `enhanceStoryArchitect.ts`).
+  - Verified clean compilation and successful build execution.
 
 ## Next Steps / Active Tasks
-- [ ] Monitor user feedback and generation results across external generative engines (Midjourney, Kling, Runway, Luma).
+- [ ] Monitor user feedback on storyboard layout and model prompt copy workflows.
+
+

@@ -132,7 +132,7 @@ export default function BeatBottomSheet({
             type="button"
             id="close-mobile-beat-sheet-btn"
             onClick={onClose}
-            className="p-1.5 -mr-1 text-[#8C8C86] hover:text-white rounded-full hover:bg-white/10 transition-colors"
+            className="p-1.5 -mr-1 text-[#8C8C86] hover:text-white rounded-md hover:bg-white/10 transition-colors"
             aria-label="Close beat breakdown"
           >
             <X size={18} />
@@ -160,8 +160,8 @@ export default function BeatBottomSheet({
             </span>
           )}
           {beat.visualSoundEffect && (
-            <span className="stamp-chip text-[9px] bg-purple-950/60 text-purple-300 border-purple-800/50 font-bold">
-              <Zap size={9} className="mr-1 text-purple-400 shrink-0" />
+            <span className="stamp-chip text-[9px] bg-[#171622] text-[#DDD6FE] border-[#382F56] font-bold">
+              <Zap size={9} className="mr-1 text-[#C4B5FD] shrink-0" />
               SFX: {beat.visualSoundEffect}
             </span>
           )}
@@ -194,12 +194,12 @@ export default function BeatBottomSheet({
                 {isCopiedText ? (
                   <>
                     <Check size={10} className="text-emerald-400" />
-                    <span className="text-emerald-400">COPIED</span>
+                    <span className="text-emerald-400">Copied</span>
                   </>
                 ) : (
                   <>
                     <Copy size={10} />
-                    <span>COPY PHRASE</span>
+                    <span>Copy Phrase</span>
                   </>
                 )}
               </button>
@@ -291,12 +291,12 @@ export default function BeatBottomSheet({
                     {isCopiedPrompt ? (
                       <>
                         <Check size={10} className="text-black" />
-                        <span>COPIED</span>
+                        <span>Copied</span>
                       </>
                     ) : (
                       <>
                         <Copy size={10} className="text-black" />
-                        <span>{isVideoMode ? 'COPY VIDEO PROMPT' : 'COPY PROMPT'}</span>
+                        <span>{isVideoMode ? 'Copy Video Prompt' : 'Copy Prompt'}</span>
                       </>
                     )}
                   </button>
@@ -318,7 +318,7 @@ export default function BeatBottomSheet({
                         onClick={() => onCopy(compiled.negativePrompt || '', `neg-${beatKey}`)}
                         className="text-[8.5px] font-editorial-meta text-[#9C9C96] hover:text-white"
                       >
-                        {isCopiedNeg ? 'COPIED' : 'COPY NEGATIVE'}
+                        {isCopiedNeg ? 'Copied' : 'Copy Negative'}
                       </button>
                     </div>
                     <p className="font-mono text-[10px] text-red-200/90 leading-relaxed">

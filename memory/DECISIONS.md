@@ -69,11 +69,16 @@
 ## Silent Auto-Retry on 503 Overload (No 3-Retry Ceiling, User Cancellation Preserved)
 - **Fact/Decision:** When Google Gemini returns a transient 503 Service Unavailable or server overloaded response, the system does not display a 503 error or halt abruptly with a hard 3-retry cap. Instead, it continuously and silently re-executes using the user's chosen model with adaptive backoff until the response successfully arrives. The loading screen remains active, and the user can click "Cancel Request" at any time. If an unrecoverable non-transient error occurs, friendly non-technical copy is displayed without raw 503 codes.
 - **Context:** Eliminates jarring 503 error screens during temporary Google cluster spikes, respects user model selection without fallback switching, and gives the user full control to wait or cancel.
-## Model Prompt Compiler, Continuity Ledger & Production Timeline Export
-- **Fact/Decision:** Integrated a canonical camera IR compiler (`promptCompiler.ts`) translating universal shot attributes into exact syntax for Midjourney v6.1 (aspect ratios, Kelvin lighting, parameters), Kling AI (cinematic camera verbs, negative prompts), Runway Gen-3 (structured section tags), and Luma Dream Machine (keyframe transitions). Added a deterministic pre-flight storyboard linter (L01-L06) catching conflicting camera vectors and pacing mismatches. Added an immutable character reference packet generator (`characterContinuity.ts`) for multi-angle face and wardrobe likeness locking. Added industry-standard timeline exports (`timelineExport.ts`) including CMX 3600 EDL for Premiere Pro / DaVinci Resolve, SRT subtitles with millisecond timecodes, and narration speaking-rate calculations (~140 WPM).
-- **Context:** Transforms StoryFrame from a generic descriptive prompt generator into a production-grade pre-production engine compatible with modern AI filmmaking and professional NLE editing pipelines.
 - **Date:** 2026-10-14
 - **Status:** Active
+
+## Streamlined JSON Schema Overhead & Clear Loading Stage Feedback
+- **Fact/Decision:** Optimized client-side Gemini requests to streamline JSON schema generation overhead and ensure lightning-fast API dispatch. Configured progressive illumination and transparent stage feedback in the loading overlay (`GeneratorForm.tsx`) tracking phases from screenplay analysis to final storyboard synthesis.
+- **Context:** Reduces parsing latency and provides smooth, informative real-time feedback during breakdown generation without blocking or cluttering the interface.
+- **Date:** 2026-10-14
+- **Status:** Active
+
+
 
 
 
