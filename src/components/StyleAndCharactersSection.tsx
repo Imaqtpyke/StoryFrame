@@ -8,6 +8,7 @@ interface StyleAndCharactersProps {
   copiedIndex: string | null;
   onCopy: (text: string, identifier: string) => void;
   isModal?: boolean;
+  onOpenReferencePacket?: (characterName?: string) => void;
 }
 
 export default function StyleAndCharactersSection({
@@ -17,6 +18,7 @@ export default function StyleAndCharactersSection({
   copiedIndex,
   onCopy,
   isModal = false,
+  onOpenReferencePacket,
 }: StyleAndCharactersProps) {
   const characterEntries = characterSheet ? Object.entries(characterSheet) : [];
   const locationEntries = locationSheet ? Object.entries(locationSheet) : [];
@@ -113,16 +115,30 @@ export default function StyleAndCharactersSection({
           id={isModal ? 'modal-character-sheet-panel' : 'character-sheet-panel'}
           className="bg-[#111110] border border-white/10 p-4 sm:p-6 md:p-7 space-y-4 corner-bracket-container shadow-2xl"
         >
-          <div className="flex items-center justify-between border-b border-white/10 pb-3 sm:pb-4">
+          <div className="flex items-center justify-between border-b border-white/10 pb-3 sm:pb-4 flex-wrap gap-2">
             <div className="flex items-center space-x-2.5">
               <Users size={16} className="text-white shrink-0" />
               <h3 className="font-editorial-meta text-xs sm:text-sm font-semibold text-white">
                 CHARACTER CONTINUITY SHEET
               </h3>
             </div>
-            <span className="stamp-chip text-[9px]">
-              {characterEntries.length} {characterEntries.length === 1 ? 'CHARACTER' : 'CHARACTERS'}
-            </span>
+            <div className="flex items-center gap-2">
+              {onOpenReferencePacket && (
+                <button
+                  type="button"
+                  id={`${isModal ? 'modal-' : ''}open-ref-packet-btn`}
+                  onClick={() => onOpenReferencePacket()}
+                  className="inline-flex items-center font-editorial-meta text-[9px] sm:text-[10px] px-2.5 py-1 text-white bg-[#222220] hover:bg-[#2e2e2a] border border-white/20 rounded transition-colors whitespace-nowrap min-h-[28px]"
+                  title="Generate multi-angle character reference prompts for Midjourney, Kling, and Runway"
+                >
+                  <Sparkles size={11} className="mr-1.5 text-white" />
+                  <span>REFERENCE PACKETS</span>
+                </button>
+              )}
+              <span className="stamp-chip text-[9px]">
+                {characterEntries.length} {characterEntries.length === 1 ? 'CHARACTER' : 'CHARACTERS'}
+              </span>
+            </div>
           </div>
 
           <p className="text-xs text-[#9C9C96] leading-relaxed font-narrative">

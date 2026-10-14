@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Beat, GenerationMode } from '../types';
+import { Beat, GenerationMode, StyleProfile, StoryFormat } from '../types';
+import { TargetModel, compileBeatPrompt } from '../services/promptCompiler';
 import { 
   X, 
   Copy, 
@@ -28,6 +29,9 @@ interface BeatBottomSheetProps {
   copiedIndex: string | null;
   onCopy: (text: string, identifier: string) => void;
   generationMode?: GenerationMode;
+  targetModel?: TargetModel;
+  styleProfile?: StyleProfile;
+  format?: StoryFormat;
 }
 
 export default function BeatBottomSheet({
@@ -41,6 +45,9 @@ export default function BeatBottomSheet({
   copiedIndex,
   onCopy,
   generationMode = 'image',
+  targetModel = 'universal',
+  styleProfile,
+  format = 'short',
 }: BeatBottomSheetProps) {
   // Lock body scroll when bottom sheet is open
   useEffect(() => {
@@ -236,51 +243,92 @@ export default function BeatBottomSheet({
             </div>
           )}
 
-          {/* Structured Visual / Video Prompt */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="font-editorial-meta text-[9px] text-[#9C9C96] tracking-wider uppercase flex items-center gap-1">
-                {isVideoMode ? (
-                  <>
-                    <Clapperboard size={10} className="text-amber-400" />
-                    <span className="text-amber-300 font-medium">Text to Video Prompt</span>
-                  </>
-                ) : (
-                  <>
-                    <ImageIcon size={10} className="text-sky-400/60" />
-                    <span className="text-sky-200/70 font-medium">Structured Image Prompt</span>
-                  </>
+          {/* Structured Visual / Video Prompt with Model Compilation */}
+          {(() => {
+            const fakeScene = {
+              index: sceneIndex,
+              narratorLine: beat.textSpan || '',
+              estimatedSeconds: beat.estimatedSeconds || 5,
+              beats: allBeatsInScene,
+            };
+            const compiled = compileBeatPrompt(beat, fakeScene, styleProfile, targetModel, format, generationMode);
+            const promptToUse = compiled.promptText;
+            const isCopiedNeg = copiedIndex === `neg-${beatKey}`;
+
+            return (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-editorial-meta text-[9px] text-[#9C9C96] tracking-wider uppercase flex items-center gap-1">
+                      {isVideoMode ? (
+                        <>
+                          <Clapperboard size={10} className="text-amber-400" />
+                          <span className="text-amber-300 font-medium">Text to Video Prompt</span>
+                        </>
+                      ) : (
+                        <>
+                          <ImageIcon size={10} className="text-sky-400/60" />
+                          <span className="text-sky-200/70 font-medium">Structured Image Prompt</span>
+                        </>
+                      )}
+                    </span>
+                    {targetModel !== 'universal' && (
+                      <span className="text-[8px] font-editorial-meta px-1.5 py-0.5 bg-white/10 text-white rounded">
+                        {targetModel.toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    id={`mobile-copy-prompt-btn-${beat.beatIndex}`}
+                    onClick={() => onCopy(promptToUse, `prompt-${beatKey}`)}
+                    className={`font-editorial-meta text-[9px] px-2.5 py-1 rounded transition-colors flex items-center gap-1 font-semibold ${
+                      isVideoMode
+                        ? 'bg-amber-400 text-black hover:bg-amber-300'
+                        : 'bg-sky-400/70 text-black hover:bg-sky-400'
+                    }`}
+                  >
+                    {isCopiedPrompt ? (
+                      <>
+                        <Check size={10} className="text-black" />
+                        <span>COPIED</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy size={10} className="text-black" />
+                        <span>{isVideoMode ? 'COPY VIDEO PROMPT' : 'COPY PROMPT'}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <div className={`text-xs leading-relaxed p-3 border rounded selection:bg-white selection:text-black font-mono ${
+                  isVideoMode ? 'bg-[#080807] border-amber-900/40 text-[#F0EFEA]' : 'bg-[#04070C] border-sky-900/20 text-[#D0DFEB]'
+                }`}>
+                  {promptToUse}
+                </div>
+
+                {compiled.negativePrompt && (
+                  <div className="p-2.5 bg-red-950/20 border border-red-900/30 rounded space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-editorial-meta text-[8.5px] text-red-300 uppercase tracking-wider">
+                        Recommended Negative Prompt
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onCopy(compiled.negativePrompt || '', `neg-${beatKey}`)}
+                        className="text-[8.5px] font-editorial-meta text-[#9C9C96] hover:text-white"
+                      >
+                        {isCopiedNeg ? 'COPIED' : 'COPY NEGATIVE'}
+                      </button>
+                    </div>
+                    <p className="font-mono text-[10px] text-red-200/90 leading-relaxed">
+                      {compiled.negativePrompt}
+                    </p>
+                  </div>
                 )}
-              </span>
-              <button
-                type="button"
-                id={`mobile-copy-prompt-btn-${beat.beatIndex}`}
-                onClick={() => onCopy(beat.imagePrompt, `prompt-${beatKey}`)}
-                className={`font-editorial-meta text-[9px] px-2.5 py-1 rounded transition-colors flex items-center gap-1 font-semibold ${
-                  isVideoMode
-                    ? 'bg-amber-400 text-black hover:bg-amber-300'
-                    : 'bg-sky-400/70 text-black hover:bg-sky-400'
-                }`}
-              >
-                {isCopiedPrompt ? (
-                  <>
-                    <Check size={10} className="text-black" />
-                    <span>COPIED</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy size={10} className="text-black" />
-                    <span>{isVideoMode ? 'COPY VIDEO PROMPT' : 'COPY IMAGE PROMPT'}</span>
-                  </>
-                )}
-              </button>
-            </div>
-            <div className={`text-xs leading-relaxed p-3 border rounded selection:bg-white selection:text-black font-mono ${
-              isVideoMode ? 'bg-[#080807] border-amber-900/40 text-[#F0EFEA]' : 'bg-[#04070C] border-sky-900/20 text-[#D0DFEB]'
-            }`}>
-              {beat.imagePrompt}
-            </div>
-          </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Sheet Footer: Beat Navigator */}

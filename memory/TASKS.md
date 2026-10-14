@@ -22,6 +22,13 @@
   - Built grounded anti-hallucination constraint (zero unstated inventions, concrete nouns only).
   - Implemented automated prompt deduplication removing duplicate sentences and redundant continuity blocks.
   - Verified with 47 automated system tests passing and clean compilation.
+- [x] **Model Prompt Compiler, Character Continuity Ledger & Production Timeline Export:**
+  - Built `promptCompiler.ts` with live translation to Midjourney v6.1, Kling AI v1.5/v2, Runway Gen-3, and Luma Dream Machine.
+  - Added deterministic pre-flight storyboard linter (L01-L06) catching camera vector conflicts, pacing mismatches, and prompt word budgets.
+  - Built `characterContinuity.ts` and `CharacterReferenceModal.tsx` generating multi-angle reference packets (front portrait, 3/4 medium angle, full body action) with `--cref` likeness-locking instructions.
+  - Built `timelineExport.ts` supporting CMX 3600 EDL export for Premiere Pro / DaVinci Resolve, SRT subtitles with timecodes, and speech pacing calculation (~140 WPM).
+  - Integrated Model Switcher Toolbar, Director's Pre-Flight advisory bar, and EDL/SRT exports into `ResultsView.tsx` and `BeatBottomSheet.tsx`.
+  - Verified 100% clean compilation and TypeScript checks.
 
 ## Next Steps / Active Tasks
-- [ ] Monitor user workflow and generation results for further style, duration, or camera refinement.
+- [ ] Monitor user feedback and generation results across external generative engines (Midjourney, Kling, Runway, Luma).
