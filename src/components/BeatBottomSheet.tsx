@@ -171,6 +171,11 @@ export default function BeatBottomSheet({
               Editing Note
             </span>
           )}
+          {beat.overlayText && (
+            <span className="stamp-chip text-[9px] bg-amber-950/60 text-amber-300 border-amber-800/50 font-mono">
+              Overlay Text: {beat.overlayText}
+            </span>
+          )}
           <span className="font-editorial-meta text-[9px] text-emerald-400/90 ml-auto flex items-center gap-0.5">
             <Clock size={9} />
             ~{beat.estimatedSeconds}s

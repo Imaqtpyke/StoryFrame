@@ -17,4 +17,20 @@
 - **Safeguard:** Never assign a flat 2.5s minimum floor to individual sub-beats, which would artificially inflate a 5-second sentence into 10 seconds.
 
 ## Test Suite Execution
-- **Command:** `npx tsx src/tests/systemTestSuite.ts` executes the 43 system assertions across all modes, boundaries, duration limits, and hook patterns.
+- **Command:** `npx tsx src/tests/systemTestSuite.ts` executes the 67 comprehensive system assertions across all modes, portrait safe zones, video clip mapping, enhance mode diffs, duration limits, and hook patterns.
+
+## Exponential Backoff Retry Pattern for Gemini 503 / 429
+- **Pattern:** When Google Generative Language API experiences service overload (503 Service Unavailable) or rate limiting (429), immediate retries exacerbate cluster congestion.
+- **Rule:** Double delay on each attempt ($2\text{s} \times 2^{\text{attempt}-1}$) with jitter, capped at 30s. Provide live status updates via callback to display progressive countdowns in the UI instead of failing abruptly.
+
+## Perplexity Universal Hook Taxonomy
+- **Pattern:** High-retention narrative openings across all genres (horror, educational, historical, drama) rely on visceral pattern interrupts within the first 2 seconds.
+- **Archetypes:**
+  1. *Counter-Intuitive Flip:* Subvert common assumptions immediately.
+  2. *Urgent Danger / Stakes:* Immediate physical, environmental, or existential peril.
+  3. *Visceral Internal Anatomy:* Microscopic or internal physiological mechanics.
+  4. *Seemingly Harmless Everyday Object:* Reveal lethal or surprising properties of mundane objects.
+  5. *Extreme Hypothetical:* What happens under unprecedented conditions.
+  6. *Curiosity Gap / Mystery Box:* Tease an unresolved contradiction.
+  7. *Time-Bomb / Ticking Clock:* Finite deadline or countdown.
+  8. *Identity / Direct Address:* Target viewer's personal situation or biology directly.

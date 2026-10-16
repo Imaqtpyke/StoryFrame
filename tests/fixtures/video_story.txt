@@ -1,0 +1,10 @@
+NOTES:
+Mode: Text to Video.
+Pacing: Single-clip takes under 8 seconds. One beat = one clip, or max 2-3 consecutive beats with same subject and location.
+Camera: Continuous dynamic camera motion, no spoken dialogue or quotes inside video prompts.
+Cast: Captain James, seasoned deep-sea submersible pilot with weathered features and orange high-visibility dive jacket.
+Setting: Deep oceanic trench, bioluminescent hydrothermal vents, deep abyssal blue.
+
+Captain James adjusted the hydraulic thruster controls as the submersible drifted past basalt sea ridges.
+He illuminated the high-intensity floodlights into the murky ocean abyss.
+A colossal bioluminescent siphonophore drifted through the beam, trailing glowing tendrils across the observation dome.

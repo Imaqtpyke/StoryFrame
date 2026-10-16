@@ -372,6 +372,15 @@ export default function ResultsView({
       md += `\n`;
     }
 
+    const assumptionsList = result.assumptions || result.storyBible?.assumptions || [];
+    if (assumptionsList.length > 0) {
+      md += `## Story Bible Assumptions\n`;
+      assumptionsList.forEach((assump) => {
+        md += `- ${assump}\n`;
+      });
+      md += `\n`;
+    }
+
     md += `## Complete Narrator Script\n\n> ${fullScript}\n\n`;
 
     md += `## Director Shot List Breakdown\n\n`;
@@ -669,6 +678,11 @@ export default function ResultsView({
                                 <span className={`stamp-chip font-bold text-[8px] ${isVideoMode ? 'bg-amber-950/70 text-amber-300 border-amber-800/80' : 'bg-sky-950/25 text-sky-200/70 border-sky-800/25'}`}>
                                   B{String(beat.beatIndex).padStart(2, '0')}
                                 </span>
+                                {beat.overlayText && (
+                                  <span className="font-mono text-[8px] px-1 py-0.5 rounded-[2px] bg-amber-500/10 text-amber-300 border border-amber-500/20" title="Editor Overlay Text">
+                                    {beat.overlayText}
+                                  </span>
+                                )}
                                 <span className="font-editorial-meta text-[8px] text-emerald-400/90">
                                   ~{beat.estimatedSeconds}s
                                 </span>
@@ -714,6 +728,11 @@ export default function ResultsView({
                                 <span className={`stamp-chip font-bold text-[9px] ${isVideoMode ? 'bg-amber-950/70 text-amber-300 border-amber-800/80' : 'bg-sky-950/25 text-sky-200/70 border-sky-800/25'}`}>
                                   Beat {String(beat.beatIndex).padStart(2, '0')}
                                 </span>
+                                {beat.overlayText && (
+                                  <span className="font-mono text-[8px] px-1 py-0.5 rounded-[2px] bg-amber-500/10 text-amber-300 border border-amber-500/20" title="Editor Overlay Text">
+                                    {beat.overlayText}
+                                  </span>
+                                )}
                                 <span className="font-editorial-meta text-[9px] text-emerald-400/90">
                                   ~{beat.estimatedSeconds}s
                                 </span>

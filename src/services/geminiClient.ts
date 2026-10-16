@@ -13,6 +13,7 @@ import {
 import { generateEnhancedStory } from './enhanceStoryArchitect';
 import { updateVideoPromptDuration } from './videoSuitability';
 import { fetchWithExponentialBackoff } from '../utils/retryFetch';
+import { executeGroundedPipeline } from './groundedPipeline';
 
 function removeEmDashes(text: string): string {
   if (!text) return text;
@@ -172,19 +173,17 @@ export function enforceBeatToBeatProgression(beats: any[]): any[] {
     }
     const overlapRatio = overlapCount / Math.max(prevWords.size, currWords.length);
 
-    // If prompts are > 75% identical, force visual distinction & camera progression
+    // If prompts are > 75% identical, force camera progression without quoting spoken narration
     if (overlapRatio > 0.75) {
       const distinctAngles = [
-        'Close-Up reaction angle focusing on the evolving consequence',
+        'Close-Up reaction angle focusing on physical interaction',
         'Wide panoramic establishing perspective showing the altered environment',
-        'Low-Angle hero framing emphasizing scale and dynamic shift',
-        'Macro detail view focusing on immediate physical interaction',
-        'High-angle vantage perspective looking down across the transformed scene',
+        'Low-Angle hero framing emphasizing grounded scale',
+        'Macro detail view focusing on tactile textures',
+        'High-angle vantage perspective looking down across the scene',
       ];
       const newFraming = distinctAngles[i % distinctAngles.length];
-      const subjectSpan = curr.textSpan ? `"${curr.textSpan}"` : 'the unfolding moment';
-
-      curr.imagePrompt = `${newFraming}. Distinct visual progression capturing ${subjectSpan}, shifting from the previous shot with altered lighting and dynamic camera placement. ${curr.imagePrompt.replace(/^(A |An |The )[^,.]*[,.]/i, '')}`.trim();
+      curr.imagePrompt = `${newFraming}. ${curr.imagePrompt.replace(/^(A |An |The )[^,.]*[,.]/i, '')}`.trim();
       curr.cameraMovement = curr.cameraMovement === prev.cameraMovement ? 'Tracking Subject' : curr.cameraMovement;
     }
   }
@@ -223,6 +222,11 @@ export async function generateOriginalStory(
 
   const isLongForm = format === 'long';
   const defaultAspectRatio = isLongForm ? '16:9 widescreen' : '9:16 vertical';
+
+  // Long-form 16:9 landscape text-to-image is routed to the 5-stage Grounded Pipeline
+  if (isLongForm && !isVideoMode) {
+    return executeGroundedPipeline(req, apiKey, userSignal, onStatusMessage);
+  }
 
   let durationInstruction = '';
   if (isVideoMode) {

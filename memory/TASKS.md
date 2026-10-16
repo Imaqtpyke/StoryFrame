@@ -37,7 +37,6 @@
   - Removed the detailed view layout and toggle, defaulting the Results View exclusively to the clean compact matrix and mobile filmstrip with tap-to-view bottom sheet modals (`ResultsView.tsx`).
   - Strengthened Assistant Chat instructions (`assistantChatService.ts`) to mandate that all user story prompts and ideas are unconditionally transformed into high-retention Zack D. Films hook architecture.
 
-## Next Steps / Active Tasks
 - [x] **Bugfix: Resolved ReferenceError for expandedDesktopBeats:**
   - Removed lingering references and unused expansion helper functions (`expandedDesktopBeats`, `handleCollapseDesktopBeat`, `handleToggleAllBeatsInScene`) in `ResultsView.tsx` after defaulting exclusively to the compact matrix view.
   - Verified clean compilation and zero TypeScript errors with `lint_applet`.
@@ -45,7 +44,17 @@
   - Implemented robust `fetchWithExponentialBackoff` utility in `src/utils/retryFetch.ts` with progressive delay doubling (2s initial, up to 30s max, 4 attempts).
   - Integrated retry logic into `geminiClient.ts`, `enhanceStoryArchitect.ts`, and `assistantChatService.ts`.
   - Added real-time retry status message feedback displaying server busy warnings in both the loading screen (`ResultsSkeleton.tsx`) and AI assistant chat (`AssistantChatDrawer.tsx`).
+- [x] **Perplexity Universal Story Hook Taxonomy Integration:**
+  - Enriched AI assistant system instructions with 8 universal hook archetypes (Counter-Intuitive Flip, Urgent Danger, Visceral Internal Anatomy, Harmless Everyday Object, Extreme Hypothetical, Curiosity Gap, Time-Bomb, Identity).
+  - Verified clean compilation and zero build errors.
+
+- [x] **Universal Story Bible Across Formats, Video Clip Mapping & Enhance Diff:**
+  - Implemented session caching for Story Bibles (`bibleCache.ts`) based on story + NOTES hash.
+  - Configured video clip mapping (`stage2BeatPlan.ts`) mapping one beat = one clip or max 2-3 consecutive beats with same subject/location within 8s.
+  - Enforced short-form rapid pacing constants (`MIN_DWELL 0.8s`, `FAST_CUT_BELOW 1.1s`, `MAX_DWELL 2.0s`, target average 1.2s to 1.8s).
+  - Built enhance mode Bible preservation diff check (`enhanceBibleDiff.ts`) and automatic Bible rebuilding upon user approval.
+  - Added portrait safe zone clearances and NOTES stripping (`stage0Prepare.ts`).
+  - Added test fixtures for portrait, video, and non-horror enhance stories, raising test coverage to 67 automated assertions passing successfully.
+
+## Next Steps / Active Tasks
 - [ ] Monitor user feedback on storyboard layout and model prompt copy workflows.
-
-
-

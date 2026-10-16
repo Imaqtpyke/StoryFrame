@@ -9,6 +9,46 @@ export interface StyleProfile {
   lensAndFilmStock?: string;
 }
 
+export interface StoryBibleCastMember {
+  id: string;
+  role: string;
+  visualLock: string;
+}
+
+export interface StoryBibleThreat {
+  canonicalLook: string;
+  allowedVariants: string[];
+}
+
+export interface StoryBibleLocation {
+  id: string;
+  visualLock: string;
+}
+
+export interface StoryBibleMotif {
+  id: string;
+  description: string;
+}
+
+export interface StoryBibleReferent {
+  phrase: string;
+  concreteEntity: string;
+  visualDepiction: string;
+}
+
+export interface StoryBible {
+  cast: StoryBibleCastMember[];
+  threat: StoryBibleThreat;
+  locations: StoryBibleLocation[];
+  motifs: StoryBibleMotif[];
+  events: string[];
+  referents: StoryBibleReferent[];
+  withheld: string[];
+  forbidden: string[];
+  worldStyle: string;
+  assumptions: string[];
+}
+
 export interface Beat {
   beatIndex: number;
   textSpan: string;
@@ -22,6 +62,15 @@ export interface Beat {
   transitionHint?: string;
   soundCue?: string;
   optics?: string;
+  wordRange?: [number, number];
+  depicts?: string;
+  kind?: 'literal' | 'figurative' | 'withheld-effect';
+  referentId?: string;
+  intensity?: 'low' | 'medium' | 'high';
+  subjectIds?: string[];
+  newInfo?: string;
+  overlayText?: string;
+  flaggedIssue?: string;
 }
 
 export interface Scene {
@@ -50,6 +99,10 @@ export interface StoryGenerationResult {
     hookType?: string;
     hookRationale?: string;
   };
+  storyBible?: StoryBible;
+  assumptions?: string[];
+  authorNotes?: string;
+  timingSource?: 'actual' | 'estimated';
 }
 
 export interface CustomBeatDefinition {

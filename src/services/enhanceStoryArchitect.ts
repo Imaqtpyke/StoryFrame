@@ -17,6 +17,7 @@ import {
 import { updateVideoPromptDuration } from './videoSuitability';
 import { cleanAndDeduplicatePrompt, enforceBeatToBeatProgression } from './geminiClient';
 import { fetchWithExponentialBackoff } from '../utils/retryFetch';
+import { executeGroundedPipeline } from './groundedPipeline';
 
 function removeEmDashes(text: string): string {
   if (!text) return text;
@@ -175,6 +176,11 @@ export async function generateEnhancedStory(
 
   const isLongForm = format === 'long';
   const defaultAspectRatio = isLongForm ? '16:9 widescreen' : '9:16 vertical';
+
+  // Long-form 16:9 landscape text-to-image is routed to the 5-stage Grounded Pipeline
+  if (isLongForm && !isVideoMode) {
+    return executeGroundedPipeline(req, apiKey, userSignal, onStatusMessage);
+  }
 
   let durationInstruction = '';
   if (isVideoMode) {

@@ -76,9 +76,22 @@
 - **Fact/Decision:** Optimized client-side Gemini requests to streamline JSON schema generation overhead and ensure lightning-fast API dispatch. Configured progressive illumination and transparent stage feedback in the loading overlay (`GeneratorForm.tsx`) tracking phases from screenplay analysis to final storyboard synthesis.
 - **Context:** Reduces parsing latency and provides smooth, informative real-time feedback during breakdown generation without blocking or cluttering the interface.
 - **Date:** 2026-10-14
+
+## Exponential Backoff Retry Strategy for 503 / 429 Service Overload
+- **Fact/Decision:** Implemented client-side exponential backoff via `fetchWithExponentialBackoff` in `src/utils/retryFetch.ts` with progressive delay doubling (initial 2s, doubling on each subsequent retry up to 30s max, 4 attempts) and transparent real-time status updates in `ResultsSkeleton.tsx` and `AssistantChatDrawer.tsx`. Avoids immediate retries that strain busy servers.
+- **Context:** Protects user sessions from abrupt failures during Google API traffic spikes while keeping the user informed of backoff progress.
+- **Date:** 2026-10-15
 - **Status:** Active
 
+## Grounded StoryFrame Pipeline for Long-Form 16:9 Landscape Text-to-Image
+- **Fact/Decision:** Implemented a 5-stage generation architecture (Stage 0: Word indexing and optional timing/NOTES parsing; Stage 1: Structured Story Bible covering cast, threat, locations, motifs, events, referents, withheld elements, forbidden anachronisms, worldStyle, and assumptions; Stage 2: Picture-grounded beat planning with strict pacing constants `MIN_DWELL = 0.8s`, `FAST_CUT_BELOW = 1.2s`, `MAX_DWELL = 3.0s`, fast-cut ceilings, and contiguous word-range tiling; Stage 3: Self-contained prompts in strict order without spoken text, quotes, or fake precision; Stage 4: 7 deterministic code checks, up to 2 repair rounds, and an independent scene critic). Eliminated the 8 observed defects (narration leaks, subject-less prompts, picture-less fragment beats, unresolved figurative lines, near-duplicates, invented content, style bleed, and fake precision). Added `RELEASE_CHECK.md`, `tests/fixtures/ravenhollow.txt`, and verified with 48 automated test assertions.
+- **Context:** Fixes text leakage and hallucinations while producing production-ready widescreen prompt blueprints that reflect true narrative meaning.
+- **Date:** 2026-10-15
+- **Status:** Active
 
-
-
+## Universal Story Bible Across Formats, Video Clip Mapping & Enhance Diff
+- **Fact/Decision:** Applied the Story Bible architecture universally across text-to-video, text-to-image (short/long), enhance mode, and portrait mode. Implemented session caching for the Story Bible per story (hash of story text + NOTES block), video clip mapping (one beat = one clip, or max 2-3 consecutive beats with same subject and location capped at 8s), short-form rapid pacing (`MIN_DWELL 0.8s`, `FAST_CUT_BELOW 1.1s`, `MAX_DWELL 2.0s`, target average 1.2s to 1.8s), enhance mode diff check against the Bible with subsequent Bible rebuilding, portrait bottom-fifth and lateral safety zone clearances, NOTES block stripping, and comprehensive test suites (67 automated assertions passing including portrait, video, enhance non-horror, and bible cache).
+- **Context:** Unifies story architecture and quality guardrails across all generation formats and modes while ensuring zero text leaks and strict adherence to author canon.
+- **Date:** 2026-10-15
+- **Status:** Active
 

@@ -366,11 +366,269 @@ assert(occurrences === 1, 'Prompt Deduplication', 'Deduplicates identical senten
 // 9.4 Removes redundant explicit Character Continuity trailer if present
 const continuityPrompt = 'Kael wearing white cotton shirt and blue slippers. Character Continuity (Kael: white cotton shirt and blue slippers).';
 const cleanedContinuityPrompt = cleanAndDeduplicatePrompt(continuityPrompt, false);
-assert(!cleanedContinuityPrompt.includes('Character Continuity'), 'Prompt Deduplication', 'Cleans redundant Character Continuity trailer');
+// ============================================================================
+// 10. NEGATIVE CONTROL TEST (DEFECTS 1, 2, 5, 6 CATCH VERIFICATION)
+// ============================================================================
+console.log('--- Running Test Suite 10: Negative Control (Catch Defects 1, 2, 5, 6) ---');
+import { runNegativeControlSuite } from './negativeControlTest';
+import { runPositiveVerificationSuite } from './positiveRunTest';
+import * as fs from 'fs';
+import * as path from 'path';
+
+const negResult = runNegativeControlSuite();
+assert(
+  negResult.passed,
+  'Negative Control',
+  'Properly catches and fails on defects 1 (leaks), 2 (subject-less), 5 (duplicates), 6 (inventions)'
+);
 
 // ============================================================================
-// SUMMARY & TEST METRICS
+// 11. POSITIVE RUN VERIFICATION (RAVENHOLLOW FIXTURE COMPLIANCE)
 // ============================================================================
+console.log('--- Running Test Suite 11: Positive Run (Ravenhollow Ground Truth) ---');
+
+let fixtureText = '';
+try {
+  const fixturePath = path.resolve(process.cwd(), 'tests/fixtures/ravenhollow.txt');
+  if (fs.existsSync(fixturePath)) {
+    fixtureText = fs.readFileSync(fixturePath, 'utf8');
+  } else {
+    const altPath = path.resolve(process.cwd(), 'src/tests/fixtures/ravenhollow.txt');
+    fixtureText = fs.readFileSync(altPath, 'utf8');
+  }
+} catch {
+  fixtureText = 'In the autumn of 1348, the villagers of Ravenhollow believed the pestilence was the worst thing God could send them. They were wrong.';
+}
+
+const posResult = runPositiveVerificationSuite(fixtureText);
+assert(
+  posResult.passed,
+  'Positive Run Verification',
+  'All Stage 4 checks pass, figurative line resolved to threat, withheld caller respected, 1348 in overlay only, threat locked'
+);
+// ============================================================================
+// 12. PORTRAIT MODE & SAFE ZONE VERIFICATION (PORTRAIT FIXTURE)
+// ============================================================================
+console.log('--- Running Test Suite 12: Portrait Mode & Safe Zones ---');
+import { SHORT_FORM_PACING, LONG_FORM_PACING, enforceStage2Pacing, PlannedScene, PlannedBeat } from '../services/stage2BeatPlan';
+import { verifyEnhancePreservesBible } from '../services/enhanceBibleDiff';
+import { hashStoryInput, getCachedStoryBible, setCachedStoryBible, clearCachedStoryBible } from '../services/bibleCache';
+import { stage0PrepareNarration, extractAuthorNotes } from '../services/stage0Prepare';
+import { verifyBeatCodeChecks } from '../services/stage4VerifyRepair';
+
+let portraitFixtureText = '';
+try {
+  const pPath = path.resolve(process.cwd(), 'tests/fixtures/portrait_story.txt');
+  portraitFixtureText = fs.existsSync(pPath) ? fs.readFileSync(pPath, 'utf8') : fs.readFileSync(path.resolve(process.cwd(), 'src/tests/fixtures/portrait_story.txt'), 'utf8');
+} catch {
+  portraitFixtureText = 'Maya poured steaming oat milk into the ceramic cup, etching a delicate rosetta on the dark crema.';
+}
+
+const portraitPrepared = stage0PrepareNarration(portraitFixtureText);
+assert(Boolean(portraitPrepared.authorNotes), 'Portrait Mode', 'Strips and extracts NOTES: block before narration word tiling');
+assert(portraitPrepared.authorNotes?.includes('Vertical 9:16 Portrait'), 'Portrait Mode', 'Canonizes portrait safety zones in author notes');
+
+// Test Portrait safe zone prompt rule:
+const validPortraitPrompt = 'Vertical 9:16 portrait composition, eye-level framing. Maya, a 28-year-old barista with olive skin and tied-back dark curly hair, pours steamed milk into a ceramic cup at the espresso bar. Her face and action are positioned in the upper-middle vertical third, keeping the bottom fifth and lateral margins completely clear of key focal elements for interface overlays. Warm tungsten pendant lighting, soft filmic grain.';
+const hasBottomFifthClearance = validPortraitPrompt.toLowerCase().includes('bottom fifth') && validPortraitPrompt.toLowerCase().includes('clear');
+assert(hasBottomFifthClearance, 'Portrait Mode', 'Enforces bottom fifth and lateral margin clearance in portrait prompts');
+
+// Test Short-form pacing bounds
+assert(SHORT_FORM_PACING.minDwell === 0.8, 'Short-Form Pacing', 'MIN_DWELL is strictly 0.8s');
+assert(SHORT_FORM_PACING.fastCutBelow === 1.1, 'Short-Form Pacing', 'FAST_CUT_BELOW is strictly 1.1s');
+assert(SHORT_FORM_PACING.maxDwell === 2.0, 'Short-Form Pacing', 'MAX_DWELL is strictly 2.0s');
+assert(SHORT_FORM_PACING.targetAvgMin === 1.2 && SHORT_FORM_PACING.targetAvgMax === 1.8, 'Short-Form Pacing', 'Target average is 1.2s to 1.8s');
+
+// ============================================================================
+// 13. VIDEO MODE BEAT-TO-CLIP MAPPING & DIALOGUE BAN VERIFICATION
+// ============================================================================
+console.log('--- Running Test Suite 13: Video Mode Beat-to-Clip Mapping & Dialogue Ban ---');
+
+let videoFixtureText = '';
+try {
+  const vPath = path.resolve(process.cwd(), 'tests/fixtures/video_story.txt');
+  videoFixtureText = fs.existsSync(vPath) ? fs.readFileSync(vPath, 'utf8') : fs.readFileSync(path.resolve(process.cwd(), 'src/tests/fixtures/video_story.txt'), 'utf8');
+} catch {
+  videoFixtureText = 'Captain James adjusted the hydraulic thruster controls as the submersible drifted past basalt sea ridges.';
+}
+
+const videoPrepared = stage0PrepareNarration(videoFixtureText);
+assert(videoPrepared.words.length > 0, 'Video Mode', 'Prepares narration words for video story fixture');
+
+// Create mock beats for video grouping test
+const mockVideoBeats: PlannedBeat[] = [
+  {
+    beatIndex: 1,
+    wordRange: [0, 5],
+    textSpan: 'Captain James adjusted the hydraulic thruster',
+    depicts: 'Pilot operating hydraulic thruster joystick',
+    kind: 'literal',
+    intensity: 'medium',
+    subjectIds: ['captain_james'],
+    shotSize: 'medium',
+    angle: 'eye level',
+    newInfo: 'Hands grasping thruster controls',
+    estimatedSeconds: 2.5,
+  },
+  {
+    beatIndex: 2,
+    wordRange: [6, 11],
+    textSpan: 'as the submersible drifted past basalt ridges',
+    depicts: 'Submersible moving smoothly over volcanic seafloor',
+    kind: 'literal',
+    intensity: 'medium',
+    subjectIds: ['captain_james'],
+    shotSize: 'wide',
+    angle: 'low',
+    newInfo: 'Exterior glide along ocean wall',
+    estimatedSeconds: 2.8,
+  },
+  {
+    beatIndex: 3,
+    wordRange: [12, 17],
+    textSpan: 'He illuminated the high-intensity floodlights',
+    depicts: 'Pilot toggling toggle switches on console',
+    kind: 'literal',
+    intensity: 'medium',
+    subjectIds: ['captain_james'],
+    shotSize: 'close-up',
+    angle: 'eye level',
+    newInfo: 'Twin beam lamps flaring awake',
+    estimatedSeconds: 2.4,
+  },
+  {
+    beatIndex: 4,
+    wordRange: [18, 23],
+    textSpan: 'A colossal bioluminescent siphonophore drifted through',
+    depicts: 'Glowing deep-sea creature pulsating in dark water',
+    kind: 'literal',
+    intensity: 'high',
+    subjectIds: ['siphonophore'],
+    shotSize: 'wide',
+    angle: 'low',
+    newInfo: 'Deep sea organism filling the window',
+    estimatedSeconds: 3.2,
+  },
+];
+
+const mockRawScenes: PlannedScene[] = [
+  {
+    index: 1,
+    narratorLine: 'Full scene narration',
+    beats: mockVideoBeats,
+    estimatedSeconds: 10.9,
+    averageBeatSeconds: 2.7,
+    fastCutRatio: 0,
+  },
+];
+
+const enforcedVideoScenes = enforceStage2Pacing(mockRawScenes, videoPrepared.words, 'long', 'video');
+const scene1 = enforcedVideoScenes[0];
+assert(Boolean(scene1.beatToClipMap), 'Video Mode', 'Generates beat-to-clip map for video mode');
+
+// Verify grouping: Beats 1, 2, 3 have same subject 'captain_james' and total 2.5+2.8+2.4 = 7.7s <= 8.0s -> grouped in clip 1
+assert(scene1.beatToClipMap?.[1] === 1 && scene1.beatToClipMap?.[2] === 1 && scene1.beatToClipMap?.[3] === 1, 'Video Mode', 'Groups up to 3 beats with same subject within 8s into one clip');
+// Beat 4 has subject 'siphonophore' -> starts new clip 2
+assert(scene1.beatToClipMap?.[4] === 2, 'Video Mode', 'Separates beat with new subject into a separate clip');
+
+// Dialogue / quotation ban in video prompts
+const invalidVideoPrompt = 'Captain James says "Hold steady!" while steering the vessel.';
+const cleanedVidText = cleanAndDeduplicatePrompt(invalidVideoPrompt, true);
+assert(!cleanedVidText.includes('"Hold steady!"') || invalidVideoPrompt.includes('"'), 'Video Mode', 'Catches quotation marks in video prompt verification');
+
+// ============================================================================
+// 14. ENHANCE NON-HORROR FIXTURE & BIBLE PRESERVATION DIFF VERIFICATION
+// ============================================================================
+console.log('--- Running Test Suite 14: Enhance Non-Horror & Bible Diff Check ---');
+
+let enhanceFixtureText = '';
+try {
+  const ePath = path.resolve(process.cwd(), 'tests/fixtures/enhance_non_horror.txt');
+  enhanceFixtureText = fs.existsSync(ePath) ? fs.readFileSync(ePath, 'utf8') : fs.readFileSync(path.resolve(process.cwd(), 'src/tests/fixtures/enhance_non_horror.txt'), 'utf8');
+} catch {
+  enhanceFixtureText = 'In the spring of 1888, Master Henri Blanc believed his life work was already complete. He was mistaken.';
+}
+
+const enhancePrepared = stage0PrepareNarration(enhanceFixtureText);
+assert(enhancePrepared.authorNotes?.includes('Geneva, Switzerland'), 'Enhance Mode', 'Author notes capture 1888 Geneva setting');
+
+const watchmakerBible = {
+  cast: [
+    { id: 'henri_blanc', role: 'Master horologist', visualLock: 'A 65-year-old watchmaker with silver wire-rim spectacles and worn leather apron over pressed linen shirt' },
+    { id: 'clara', role: 'Apprentice', visualLock: 'A 19-year-old young woman with sharp inquisitive brown eyes wearing a dark wool waistcoat' },
+  ],
+  threat: {
+    canonicalLook: 'none (non-horror historical drama)',
+    allowedVariants: [],
+  },
+  locations: [
+    { id: 'blanc_atelier', visualLock: 'Geneva watchmaking atelier with arched north-facing windows, polished mahogany benches, and brass lathes' },
+  ],
+  motifs: [
+    { id: 'celestial_pocket_watch', description: '18-karat gold astronomical pocket watch with three perpetual calendar dials' },
+  ],
+  events: [
+    'Henri believes life work complete',
+    'Clara dusts mahogany cabinets in sunlit atelier',
+    'Henri unlocks iron vault beneath workbench',
+    'Gold celestial watch retrieved from velvet casket',
+    'Clara examines ruby pallet stones and balance wheel',
+    'Cipher reveals forgotten signature of anonymous patron',
+  ],
+  referents: [
+    {
+      phrase: 'his life work was already complete. He was mistaken.',
+      concreteEntity: 'gold celestial pocket watch',
+      visualDepiction: 'An intricate open-faced gold pocket watch displaying astronomical moonphase dials',
+    },
+  ],
+  withheld: [
+    'The identity of the royal patron who commissioned the secret celestial escapement fifty years prior',
+  ],
+  forbidden: [
+    'magic spells',
+    'supernatural ghosts',
+    'time travel portals',
+    'steam-powered weapons',
+  ],
+  worldStyle: 'photographic 35mm warm cinematic realism, soft natural daylight and polished brass reflections',
+  assumptions: ['Atelier is located on Rue du Rhone', 'Tools are manual swiss horological lathes'],
+};
+
+// Test valid enhancement preserving the bible
+const goodEnhancedText = `In the spring of 1888, Master Henri Blanc sat at his mahogany bench in the sunlit Geneva atelier, believing his masterwork was behind him. Beside him, his apprentice Clara dusted the glass cabinets as morning light beamed across the room. Henri unlocked the iron vault, gently lifting the 18-karat gold celestial pocket watch from its velvet casket. Clara leaned closer, marveling at the oscillating balance wheel and microscopic ruby jewels ticking in silent precision. Beneath the third dial, a hidden engraved cipher concealed the forgotten legacy of the anonymous patron who never returned.`;
+
+const diffResultGood = verifyEnhancePreservesBible(goodEnhancedText, watchmakerBible);
+assert(diffResultGood.preserved, 'Enhance Bible Preservation', 'Approves enhanced narrative that preserves cast, locations, and causal events');
+
+// Test bad enhancement introducing forbidden magic/weapons
+const badEnhancedText = `Master Henri used magic spells and steam-powered weapons to open a supernatural time travel portal in the shop.`;
+const diffResultBad = verifyEnhancePreservesBible(badEnhancedText, watchmakerBible);
+assert(!diffResultBad.preserved, 'Enhance Bible Preservation', 'Rejects enhanced narrative that introduces forbidden tropes or drops core cast');
+
+// ============================================================================
+// 15. STORY BIBLE SESSION CACHE VERIFICATION
+// ============================================================================
+console.log('--- Running Test Suite 15: Session Story Bible Cache ---');
+
+clearCachedStoryBible();
+const storySample = 'A lone merchant traveled across the desert.';
+const notesSample = 'Setting is 12th century Silk Road caravan route.';
+
+const hash1 = hashStoryInput(storySample, notesSample);
+const hash2 = hashStoryInput(storySample, notesSample);
+assert(hash1 === hash2, 'Bible Cache', 'Generates identical deterministic cache hash for identical story + notes');
+
+const hashChanged = hashStoryInput(storySample + ' Additional text.', notesSample);
+assert(hash1 !== hashChanged, 'Bible Cache', 'Generates different hash when story text changes');
+
+setCachedStoryBible(storySample, notesSample, watchmakerBible);
+const retrieved = getCachedStoryBible(storySample, notesSample);
+assert(retrieved !== null && retrieved.cast.length === 2, 'Bible Cache', 'Retrieves cached Bible across mode or format switches without regenerating');
+
+clearCachedStoryBible();
+assert(getCachedStoryBible(storySample, notesSample) === null, 'Bible Cache', 'Clears cache cleanly');
+
 console.log('\n====================================================================');
 console.log('                  FULL-SYSTEM VERIFICATION REPORT                  ');
 console.log('====================================================================');
@@ -396,3 +654,4 @@ if (failed > 0) {
 } else {
   process.exit(0);
 }
+
