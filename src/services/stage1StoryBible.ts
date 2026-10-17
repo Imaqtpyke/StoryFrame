@@ -6,9 +6,10 @@
  * world style, and explicit assumptions.
  */
 
-import { StoryBible } from '../types';
+import { StoryBible, AiProvider } from '../types';
 import { fetchWithExponentialBackoff } from '../utils/retryFetch';
 import { getCachedStoryBible, setCachedStoryBible } from './bibleCache';
+import { executeJsonLlmCall } from './unifiedAiService';
 
 export const STORY_BIBLE_SCHEMA = {
   type: 'OBJECT',
@@ -119,7 +120,9 @@ export async function stage1GenerateStoryBible(
   apiKey: string,
   modelQuality: 'standard' | 'high' = 'standard',
   userSignal?: AbortSignal,
-  onStatusMessage?: (msg: string) => void
+  onStatusMessage?: (msg: string) => void,
+  provider: AiProvider = 'gemini',
+  groqModel?: string
 ): Promise<StoryBible> {
   // Check session cache first (hash of narration + NOTES block)
   const cached = getCachedStoryBible(narration, authorNotes);
@@ -129,9 +132,6 @@ export async function stage1GenerateStoryBible(
     }
     return cached;
   }
-
-  const modelName = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-3.8-flash';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
   const prompt = `You are an expert film director and master story architect.
 Analyze the following narrative and create an authoritative STORY BIBLE.
@@ -156,45 +156,65 @@ RULES FOR THE STORY BIBLE:
 
 Output valid JSON matching the schema.`;
 
-  const payload = {
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: {
-      responseMimeType: 'application/json',
-      responseSchema: STORY_BIBLE_SCHEMA,
+  let bible: StoryBible;
+
+  if (provider === 'groq') {
+    bible = await executeJsonLlmCall<StoryBible>({
+      provider: 'groq',
+      apiKey,
+      systemPrompt: 'You are an expert film director and master story architect. Analyze the narrative and create an authoritative STORY BIBLE. Output valid JSON.',
+      userPrompt: prompt,
+      modelQuality,
+      groqModel,
+      userSignal,
+      onStatusMessage,
       temperature: 0.2,
-    },
-  };
+    });
+  } else {
+    const modelName = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-3.8-flash';
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
-  const response = await fetchWithExponentialBackoff(
-    () =>
-      fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        signal: userSignal,
-      }),
-    {
-      initialDelayMs: 2000,
-      maxAttempts: 4,
-      onRetry: (attempt, _max, delayMs) => {
-        if (onStatusMessage) {
-          onStatusMessage(`Analyzing story architecture (Attempt ${attempt}/4, waiting ${Math.round(delayMs / 1000)}s)...`);
-        }
+    const payload = {
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseSchema: STORY_BIBLE_SCHEMA,
+        temperature: 0.2,
       },
+    };
+
+    const response = await fetchWithExponentialBackoff(
+      () =>
+        fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: userSignal,
+        }),
+      {
+        initialDelayMs: 2000,
+        maxAttempts: 4,
+        onRetry: (attempt, _max, delayMs) => {
+          if (onStatusMessage) {
+            onStatusMessage(`Analyzing story architecture (Attempt ${attempt}/4, waiting ${Math.round(delayMs / 1000)}s)...`);
+          }
+        },
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Story Bible API error: HTTP ${response.status}`);
     }
-  );
 
-  if (!response.ok) {
-    throw new Error(`Story Bible API error: HTTP ${response.status}`);
+    const json = await response.json();
+    const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!rawText) {
+      throw new Error('Empty response from Story Bible generator');
+    }
+
+    bible = JSON.parse(rawText) as StoryBible;
   }
 
-  const json = await response.json();
-  const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!rawText) {
-    throw new Error('Empty response from Story Bible generator');
-  }
-
-  const bible = JSON.parse(rawText) as StoryBible;
   setCachedStoryBible(narration, authorNotes, bible);
   return bible;
 }

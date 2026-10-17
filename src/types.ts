@@ -120,6 +120,8 @@ export interface CustomSceneDefinition {
   beats: CustomBeatDefinition[];
 }
 
+export type AiProvider = 'gemini' | 'groq';
+
 export interface GenerateStoryRequest {
   story: string;
   characterStyle: string;
@@ -127,7 +129,9 @@ export interface GenerateStoryRequest {
   platform: string;
   durationMode: 'preset' | 'custom' | 'automatic';
   durationSeconds?: number;
+  aiProvider?: AiProvider;
   modelQuality?: 'standard' | 'high';
+  groqModel?: string;
   generationMode: GenerationMode;
   targetVideoDuration?: number;
   beatMode?: 'automatic' | 'custom';

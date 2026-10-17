@@ -14,6 +14,7 @@ import { generateEnhancedStory } from './enhanceStoryArchitect';
 import { updateVideoPromptDuration } from './videoSuitability';
 import { fetchWithExponentialBackoff } from '../utils/retryFetch';
 import { executeGroundedPipeline } from './groundedPipeline';
+import { executeJsonLlmCall } from './unifiedAiService';
 
 function removeEmDashes(text: string): string {
   if (!text) return text;
@@ -551,71 +552,18 @@ Format: ${isLongForm ? 'Long form (16:9)' : 'Short form (9:16)'}
 Platform: ${platform}
 ${durationInstruction}${customBeatsPrompt}`;
 
-  const targetModel = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-3.8-flash';
-
-  let rawText = '';
-  let parsedData: any = null;
-
-  if (userSignal?.aborted) {
-    throw new DOMException('Generation request was cancelled by user.', 'AbortError');
-  }
-
-  if (userSignal?.aborted) {
-    throw new DOMException('Generation request was cancelled by user.', 'AbortError');
-  }
-
-  try {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
-    const payload = {
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
-        },
-      ],
-      generationConfig: {
-        temperature: 0.3,
-        topP: 0.85,
-        responseMimeType: 'application/json',
-      },
-    };
-
-    const resp = await fetchWithExponentialBackoff(
-      () => fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        signal: userSignal,
-      }),
-      {
-        onRetry: (attempt, maxAttempts, delayMs) => {
-          if (onStatusMessage) {
-            const sec = Math.ceil(delayMs / 1000);
-            onStatusMessage(`Server busy (503/429). Retrying in ${sec}s (Attempt ${attempt} of ${maxAttempts})...`);
-          }
-        }
-      }
-    );
-
-    if (!resp.ok) {
-      const errText = await resp.text().catch(() => '');
-      throw new Error(`API error (${resp.status}): ${errText}`);
-    }
-
-    const resJson = await resp.json();
-    const contentCandidate = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!contentCandidate) {
-      throw new Error('Empty response from model');
-    }
-
-    rawText = contentCandidate;
-    parsedData = JSON.parse(rawText);
-  } catch (err: any) {
-    if (userSignal?.aborted || err?.name === 'AbortError') {
-      throw new DOMException('Generation request was cancelled by user.', 'AbortError');
-    }
-    throw new Error(sanitizeErrorMessage(err?.message || 'Failed to generate story breakdown.', apiKey));
-  }
+  const parsedData = await executeJsonLlmCall<any>({
+    provider: req.aiProvider || 'gemini',
+    apiKey,
+    systemPrompt,
+    userPrompt,
+    modelQuality,
+    groqModel: req.groqModel,
+    userSignal,
+    onStatusMessage,
+    temperature: 0.3,
+    topP: 0.85,
+  });
 
   // Sanitize styleProfile
   const rawStyleProfile = parsedData.styleProfile || {};

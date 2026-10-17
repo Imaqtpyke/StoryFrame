@@ -5,11 +5,12 @@
  * and performs an independent critic call per scene.
  */
 
-import { StoryBible } from '../types';
+import { StoryBible, AiProvider } from '../types';
 import { NumberedWord } from './stage0Prepare';
 import { WrittenPromptBeat } from './stage3PromptWriter';
 import { MIN_DWELL, FAST_CUT_BELOW, MAX_DWELL } from './stage2BeatPlan';
 import { fetchWithExponentialBackoff } from '../utils/retryFetch';
+import { callGroqChatCompletion } from './groqClient';
 
 export interface BeatCheckResult {
   passed: boolean;
@@ -269,7 +270,7 @@ export function verifyStyleBleed(beat: WrittenPromptBeat, bible: StoryBible): Be
 export function verifyShotLabelMatch(beat: WrittenPromptBeat): BeatCheckResult {
   const issues: string[] = [];
   const lowerPrompt = beat.imagePrompt.toLowerCase();
-  const shotSize = (beat.shotType || '').toLowerCase();
+  const shotSize = (beat.shotSize || '').toLowerCase();
 
   // OTS requires at least two subjects
   if ((shotSize.includes('over-the-shoulder') || shotSize.includes('ots')) && (beat.subjectIds || []).length < 2) {
@@ -367,11 +368,10 @@ export async function repairFailingBeat(
   issues: string[],
   bible: StoryBible,
   apiKey: string,
-  modelQuality: 'standard' | 'high' = 'standard'
+  modelQuality: 'standard' | 'high' = 'standard',
+  provider: AiProvider = 'gemini',
+  groqModel?: string
 ): Promise<WrittenPromptBeat> {
-  const modelName = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-3.8-flash';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-
   const prompt = `You are a prompt doctor. Fix this single AI image prompt which failed quality checks.
 
 FAILING IMAGE PROMPT:
@@ -398,25 +398,46 @@ REPAIR RULES:
 Return ONLY the corrected image prompt text as plain string with no markdown formatting.`;
 
   try {
-    const response = await fetchWithExponentialBackoff(() =>
-      fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.1 },
-        }),
-      })
-    );
-
-    if (response.ok) {
-      const json = await response.json();
-      const fixedText = json?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-      if (fixedText) {
+    if (provider === 'groq') {
+      const fixedText = await callGroqChatCompletion(
+        apiKey,
+        [{ role: 'user', content: prompt }],
+        {
+          model: groqModel || (modelQuality === 'high' ? 'openai/gpt-oss-120b' : 'qwen/qwen3.8-27b'),
+          jsonMode: false,
+          temperature: 0.1,
+        }
+      );
+      if (fixedText && fixedText.trim()) {
         return {
           ...beat,
-          imagePrompt: fixedText.replace(/^["']|["']$/g, ''),
+          imagePrompt: fixedText.trim().replace(/^["']|["']$/g, ''),
         };
+      }
+    } else {
+      const modelName = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-3.8-flash';
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+
+      const response = await fetchWithExponentialBackoff(() =>
+        fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.1 },
+          }),
+        })
+      );
+
+      if (response.ok) {
+        const json = await response.json();
+        const fixedText = json?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        if (fixedText) {
+          return {
+            ...beat,
+            imagePrompt: fixedText.replace(/^["']|["']$/g, ''),
+          };
+        }
       }
     }
   } catch {
@@ -435,11 +456,11 @@ export async function runSceneCritic(
   beats: WrittenPromptBeat[],
   bible: StoryBible,
   apiKey: string,
-  modelQuality: 'standard' | 'high' = 'standard'
+  modelQuality: 'standard' | 'high' = 'standard',
+  provider: AiProvider = 'gemini',
+  groqModel?: string
 ): Promise<Map<number, string[]>> {
   const critiqueMap = new Map<number, string[]>();
-  const modelName = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-3.8-flash';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
   const prompt = `You are an independent script supervisor and critic.
 Evaluate whether the following final image prompts accurately visualize the story without hallucinating or leaking text.
@@ -472,29 +493,50 @@ Output JSON format:
 }`;
 
   try {
-    const response = await fetchWithExponentialBackoff(() =>
-      fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: {
-            responseMimeType: 'application/json',
-            temperature: 0.1,
-          },
-        }),
-      })
-    );
+    let parsed: any = null;
 
-    if (response.ok) {
-      const json = await response.json();
-      const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (rawText) {
-        const parsed = JSON.parse(rawText);
-        for (const item of parsed.critiques || []) {
-          if (!item.passed && Array.isArray(item.issues) && item.issues.length > 0) {
-            critiqueMap.set(item.beatIndex, item.issues);
-          }
+    if (provider === 'groq') {
+      const rawText = await callGroqChatCompletion(
+        apiKey,
+        [{ role: 'user', content: prompt }],
+        {
+          model: groqModel || (modelQuality === 'high' ? 'openai/gpt-oss-120b' : 'qwen/qwen3.8-27b'),
+          jsonMode: true,
+          temperature: 0.1,
+        }
+      );
+      parsed = JSON.parse(rawText);
+    } else {
+      const modelName = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-3.8-flash';
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+
+      const response = await fetchWithExponentialBackoff(() =>
+        fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: {
+              responseMimeType: 'application/json',
+              temperature: 0.1,
+            },
+          }),
+        })
+      );
+
+      if (response.ok) {
+        const json = await response.json();
+        const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (rawText) {
+          parsed = JSON.parse(rawText);
+        }
+      }
+    }
+
+    if (parsed) {
+      for (const item of parsed.critiques || []) {
+        if (!item.passed && Array.isArray(item.issues) && item.issues.length > 0) {
+          critiqueMap.set(item.beatIndex, item.issues);
         }
       }
     }
@@ -517,7 +559,9 @@ export async function stage4VerifyAndRepairScene(
   apiKey: string,
   modelQuality: 'standard' | 'high' = 'standard',
   userSignal?: AbortSignal,
-  onStatusMessage?: (msg: string) => void
+  onStatusMessage?: (msg: string) => void,
+  provider: AiProvider = 'gemini',
+  groqModel?: string
 ): Promise<WrittenPromptBeat[]> {
   const verifiedBeats: WrittenPromptBeat[] = [];
 
@@ -531,12 +575,12 @@ export async function stage4VerifyAndRepairScene(
       }
 
       // Round 1 Repair
-      let repaired = await repairFailingBeat(currentBeat, initialCheck.issues, bible, apiKey, modelQuality);
+      let repaired = await repairFailingBeat(currentBeat, initialCheck.issues, bible, apiKey, modelQuality, provider, groqModel);
       let secondCheck = verifyBeatCodeChecks(repaired, beats, bible, format);
 
       // Round 2 Repair if still failing
       if (!secondCheck.passed) {
-        repaired = await repairFailingBeat(repaired, secondCheck.issues, bible, apiKey, modelQuality);
+        repaired = await repairFailingBeat(repaired, secondCheck.issues, bible, apiKey, modelQuality, provider, groqModel);
         secondCheck = verifyBeatCodeChecks(repaired, beats, bible, format);
       }
 
@@ -551,7 +595,7 @@ export async function stage4VerifyAndRepairScene(
   }
 
   // Independent critic pass
-  const criticIssues = await runSceneCritic(sceneIndex, sceneNarration, verifiedBeats, bible, apiKey, modelQuality);
+  const criticIssues = await runSceneCritic(sceneIndex, sceneNarration, verifiedBeats, bible, apiKey, modelQuality, provider, groqModel);
   for (const b of verifiedBeats) {
     const issues = criticIssues.get(b.beatIndex);
     if (issues && issues.length > 0) {

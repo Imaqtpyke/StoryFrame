@@ -18,7 +18,7 @@ import { ActivePage, GenerateStoryRequest, HistoryItem, StoryGenerationResult } 
 import { Sparkles } from 'lucide-react';
 
 function StoryFrameMain() {
-  const { apiKey } = useApiKey();
+  const { apiKey, aiProvider } = useApiKey();
   const [activePage, setActivePage] = useState<ActivePage>('generator');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -51,9 +51,15 @@ function StoryFrameMain() {
     setResult(null);
     window.scrollTo({ top: 0, behavior: 'instant' });
 
+    const selectedProvider = data.aiProvider || aiProvider || 'gemini';
+
     try {
       if (!apiKey || !apiKey.trim()) {
-        throw new Error('Gemini API key is required. Please apply your key under Model Options before generating a breakdown.');
+        throw new Error(
+          selectedProvider === 'groq'
+            ? 'Groq API key is required. Please apply your key under Model & API Options (console.groq.com/keys) before generating a breakdown.'
+            : 'Gemini API key is required. Please apply your key under Model & API Options before generating a breakdown.'
+        );
       }
 
       // Direct client-side generation using BYOK with user signal support and retry status callback
@@ -75,7 +81,11 @@ function StoryFrameMain() {
         setIsLoading(false);
         return;
       }
-      const errorMsg = err?.message || 'An unexpected failure occurred while connecting to Google Gemini.';
+      const errorMsg =
+        err?.message ||
+        (selectedProvider === 'groq'
+          ? 'An unexpected failure occurred while connecting to Groq Cloud API.'
+          : 'An unexpected failure occurred while connecting to Google Gemini.');
       // Ensure API keys are never exposed in error states
       const safeErrorMsg = apiKey && apiKey.length > 6 ? errorMsg.replaceAll(apiKey, '[REDACTED]') : errorMsg;
       setErrorMessage(safeErrorMsg);

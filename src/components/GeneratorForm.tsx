@@ -1,8 +1,8 @@
 import { useState, FormEvent, MouseEvent, useEffect } from 'react';
 import CustomDropdown, { DropdownOption } from './CustomDropdown';
 import { useApiKey } from '../context/ApiKeyContext';
-import { StoryFormat, GenerateStoryRequest, GenerationMode, CustomSceneDefinition, CustomBeatDefinition, ActivePage } from '../types';
-import { Sliders, RefreshCw, AlertCircle, Dices, Eye, EyeOff, KeyRound, Trash2, CheckCircle2, Shield, Camera, Video, Sparkles, Scissors, ExternalLink, ShieldCheck } from 'lucide-react';
+import { StoryFormat, GenerateStoryRequest, GenerationMode, CustomSceneDefinition, CustomBeatDefinition, ActivePage, AiProvider } from '../types';
+import { Sliders, RefreshCw, AlertCircle, Dices, Eye, EyeOff, KeyRound, Trash2, CheckCircle2, Shield, Camera, Video, Sparkles, Scissors, ExternalLink, ShieldCheck, Cpu, Zap } from 'lucide-react';
 
 interface GeneratorFormProps {
   onSubmit: (data: GenerateStoryRequest) => void;
@@ -14,6 +14,7 @@ interface GeneratorFormProps {
 }
 
 const RANDOM_STORIES: string[] = [
+
   "A lonely clockmaker discovers an ancient mechanical pocket watch that ticks backward, rewinding the room around him by thirty seconds whenever he presses the winding crown.",
   "Two deep-sea marine biologists in a research submersible encounter an illuminated underwater metropolis buried inside the Mariana Trench that responds to sonar pulses with musical harmonics.",
   "A ramen chef operates a midnight street stall at a forgotten Tokyo crossroads that only spirits and wandering ghosts can see, serving warm broth that restores mortal memories.",
@@ -74,6 +75,73 @@ const VIDEO_DURATIONS: DropdownOption[] = [
   { value: 'custom', label: 'Custom seconds', sublabel: 'Specify exact seconds' },
 ];
 
+const AI_PROVIDER_OPTIONS: DropdownOption[] = [
+  {
+    value: 'gemini',
+    label: 'Google Gemini',
+    badge: 'Standard & Pro',
+    badgeColor: 'amber',
+    description: 'Direct browser execution via Google Generative Language API.',
+    icon: <Sparkles size={14} className="text-amber-400 shrink-0" />,
+  },
+  {
+    value: 'groq',
+    label: 'Groq Cloud',
+    badge: 'Free Tier LPU',
+    badgeColor: 'emerald',
+    description: 'Ultra-fast inference via console.groq.com/keys with 120B and 27B models.',
+    icon: <Zap size={14} className="text-emerald-400 shrink-0" />,
+  },
+];
+
+const GEMINI_MODEL_OPTIONS: DropdownOption[] = [
+  {
+    value: 'standard',
+    label: 'Gemini 3.8 Flash',
+    badge: 'Standard: Fast',
+    badgeColor: 'default',
+    description: 'Recommended: High-speed inference and precise narrative scene-to-beat partitioning.',
+  },
+  {
+    value: 'high',
+    label: 'Gemini 3.1 Pro Preview',
+    badge: 'Pro Quality',
+    badgeColor: 'amber',
+    description: 'Deep cinematic reasoning for complex narratives and intricate character style sheets.',
+  },
+];
+
+const GROQ_MODEL_OPTIONS: DropdownOption[] = [
+  {
+    value: 'openai/gpt-oss-120b',
+    label: 'OpenAI GPT-OSS 120B',
+    badge: 'Recommended: 120B',
+    badgeColor: 'emerald',
+    description: 'High-capacity 120B reasoning on Groq LPU hardware for full screenplay breakdowns.',
+  },
+  {
+    value: 'qwen/qwen3.8-27b',
+    label: 'Qwen 3.8 27B',
+    badge: 'Alibaba Cloud',
+    badgeColor: 'blue',
+    description: 'Versatile 27B reasoning with rapid token generation and structured JSON output.',
+  },
+  {
+    value: 'openai/gpt-oss-20b',
+    label: 'OpenAI GPT-OSS 20B',
+    badge: 'Ultra Fast',
+    badgeColor: 'default',
+    description: 'Low-latency 20B model for near-instant scene generation and rapid drafting.',
+  },
+  {
+    value: 'custom',
+    label: 'Custom Model ID...',
+    badge: 'Custom',
+    badgeColor: 'default',
+    description: 'Manually specify any model ID from console.groq.com.',
+  },
+];
+
 export default function GeneratorForm({
   onSubmit,
   isLoading,
@@ -82,7 +150,21 @@ export default function GeneratorForm({
   initialValues,
   openModelOptionsTrigger,
 }: GeneratorFormProps) {
-  const { apiKey, hasCustomKey, rememberInSession, setCustomApiKey, clearCustomApiKey, modelQuality, setModelQuality } = useApiKey();
+  const {
+    apiKey,
+    hasCustomKey,
+    rememberInSession,
+    setCustomApiKey,
+    clearCustomApiKey,
+    modelQuality,
+    setModelQuality,
+    aiProvider,
+    setAiProvider,
+    geminiApiKey,
+    groqApiKey,
+    groqModel,
+    setGroqModel,
+  } = useApiKey();
   const [generationMode, setGenerationMode] = useState<GenerationMode>(initialValues?.generationMode || 'image');
   const [autoArchitectMode, setAutoArchitectMode] = useState<boolean>(initialValues?.autoArchitectMode || false);
   const [beatMode, setBeatMode] = useState<'automatic' | 'custom'>(initialValues?.beatMode || 'automatic');
@@ -196,9 +278,35 @@ export default function GeneratorForm({
   }, [isLoading]);
 
   useEffect(() => {
-    setKeyInput(apiKey);
+    setKeyInput(aiProvider === 'groq' ? groqApiKey : geminiApiKey);
     setRememberOptIn(rememberInSession);
-  }, [apiKey, rememberInSession]);
+  }, [aiProvider, geminiApiKey, groqApiKey, rememberInSession]);
+
+  const isKnownGroqModel = GROQ_MODEL_OPTIONS.some((o) => o.value === groqModel && o.value !== 'custom');
+  const [customGroqInput, setCustomGroqInput] = useState(isKnownGroqModel ? '' : groqModel);
+
+  const handleSelectGroqModel = (val: string) => {
+    if (val === 'custom') {
+      const initial = customGroqInput.trim() || 'qwen/qwen3.8-27b';
+      setCustomGroqInput(initial);
+      setGroqModel(initial);
+    } else {
+      setGroqModel(val);
+    }
+  };
+
+  const handleCustomGroqInputChange = (text: string) => {
+    setCustomGroqInput(text);
+    if (text.trim()) {
+      setGroqModel(text.trim());
+    }
+  };
+
+  const handleSwitchProvider = (newProvider: AiProvider) => {
+    setAiProvider(newProvider);
+    setKeyInput(newProvider === 'groq' ? groqApiKey : geminiApiKey);
+    setKeyFeedback(null);
+  };
 
   const handleApplyKey = (e: MouseEvent) => {
     e.preventDefault();
@@ -207,19 +315,23 @@ export default function GeneratorForm({
       setTimeout(() => setKeyFeedback(null), 3000);
       return;
     }
-    setCustomApiKey(keyInput.trim(), rememberOptIn);
-    setKeyFeedback('Gemini API key applied. Requests will execute directly from your browser.');
+    setCustomApiKey(keyInput.trim(), rememberOptIn, aiProvider);
+    setKeyFeedback(
+      aiProvider === 'groq'
+        ? 'Groq API key applied. Requests execute directly from your browser to Groq Cloud.'
+        : 'Gemini API key applied. Requests execute directly from your browser to Google Gemini.'
+    );
     setFormValidationNotice(null);
     setTimeout(() => setKeyFeedback(null), 4000);
   };
 
   const handleClearKey = (e: MouseEvent) => {
     e.preventDefault();
-    clearCustomApiKey();
+    clearCustomApiKey(aiProvider);
     setKeyInput('');
     setRememberOptIn(false);
     setShowKeyText(false);
-    setKeyFeedback('Key removed from session.');
+    setKeyFeedback(aiProvider === 'groq' ? 'Groq key removed from session.' : 'Gemini key removed from session.');
     setTimeout(() => setKeyFeedback(null), 3000);
   };
 
@@ -414,7 +526,9 @@ export default function GeneratorForm({
       platform,
       durationMode,
       durationSeconds,
+      aiProvider,
       modelQuality,
+      groqModel,
       generationMode,
       targetVideoDuration,
       beatMode: effectiveBeatMode,
@@ -941,49 +1055,82 @@ export default function GeneratorForm({
 
           {showAdvanced && (
             <div className="mt-2 w-full p-4 sm:p-6 bg-[#121211] border border-white/10 corner-bracket-container shadow-2xl rounded-[2px] space-y-5 text-left animate-in fade-in duration-200">
-              {/* Gemini Model Tier */}
-              <div className="space-y-2">
-                <span className="block font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96]">
-                  GEMINI MODEL SELECTION
-                </span>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
-                  <button
-                    type="button"
-                    id="model-standard-tier"
-                    onClick={() => setModelQuality('standard')}
-                    className={`p-3 sm:p-3.5 text-left border rounded-[2px] transition-all ${
-                      modelQuality === 'standard'
-                        ? 'border-white bg-[#1F1F1D] text-white shadow-sm'
-                        : 'border-white/10 bg-[#161614] text-[#9C9C96] hover:border-white/30 hover:text-white'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <p className="font-display text-xs sm:text-sm font-medium text-white">Standard (Gemini 3.8 Flash)</p>
-                      {modelQuality === 'standard' && <span className="stamp-chip bg-white text-black font-bold text-[8px]">ACTIVE</span>}
-                    </div>
-                    <p className="text-[11px] sm:text-xs text-[#9C9C96] mt-1 font-narrative leading-relaxed">
-                      Recommended: High-speed inference and precise narrative scene-to-beat partitioning.
-                    </p>
-                  </button>
+              {/* Compact AI Provider & Model Dropdown Configuration */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pb-1">
+                {/* Provider Dropdown */}
+                <CustomDropdown
+                  id="ai-provider"
+                  label="AI Provider"
+                  options={AI_PROVIDER_OPTIONS}
+                  selectedValue={aiProvider}
+                  onSelect={(val) => handleSwitchProvider(val as AiProvider)}
+                  headerBadge={aiProvider === 'groq' ? 'LPU ACCELERATED' : 'GOOGLE GENERATIVE AI'}
+                  helperText={
+                    aiProvider === 'groq'
+                      ? 'Ultra-fast LPU inference via console.groq.com/keys.'
+                      : 'Direct client execution via Google Generative Language API.'
+                  }
+                />
 
-                  <button
-                    type="button"
-                    id="model-high-tier"
-                    onClick={() => setModelQuality('high')}
-                    className={`p-3 sm:p-3.5 text-left border rounded-[2px] transition-all ${
-                      modelQuality === 'high'
-                        ? 'border-white bg-[#1F1F1D] text-white shadow-sm'
-                        : 'border-white/10 bg-[#161614] text-[#9C9C96] hover:border-white/30 hover:text-white'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <p className="font-display text-xs sm:text-sm font-medium text-white">Pro Quality (Gemini 3.1 Pro)</p>
-                      {modelQuality === 'high' && <span className="stamp-chip bg-white text-black font-bold text-[8px]">ACTIVE</span>}
-                    </div>
-                    <p className="text-[11px] sm:text-xs text-[#9C9C96] mt-1 font-narrative leading-relaxed">
-                      Deep cinematic reasoning for complex narratives and intricate character style sheets.
-                    </p>
-                  </button>
+                {/* Model Dropdown */}
+                <div className="space-y-2">
+                  {aiProvider === 'gemini' ? (
+                    <CustomDropdown
+                      id="gemini-model"
+                      label="Gemini Model"
+                      options={GEMINI_MODEL_OPTIONS}
+                      selectedValue={modelQuality}
+                      onSelect={(val) => setModelQuality(val as 'standard' | 'high')}
+                      headerBadge={modelQuality === 'high' ? 'PRO REASONING' : 'HIGH SPEED'}
+                      helperText={
+                        modelQuality === 'standard'
+                          ? 'Rapid story beat partitioning with minimal latency.'
+                          : 'Enhanced cinematic reasoning for intricate scripts.'
+                      }
+                    />
+                  ) : (
+                    <>
+                      <CustomDropdown
+                        id="groq-model"
+                        label="Groq Model"
+                        options={GROQ_MODEL_OPTIONS}
+                        selectedValue={
+                          GROQ_MODEL_OPTIONS.some((o) => o.value === groqModel)
+                            ? groqModel
+                            : 'custom'
+                        }
+                        onSelect={handleSelectGroqModel}
+                        headerBadge="FREE TIER COMPLIANT"
+                        helperText={
+                          groqModel === 'openai/gpt-oss-120b'
+                            ? 'Flagship 120B model on Groq LPU hardware with 128k context.'
+                            : groqModel === 'qwen/qwen3.8-27b'
+                              ? 'Alibaba Cloud 27B model on Groq LPU with fast token streaming.'
+                              : groqModel === 'openai/gpt-oss-20b'
+                                ? 'Low-latency 20B model for near-instant scene generation.'
+                                : `Custom model active: ${groqModel}`
+                        }
+                      />
+                      {(groqModel === 'custom' || !GROQ_MODEL_OPTIONS.some((o) => o.value === groqModel)) && (
+                        <div className="pt-1 space-y-1 animate-in fade-in duration-150">
+                          <label
+                            htmlFor="custom-groq-model-input"
+                            className="block font-editorial-meta text-[10px] text-[#9C9C96]"
+                          >
+                            CUSTOM GROQ MODEL ID
+                          </label>
+                          <input
+                            type="text"
+                            id="custom-groq-model-input"
+                            value={customGroqInput}
+                            onChange={(e) => handleCustomGroqInputChange(e.target.value)}
+                            placeholder="e.g. qwen/qwen3.8-27b or openai/gpt-oss-120b"
+                            className="w-full px-3 py-2 bg-[#0A0A09] text-white border border-white/20 rounded-[3px] text-xs font-mono focus:outline-none focus:border-white placeholder:text-[#555550]"
+                          />
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -993,7 +1140,7 @@ export default function GeneratorForm({
                   <div className="flex items-center space-x-1.5">
                     <KeyRound size={13} className="text-[#9C9C96]" />
                     <span className="font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96]">
-                      GEMINI API KEY (BYOK)
+                      {aiProvider === 'groq' ? 'GROQ API KEY (BYOK)' : 'GEMINI API KEY (BYOK)'}
                     </span>
                   </div>
                   {hasCustomKey && (
@@ -1008,10 +1155,10 @@ export default function GeneratorForm({
                   <div className="relative">
                     <input
                       type={showKeyText ? 'text' : 'password'}
-                      id="gemini-api-key-input"
+                      id={aiProvider === 'groq' ? 'groq-api-key-input' : 'gemini-api-key-input'}
                       value={keyInput}
                       onChange={(e) => setKeyInput(e.target.value)}
-                      placeholder="AIzaSy..."
+                      placeholder={aiProvider === 'groq' ? 'gsk_...' : 'AIzaSy...'}
                       className="w-full pl-3.5 pr-20 py-2.5 bg-[#0A0A09] text-[#F5F5F0] placeholder:text-[#555550] border border-white/15 rounded-[2px] focus:outline-none focus:border-white text-xs sm:text-sm font-mono"
                     />
                     <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center space-x-1">
@@ -1069,38 +1216,69 @@ export default function GeneratorForm({
                     </p>
                   )}
 
-                  <div className="p-3 bg-[#171715] border border-white/10 rounded-[2px] text-xs text-[#9C9C96] space-y-1.5 font-narrative">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-1.5 text-white font-medium">
-                        <Shield size={12} className="text-emerald-400" />
-                        <span className="font-editorial-meta text-[10px]">DIRECT BROWSER-TO-GOOGLE ARCHITECTURE</span>
+                  {aiProvider === 'gemini' ? (
+                    <div className="p-3 bg-[#171715] border border-white/10 rounded-[2px] text-xs text-[#9C9C96] space-y-1.5 font-narrative">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-1.5 text-white font-medium">
+                          <Shield size={12} className="text-emerald-400" />
+                          <span className="font-editorial-meta text-[10px]">DIRECT BROWSER-TO-GOOGLE ARCHITECTURE</span>
+                        </div>
+                        {onNavigate && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onNavigate('byok-security');
+                              window.scrollTo({ top: 0, behavior: 'smooth' });
+                            }}
+                            className="text-[10px] text-amber-400 hover:text-amber-300 font-editorial-meta tracking-wider underline underline-offset-2 inline-flex items-center gap-1"
+                          >
+                            <ShieldCheck size={11} />
+                            <span>READ SECURITY &amp; CONSENT GUIDE</span>
+                          </button>
+                        )}
                       </div>
-                      {onNavigate && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            onNavigate('byok-security');
-                            window.scrollTo({ top: 0, behavior: 'smooth' });
-                          }}
-                          className="text-[10px] text-amber-400 hover:text-amber-300 font-editorial-meta tracking-wider underline underline-offset-2 inline-flex items-center gap-1"
-                        >
-                          <ShieldCheck size={11} />
-                          <span>READ SECURITY &amp; CONSENT GUIDE</span>
-                        </button>
-                      )}
+                      <p className="leading-relaxed">
+                        Your Gemini API key is kept exclusively within your local browser memory and used directly for Google Generative AI queries. Keys are never transmitted to or logged on third-party servers.
+                      </p>
+                      <a
+                        href="https://aistudio.google.com/app/apikey"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center text-white hover:underline underline-offset-2 pt-0.5 font-editorial-meta text-[10px]"
+                      >
+                        GET A FREE GEMINI API KEY AT GOOGLE AI STUDIO &rarr;
+                      </a>
                     </div>
-                    <p className="leading-relaxed">
-                      Your Gemini API key is kept exclusively within your local browser memory and used directly for Google Generative AI queries. Keys are never transmitted to or logged on third-party servers.
-                    </p>
-                    <a
-                      href="https://aistudio.google.com/app/apikey"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center text-white hover:underline underline-offset-2 pt-0.5 font-editorial-meta text-[10px]"
-                    >
-                      GET A FREE GEMINI API KEY AT GOOGLE AI STUDIO &rarr;
-                    </a>
-                  </div>
+                  ) : (
+                    <div className="p-3 bg-[#171715] border border-white/10 rounded-[2px] text-xs text-[#9C9C96] space-y-1.5 font-narrative">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-1.5 text-white font-medium">
+                          <Shield size={12} className="text-emerald-400" />
+                          <span className="font-editorial-meta text-[10px]">DIRECT BROWSER-TO-GROQ CLOUD ARCHITECTURE</span>
+                        </div>
+                        <div className="flex items-center space-x-1 text-[10px] text-emerald-400 font-editorial-meta">
+                          <Zap size={11} />
+                          <span>FREE TIER SAFE</span>
+                        </div>
+                      </div>
+                      <p className="leading-relaxed">
+                        Your Groq API key executes directly from your browser to Groq Cloud endpoint (https://api.groq.com/openai/v1/chat/completions). Free tier rate limits (429) are gracefully handled with exponential backoff and compact token formatting.
+                      </p>
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+                        <p className="text-[11px] text-[#A6A69F] font-mono">
+                          Endpoint: api.groq.com &bull; Active: {groqModel}
+                        </p>
+                        <a
+                          href="https://console.groq.com/keys"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center text-white hover:underline underline-offset-2 font-editorial-meta text-[10px]"
+                        >
+                          GET A FREE GROQ KEY AT CONSOLE.GROQ.COM &rarr;
+                        </a>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

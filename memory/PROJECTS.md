@@ -5,7 +5,10 @@
 - **Framework:** React SPA (Vite)
 - **Language:** TypeScript
 - **Styling:** Tailwind CSS (Dark editorial aesthetic, custom typography, gold/amber accents)
-- **Backend / API Model:** Client-side Bring Your Own Key (BYOK) direct execution to Google Generative Language API (Gemini 2.5 Flash, Gemini 3.8 Flash, Gemini 3.1 Pro Preview). Keys remain strictly in client sessionStorage.
+- **Backend / API Model:** Client-side Bring Your Own Key (BYOK) dual-provider architecture:
+  - **Google Gemini:** Direct browser execution to Google Generative Language API (Gemini 3.8 Flash, Gemini 3.1 Pro Preview).
+  - **Groq Cloud:** Direct browser execution to Groq Cloud OpenAI-compatible endpoint (`https://api.groq.com/openai/v1/chat/completions`) supporting Llama 3.3 70B Versatile (Recommended) and Llama 3.1 8B Instant (Ultra Fast Low Latency).
+  - Keys remain strictly in client sessionStorage with zero server logging.
 
 ## System Modes & Capabilities
 1. **Text to Image Mode:**

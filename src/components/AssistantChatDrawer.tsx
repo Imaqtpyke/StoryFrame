@@ -43,7 +43,7 @@ export default function AssistantChatDrawer({
   onApplyStoryIdea,
   onOpenModelOptions,
 }: AssistantChatDrawerProps) {
-  const { apiKey, modelQuality } = useApiKey();
+  const { apiKey, modelQuality, aiProvider, groqModel } = useApiKey();
   const [messages, setMessages] = useState<AssistantChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -146,7 +146,7 @@ export default function AssistantChatDrawer({
     setIsSending(true);
 
     try {
-      const reply = await sendChatMessage(historyToSend, messageContent, apiKey, modelQuality);
+      const reply = await sendChatMessage(historyToSend, messageContent, apiKey, modelQuality, aiProvider, groqModel);
       const assistantMessage: AssistantChatMessage = {
         id: `assistant-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
         role: 'assistant',

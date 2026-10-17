@@ -14,3 +14,4 @@ Directory of persistent memory files for StoryFrame.
 2. Enforce biomechanical anatomical accuracy (proportions, weight distribution, contrapposto, finger/wrist arcs) in all visual prompts.
 3. Preserve tactile atmospheric physics (weather interaction, snow/rain/frost particles, ground contact) in scene generation.
 4. Ensure strict isolation between Text to Image and Text to Video pipelines.
+5. Dual AI Provider Architecture (Google Gemini + Groq Cloud) with Free-Tier Token & Rate Limit Compliance.

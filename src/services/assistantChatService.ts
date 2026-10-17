@@ -111,20 +111,60 @@ Your core identity, boundaries, and rules:
 - STRICTLY NO EM DASHES: Do not use "\u2014". Use standard hyphens (-) or colons (:).
 - STRICTLY NO EMOJIS: Do not use any emoji characters.`;
 
+import { AiProvider } from '../types';
+import { callGroqChatCompletion } from './groqClient';
+
 export async function sendChatMessage(
   history: AssistantChatMessage[],
   newMessage: string,
   apiKey: string,
-  modelQuality: 'standard' | 'high' = 'standard'
+  modelQuality: 'standard' | 'high' = 'standard',
+  provider: AiProvider = 'gemini',
+  groqModel?: string
 ): Promise<string> {
   const trimmedKey = (apiKey || '').trim();
   if (!trimmedKey) {
-    throw new Error('Please configure a valid Gemini API key in the Model Options section to talk with the assistant.');
+    throw new Error(
+      provider === 'groq'
+        ? 'Please configure a valid Groq API key in Model & API Options (console.groq.com/keys) to chat with the assistant.'
+        : 'Please configure a valid Gemini API key in Model & API Options to chat with the assistant.'
+    );
   }
 
-  // Format message history for Gemini (keep last 6 messages to minimize token usage)
+  // Format message history (keep last 6 messages to minimize token usage)
   const recentHistory = history.slice(-6);
 
+  if (provider === 'groq') {
+    const targetModel = groqModel || (modelQuality === 'high' ? 'openai/gpt-oss-120b' : 'qwen/qwen3.8-27b');
+    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+      { role: 'system', content: SYSTEM_INSTRUCTION },
+      ...recentHistory.map((msg) => ({
+        role: msg.role === 'user' ? ('user' as const) : ('assistant' as const),
+        content: msg.content,
+      })),
+      { role: 'user', content: newMessage.trim() },
+    ];
+
+    try {
+      const content = await callGroqChatCompletion(trimmedKey, messages, {
+        model: targetModel,
+        jsonMode: false,
+        temperature: 0.6,
+        maxTokens: 1200,
+      });
+
+      if (!content || !content.trim()) {
+        throw new Error('An error occurred, please try again.');
+      }
+
+      return cleanAssistantText(content.trim());
+    } catch (err: any) {
+      const msg = err?.message || '';
+      throw new Error(msg || 'An error occurred with Groq Assistant, please try again.');
+    }
+  }
+
+  // Provider: Gemini
   const contents: any[] = [];
 
   // Add conversation turns
@@ -158,15 +198,19 @@ export async function sendChatMessage(
   };
 
   try {
-    const resp = await fetchWithExponentialBackoff(() => fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    }));
+    const resp = await fetchWithExponentialBackoff(() =>
+      fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+    );
 
     if (!resp.ok) {
       if (resp.status === 503 || resp.status === 429) {
-        throw new Error('Google Gemini servers are temporarily busy (503 Service Unavailable). Do not immediately retry the request at full speed, as this adds more stress to an already struggling server. Instead, we used an exponential backoff strategy—waiting a brief period before retrying, and doubling the wait time for subsequent attempts. Please try again shortly.');
+        throw new Error(
+          'Google Gemini servers are temporarily busy (503 Service Unavailable). Do not immediately retry the request at full speed, as this adds more stress to an already struggling server. Instead, we used an exponential backoff strategy—waiting a brief period before retrying, and doubling the wait time for subsequent attempts. Please try again shortly.'
+        );
       }
       throw new Error(`Server status ${resp.status}: Service temporarily unavailable. Please try again shortly.`);
     }
@@ -181,7 +225,9 @@ export async function sendChatMessage(
   } catch (err: any) {
     const msg = err?.message || '';
     if (msg.includes('503') || msg.includes('overloaded') || msg.includes('unavailable')) {
-      throw new Error('Google Gemini servers are temporarily busy (503 Service Unavailable). Do not immediately retry the request at full speed, as this adds more stress to an already struggling server. Instead, we used an exponential backoff strategy—waiting a brief period before retrying, and doubling the wait time for subsequent attempts. Please try again shortly.');
+      throw new Error(
+        'Google Gemini servers are temporarily busy (503 Service Unavailable). Do not immediately retry the request at full speed, as this adds more stress to an already struggling server. Instead, we used an exponential backoff strategy—waiting a brief period before retrying, and doubling the wait time for subsequent attempts. Please try again shortly.'
+      );
     }
     throw new Error(msg || 'An error occurred, please try again.');
   }

@@ -54,7 +54,15 @@
   - Enforced short-form rapid pacing constants (`MIN_DWELL 0.8s`, `FAST_CUT_BELOW 1.1s`, `MAX_DWELL 2.0s`, target average 1.2s to 1.8s).
   - Built enhance mode Bible preservation diff check (`enhanceBibleDiff.ts`) and automatic Bible rebuilding upon user approval.
   - Added portrait safe zone clearances and NOTES stripping (`stage0Prepare.ts`).
-  - Added test fixtures for portrait, video, and non-horror enhance stories, raising test coverage to 67 automated assertions passing successfully.
+  - Added test fixtures for portrait, video, and non-horror enhance stories.
+
+- [x] **Dual AI Provider Architecture (Google Gemini + Groq Cloud) & Custom Editorial Dropdown UI:**
+  - Replaced Muse API with Groq Cloud (`groqClient.ts` & `unifiedAiService.ts`) connecting directly from the browser to `https://api.groq.com/openai/v1/chat/completions`.
+  - Configured active free-tier models verified from console: `openai/gpt-oss-120b` (flagship 120B reasoning), `qwen/qwen3.8-27b` (Alibaba Cloud 27B versatile), and `openai/gpt-oss-20b` (ultra-fast 20B), plus custom model ID entry.
+  - Replaced plain browser `<select>` tags with a custom dark-editorial `CustomDropdown.tsx` featuring animated popovers, icons, model badges, and subtitles.
+  - Implemented BYOK management with `byok_groq_key` in sessionStorage, key masking/visibility toggle, and direct link to `console.groq.com/keys`.
+  - Connected Groq Cloud across all pipelines: Stage 0-4 grounded pipeline, Enhance Story Architect, and StoryFrame Assistant Chat drawer.
+  - Updated automated test suite to 75 assertions in `src/tests/systemTestSuite.ts` (100% passing).
 
 ## Next Steps / Active Tasks
 - [ ] Monitor user feedback on storyboard layout and model prompt copy workflows.

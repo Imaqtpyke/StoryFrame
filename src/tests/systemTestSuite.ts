@@ -19,6 +19,8 @@ import {
   extractStoryTitle,
 } from '../services/historyStorage';
 import { cleanAndDeduplicatePrompt } from '../services/geminiClient';
+import { sanitizeGroqErrorMessage, extractCleanJson, GROQ_API_BASE_URL } from '../services/groqClient';
+import { robustJsonParse } from '../services/unifiedAiService';
 import { Scene, Beat, StyleProfile, StoryGenerationResult } from '../types';
 
 interface TestResult {
@@ -628,6 +630,46 @@ assert(retrieved !== null && retrieved.cast.length === 2, 'Bible Cache', 'Retrie
 
 clearCachedStoryBible();
 assert(getCachedStoryBible(storySample, notesSample) === null, 'Bible Cache', 'Clears cache cleanly');
+
+// ============================================================================
+// 16. GROQ CLOUD API & DUAL PROVIDER INTEGRATION VERIFICATION
+// ============================================================================
+console.log('--- Running Test Suite 16: Groq Cloud API & Dual Provider Integration ---');
+
+// 1. Redaction of sensitive Groq API keys
+const fakeGroqKey = 'gsk_secret_123456789abcdef';
+const errorWithKey = `Network connection failure for key ${fakeGroqKey} at gateway`;
+const sanitizedKeyErr = sanitizeGroqErrorMessage(errorWithKey, fakeGroqKey);
+assert(!sanitizedKeyErr.includes(fakeGroqKey), 'Groq API', 'Redacts sensitive API key from error text');
+assert(sanitizedKeyErr.includes('[REDACTED]'), 'Groq API', 'Replaces key with [REDACTED] marker');
+
+// 2. Clear rate limit mapping for Free Tier (429)
+const groqErr429 = 'Error 429: rate limit reached, please try again in a few seconds';
+const sanitized429 = sanitizeGroqErrorMessage(groqErr429, 'test_key');
+assert(sanitized429.includes('rate limit'), 'Groq API', 'Maps 429 to clear rate limit advice');
+
+// 3. Clear unauthorized mapping (401)
+const groqErr401 = 'Error 401: invalid api key provided';
+const sanitized401 = sanitizeGroqErrorMessage(groqErr401, 'test_key');
+assert(sanitized401.includes('invalid') || sanitized401.includes('api key'), 'Groq API', 'Maps 401 to clear key verification instructions');
+
+// 4. Groq Endpoint URL
+assert(GROQ_API_BASE_URL === 'https://api.groq.com/openai/v1/chat/completions', 'Groq API', 'Groq API endpoint URL is https://api.groq.com/openai/v1/chat/completions');
+
+// 5. Clean JSON extraction from markdown code fences
+const fencedJson = '```json\n{\n  "storyTitle": "Clockwork Echoes"\n}\n```';
+const cleanedJson = extractCleanJson(fencedJson);
+assert(cleanedJson.storyTitle === 'Clockwork Echoes', 'Groq API', 'Strips markdown code fences and parses JSON cleanly');
+
+// 6. Robust JSON parser with surrounding conversational commentary
+const conversationalOutput = 'Here is the generated storyboard JSON breakdown:\n```json\n{"scenes": [{"index": 1}]}\n```\nHope this helps you!';
+const parsedRobust = robustJsonParse<{ scenes: Array<{ index: number }> }>(conversationalOutput);
+assert(Array.isArray(parsedRobust.scenes) && parsedRobust.scenes[0].index === 1, 'Groq API', 'Robustly extracts and parses JSON even with surrounding conversational commentary');
+
+// 7. Robust JSON parser with raw bracketed array
+const rawArrayJson = '[\n  {"id": "scene-1"}\n]';
+const parsedArray = robustJsonParse<Array<{ id: string }>>(rawArrayJson);
+assert(Array.isArray(parsedArray) && parsedArray[0].id === 'scene-1', 'Groq API', 'Parses raw top-level array JSON structures');
 
 console.log('\n====================================================================');
 console.log('                  FULL-SYSTEM VERIFICATION REPORT                  ');

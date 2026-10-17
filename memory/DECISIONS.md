@@ -95,3 +95,9 @@
 - **Date:** 2026-10-15
 - **Status:** Active
 
+## Dual AI Provider Architecture (Google Gemini + Groq Cloud) & Custom Editorial Dropdown UI
+- **Fact/Decision:** Replaced Muse API with Groq Cloud (`https://api.groq.com/openai/v1/chat/completions`) using active console models: `openai/gpt-oss-120b` (recommended flagship 120B reasoning model), `qwen/qwen3.8-27b` (Alibaba Cloud 27B versatile model), and `openai/gpt-oss-20b` (ultra-fast 20B model), plus manual custom model ID entry. Enhanced `CustomDropdown.tsx` with animated options, badges, icons, subtitles, and descriptions to eliminate plain browser selects while maintaining dark editorial aesthetics and zero UI cramping. Keys are stored in `byok_gemini_key` and `byok_groq_key` with zero server telemetry.
+- **Context:** Fixes model deprecation errors from retired Llama models on Groq Cloud, provides direct access to 120B and 27B reasoning, and gives users a rich, premium selection interface.
+- **Date:** 2026-10-17
+- **Status:** Active
+

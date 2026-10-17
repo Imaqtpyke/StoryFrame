@@ -4,9 +4,10 @@
  * Formatted strictly for stateless diffusion models in 16:9 widescreen landscape.
  */
 
-import { StoryBible, StoryFormat, GenerationMode } from '../types';
+import { StoryBible, StoryFormat, GenerationMode, AiProvider } from '../types';
 import { PlannedBeat } from './stage2BeatPlan';
 import { fetchWithExponentialBackoff } from '../utils/retryFetch';
+import { executeJsonLlmCall } from './unifiedAiService';
 
 export interface WrittenPromptBeat extends PlannedBeat {
   imagePrompt: string;
@@ -52,7 +53,9 @@ export async function stage3WriteScenePrompts(
   apiKey: string,
   modelQuality: 'standard' | 'high' = 'standard',
   userSignal?: AbortSignal,
-  onStatusMessage?: (msg: string) => void
+  onStatusMessage?: (msg: string) => void,
+  provider: AiProvider = 'gemini',
+  groqModel?: string
 ): Promise<WrittenPromptBeat[]> {
   const modelName = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-3.8-flash';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
@@ -139,45 +142,64 @@ CRITICAL RULES FOR WRITING EACH PROMPT (50 to 100 words per prompt):
 
 Output valid JSON matching SCENE_PROMPTS_SCHEMA.`;
 
-  const payload = {
-    contents: [{ role: 'user', parts: [{ text: systemInstruction }] }],
-    generationConfig: {
-      responseMimeType: 'application/json',
-      responseSchema: SCENE_PROMPTS_SCHEMA,
+  let parsed: any;
+
+  if (provider === 'groq') {
+    parsed = await executeJsonLlmCall<any>({
+      provider: 'groq',
+      apiKey,
+      systemPrompt: 'You are a cinematic prompt engineer writing visual prompts. Output valid JSON.',
+      userPrompt: systemInstruction,
+      modelQuality,
+      groqModel,
+      userSignal,
+      onStatusMessage,
       temperature: 0.2,
-    },
-  };
+    });
+  } else {
+    const modelName = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-3.8-flash';
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
-  const response = await fetchWithExponentialBackoff(
-    () =>
-      fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        signal: userSignal,
-      }),
-    {
-      initialDelayMs: 2000,
-      maxAttempts: 4,
-      onRetry: (attempt, _max, delayMs) => {
-        if (onStatusMessage) {
-          onStatusMessage(`Writing cinematic prompts for Scene ${sceneIndex} (Attempt ${attempt}/4, waiting ${Math.round(delayMs / 1000)}s)...`);
-        }
+    const payload = {
+      contents: [{ role: 'user', parts: [{ text: systemInstruction }] }],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseSchema: SCENE_PROMPTS_SCHEMA,
+        temperature: 0.2,
       },
+    };
+
+    const response = await fetchWithExponentialBackoff(
+      () =>
+        fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: userSignal,
+        }),
+      {
+        initialDelayMs: 2000,
+        maxAttempts: 4,
+        onRetry: (attempt, _max, delayMs) => {
+          if (onStatusMessage) {
+            onStatusMessage(`Writing cinematic prompts for Scene ${sceneIndex} (Attempt ${attempt}/4, waiting ${Math.round(delayMs / 1000)}s)...`);
+          }
+        },
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Scene ${sceneIndex} prompt writing failed: HTTP ${response.status}`);
     }
-  );
 
-  if (!response.ok) {
-    throw new Error(`Scene ${sceneIndex} prompt writing failed: HTTP ${response.status}`);
+    const json = await response.json();
+    const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!rawText) {
+      throw new Error(`Empty response for Scene ${sceneIndex} prompt writing`);
+    }
+
+    parsed = JSON.parse(rawText);
   }
-
-  const json = await response.json();
-  const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!rawText) {
-    throw new Error(`Empty response for Scene ${sceneIndex} prompt writing`);
-  }
-
-  const parsed = JSON.parse(rawText);
   const promptMap = new Map<number, string>();
   for (const item of parsed.prompts || []) {
     if (typeof item.beatIndex === 'number' && typeof item.imagePrompt === 'string') {

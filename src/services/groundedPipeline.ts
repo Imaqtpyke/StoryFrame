@@ -30,6 +30,8 @@ export async function executeGroundedPipeline(
   const modelQuality = req.modelQuality || 'standard';
   const format = req.format || 'short';
   const generationMode = req.generationMode || 'image';
+  const provider = req.aiProvider || 'gemini';
+  const groqModel = req.groqModel;
   const isVideo = generationMode === 'video';
 
   // --------------------------------------------------------------------------
@@ -52,7 +54,9 @@ export async function executeGroundedPipeline(
     apiKey,
     modelQuality,
     userSignal,
-    onStatusMessage
+    onStatusMessage,
+    provider,
+    groqModel
   );
 
   // --------------------------------------------------------------------------
@@ -69,7 +73,9 @@ export async function executeGroundedPipeline(
     apiKey,
     modelQuality,
     userSignal,
-    onStatusMessage
+    onStatusMessage,
+    provider,
+    groqModel
   );
 
   // --------------------------------------------------------------------------
@@ -97,7 +103,9 @@ export async function executeGroundedPipeline(
       apiKey,
       modelQuality,
       userSignal,
-      onStatusMessage
+      onStatusMessage,
+      provider,
+      groqModel
     );
 
     if (onStatusMessage) {
@@ -114,7 +122,9 @@ export async function executeGroundedPipeline(
       apiKey,
       modelQuality,
       userSignal,
-      onStatusMessage
+      onStatusMessage,
+      provider,
+      groqModel
     );
 
     // Track last two depicts for context in next scene

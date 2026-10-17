@@ -4,9 +4,10 @@
  * governed by strict pacing constants (short-form vs long-form) and clip mapping for video.
  */
 
-import { StoryBible, StoryFormat, GenerationMode } from '../types';
+import { StoryBible, StoryFormat, GenerationMode, AiProvider } from '../types';
 import { NumberedWord } from './stage0Prepare';
 import { fetchWithExponentialBackoff } from '../utils/retryFetch';
+import { executeJsonLlmCall } from './unifiedAiService';
 
 export interface PacingConfig {
   minDwell: number;
@@ -294,11 +295,10 @@ export async function stage2GenerateBeatPlan(
   apiKey: string,
   modelQuality: 'standard' | 'high' = 'standard',
   userSignal?: AbortSignal,
-  onStatusMessage?: (msg: string) => void
+  onStatusMessage?: (msg: string) => void,
+  provider: AiProvider = 'gemini',
+  groqModel?: string
 ): Promise<PlannedScene[]> {
-  const modelName = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-3.8-flash';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-
   const isShortForm = format === 'short';
   const pacingDesc = isShortForm
     ? 'SHORT-FORM PACING: rapid pattern interrupts every 1.2s to 1.8s (min dwell 0.8s, fast cut below 1.1s, max dwell 2.0s)'
@@ -338,45 +338,64 @@ RULES FOR BEAT PLANNING:
 
 Output valid JSON matching the schema.`;
 
-  const payload = {
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: {
-      responseMimeType: 'application/json',
-      responseSchema: BEAT_PLAN_SCHEMA,
+  let parsed: any;
+
+  if (provider === 'groq') {
+    parsed = await executeJsonLlmCall<any>({
+      provider: 'groq',
+      apiKey,
+      systemPrompt: 'You are a cinematic storyboard director. Divide narration words into picture beats. Output valid JSON.',
+      userPrompt: prompt,
+      modelQuality,
+      groqModel,
+      userSignal,
+      onStatusMessage,
       temperature: 0.2,
-    },
-  };
+    });
+  } else {
+    const modelName = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-3.8-flash';
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
-  const response = await fetchWithExponentialBackoff(
-    () =>
-      fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        signal: userSignal,
-      }),
-    {
-      initialDelayMs: 2000,
-      maxAttempts: 4,
-      onRetry: (attempt, _max, delayMs) => {
-        if (onStatusMessage) {
-          onStatusMessage(`Planning visual story beats (Attempt ${attempt}/4, waiting ${Math.round(delayMs / 1000)}s)...`);
-        }
+    const payload = {
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseSchema: BEAT_PLAN_SCHEMA,
+        temperature: 0.2,
       },
+    };
+
+    const response = await fetchWithExponentialBackoff(
+      () =>
+        fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: userSignal,
+        }),
+      {
+        initialDelayMs: 2000,
+        maxAttempts: 4,
+        onRetry: (attempt, _max, delayMs) => {
+          if (onStatusMessage) {
+            onStatusMessage(`Planning visual story beats (Attempt ${attempt}/4, waiting ${Math.round(delayMs / 1000)}s)...`);
+          }
+        },
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Beat Plan API error: HTTP ${response.status}`);
     }
-  );
 
-  if (!response.ok) {
-    throw new Error(`Beat Plan API error: HTTP ${response.status}`);
+    const json = await response.json();
+    const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!rawText) {
+      throw new Error('Empty response from Beat Plan generator');
+    }
+
+    parsed = JSON.parse(rawText);
   }
-
-  const json = await response.json();
-  const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!rawText) {
-    throw new Error('Empty response from Beat Plan generator');
-  }
-
-  const parsed = JSON.parse(rawText);
   const rawScenes: PlannedScene[] = (parsed.scenes || []).map((sc: any, scIdx: number) => {
     const beats: PlannedBeat[] = (sc.beats || []).map((b: any, bIdx: number) => {
       const start = Math.max(0, Math.min(words.length - 1, b.startWordIndex || 0));
