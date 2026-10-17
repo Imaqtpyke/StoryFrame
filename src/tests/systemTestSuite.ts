@@ -19,7 +19,7 @@ import {
   extractStoryTitle,
 } from '../services/historyStorage';
 import { cleanAndDeduplicatePrompt } from '../services/geminiClient';
-import { sanitizeGroqErrorMessage, extractCleanJson, GROQ_API_BASE_URL } from '../services/groqClient';
+import { sanitizeGroqErrorMessage, extractCleanJson, GROQ_API_BASE_URL, sanitizePromptText, tryRepairTruncatedJson } from '../services/groqClient';
 import { robustJsonParse } from '../services/unifiedAiService';
 import { Scene, Beat, StyleProfile, StoryGenerationResult } from '../types';
 
@@ -670,6 +670,18 @@ assert(Array.isArray(parsedRobust.scenes) && parsedRobust.scenes[0].index === 1,
 const rawArrayJson = '[\n  {"id": "scene-1"}\n]';
 const parsedArray = robustJsonParse<Array<{ id: string }>>(rawArrayJson);
 assert(Array.isArray(parsedArray) && parsedArray[0].id === 'scene-1', 'Groq API', 'Parses raw top-level array JSON structures');
+
+// 8. Unicode sanitization for non-breaking hyphens (e.g. "T‑shirts" \u2011) and smart quotes
+const rawPromptWithUnicode = 'Sanath wears 260 T\u2011shirts \u201Cand breaks records\u201D with non\u00A0breaking spaces.';
+const cleanedUnicode = sanitizePromptText(rawPromptWithUnicode);
+assert(!cleanedUnicode.includes('\u2011') && cleanedUnicode.includes('T-shirts'), 'Groq API', 'Normalizes non-breaking hyphens to standard ASCII hyphen');
+assert(!cleanedUnicode.includes('\u201C') && cleanedUnicode.includes('"and breaks records"'), 'Groq API', 'Normalizes smart quotes to standard quotes');
+
+// 9. Truncated JSON recovery for cut-off model responses
+const cutOffJson = '{"styleProfile": {"artStyle": "stickman"}, "scenes": [{"index": 1, "narratorLine": "He wore 260 T-shirts", "beats": [{"beatIndex": 1, "textSpan": "He wore';
+const repairedCutoff = tryRepairTruncatedJson(cutOffJson);
+assert(repairedCutoff !== null && repairedCutoff.styleProfile?.artStyle === 'stickman', 'Groq API', 'Successfully repairs and salvages truncated JSON cut off mid-sentence');
+assert(Array.isArray(repairedCutoff.scenes) && repairedCutoff.scenes[0].index === 1, 'Groq API', 'Repairs unclosed scene and beats arrays');
 
 console.log('\n====================================================================');
 console.log('                  FULL-SYSTEM VERIFICATION REPORT                  ');

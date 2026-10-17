@@ -114,7 +114,8 @@ export default function AssistantChatDrawer({
     if (!messageContent || isSending) return;
 
     if (!apiKey || !apiKey.trim()) {
-      setErrorMessage('A Gemini API key is required to talk with the assistant. Please add your key under Model Options in the generator.');
+      const providerLabel = aiProvider === 'groq' ? 'Groq' : 'Gemini';
+      setErrorMessage(`A ${providerLabel} API key is required to talk with the assistant. Please add your key under Model Options in the generator.`);
       return;
     }
 
@@ -239,6 +240,12 @@ export default function AssistantChatDrawer({
                   <h2 id="assistant-drawer-title" className="text-base sm:text-lg font-display text-white tracking-tight">
                     StoryFrame Assistant
                   </h2>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    <span className="text-[10px] font-mono text-[#8C8C86]">
+                      {aiProvider === 'groq' ? 'Groq Cloud' : 'Google Gemini'}
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -271,7 +278,7 @@ export default function AssistantChatDrawer({
                   <Key className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                   <div className="flex-1">
                     <p className="text-[#E6E6DF] leading-relaxed">
-                      To talk with the assistant, please configure your Gemini API key in the generator's Model Options.
+                      To talk with the assistant, please configure your {aiProvider === 'groq' ? 'Groq' : 'Gemini'} API key in the generator's Model Options.
                     </p>
                     {onOpenModelOptions && (
                       <button
@@ -424,7 +431,9 @@ export default function AssistantChatDrawer({
                   <div className="p-3.5 bg-[#131312] border border-white/10 rounded-[2px] max-w-[85%] space-y-2">
                     <div className="flex items-center space-x-2 text-xs text-[#8C8C86]">
                       <span className="inline-block w-2 h-2 rounded-full bg-white animate-pulse" />
-                      <span className="font-mono text-[11px]">Thinking with Gemini...</span>
+                      <span className="font-mono text-[11px]">
+                        Thinking with {aiProvider === 'groq' ? 'Groq' : 'Gemini'}...
+                      </span>
                     </div>
                     <div className="space-y-1.5 w-48 sm:w-64 pt-1">
                       <div className="h-2 bg-white/10 rounded-[1px] animate-pulse" />

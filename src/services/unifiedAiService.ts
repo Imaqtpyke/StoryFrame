@@ -98,7 +98,7 @@ export async function executeJsonLlmCall<T = any>(params: UnifiedJsonRequest): P
         {
           model: targetModel,
           temperature,
-          maxTokens,
+          maxTokens: maxTokens || 8192,
           signal: userSignal,
           onStatusMessage,
           jsonMode: true,
