@@ -1,13 +1,26 @@
-# Exponential Backoff Retry for 503 Service Unavailable and Error Display
+# Implementation Plan: Bulletproof Long-Form Pipeline & Groq JSON Recovery
 
-## Overview & Core Concept
-Implement an exponential backoff retry strategy for Google Gemini API calls (`generateOriginalStory`, `generateEnhancedStory`, and `sendChatMessage`) when encountering 503 Service Unavailable, 429 Rate Limit, or server overloaded errors. This avoids immediate high-speed retries that increase server load, while providing clear status updates in both the generation loading screen (`ResultsSkeleton`) and the AI assistant (`AssistantChatDrawer`).
+## 1. Core Objectives
+- Ensure StoryFrame can process long-form narratives (up to 2,000 words) without crashing or throwing `.map()` errors.
+- Make Groq Cloud and Google Gemini JSON pipelines 100% resilient against response truncation or malformed array formatting.
+- Keep the user experience fast, stateless, and focused on instant cinematic breakdown generation.
 
-## Key Requirements & Strategy
-1. **Exponential Backoff Helper**:
-   - Create a robust retry wrapper function with configurable base delay (e.g., 2000ms), multiplier (2x), and maximum retries (3 attempts).
-   - Catch 503, 429, or network overload errors, wait for `initialDelay * 2^attempt`, and retry.
-   - Accept an optional progress callback (`onRetry?: (attempt: number, delayMs: number, errorMsg: string) => void`) to report retry status in real-time.
-2. **UI & AI Assistant Feedback**:
-   - In `ResultsSkeleton`, display real-time retry status (e.g., "Google Gemini servers are busy (503). Retrying in 4s (Attempt 2 of 3)...") so the user sees exponential backoff progress.
-   - In assistant chat (`AssistantChatDrawer` / `assistantChatService.ts`), handle 503/429 errors gracefully with backoff and display clear retry / error guidance in the assistant conversation.
+## 2. Technical Solutions & Steps
+
+### A. Defensive Array Safety Guards Across All Pipeline Stages
+- **Files:** `groundedPipeline.ts`, `stage1StoryBible.ts`, `stage2BeatPlan.ts`, `stage3PromptWriter.ts`, `stage4VerifyRepair.ts`
+- **Solution:** Wrap all `.map()`, `.forEach()`, and `.filter()` calls on model outputs in strict array validation checks (`Array.isArray(...) ? ... : []`). If an LLM response omits a field or returns undefined, supply safe empty arrays so execution never halts.
+
+### B. Advanced Truncated JSON Repair & `failed_generation` Salvage
+- **File:** `groqClient.ts`
+- **Solution:** 
+  - Explicitly set `max_tokens: 8192` on Groq requests to provide ample head-room for long scripts.
+  - Automatically intercept Groq 400 JSON validation failures, extract `failed_generation`, and run heuristic bracket/quote repair (`tryRepairTruncatedJson`).
+  - Provide an automatic raw-text fallback retry when strict JSON mode rejects an edge-case output.
+
+### C. Clean Export & Markdown Packaging
+- **File:** `ResultsView.tsx`, `timelineExport.ts`
+- **Solution:** Enable seamless browser-side export of the full generated storyboard packet (`.md`, `.srt`, `.edl`) so users can compile multi-part stories into complete scripts without re-runner overhead.
+
+## 3. Verification
+- Run the 79-point automated system test suite (`systemTestSuite.ts`) and compile the applet to verify zero TypeScript errors and 100% test success.

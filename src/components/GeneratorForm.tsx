@@ -631,6 +631,33 @@ export default function GeneratorForm({
               <span className="font-editorial-meta text-[9px] sm:text-[10px] text-[#7D7D76]">
                 {story.trim().split(/\s+/).filter(Boolean).length} WORDS
               </span>
+              <label
+                htmlFor="story-file-upload"
+                className="inline-flex items-center gap-1 px-2 py-1 bg-[#1C1C1A] hover:bg-[#282826] active:bg-[#333330] text-[#9C9C96] hover:text-white border border-white/15 text-[11px] font-display transition-all cursor-pointer shadow-sm"
+                title="Upload Markdown or Text story file"
+              >
+                <span>Upload File</span>
+                <input
+                  id="story-file-upload"
+                  type="file"
+                  accept=".txt,.md"
+                  disabled={isLoading}
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                      const content = event.target?.result;
+                      if (typeof content === 'string') {
+                        setStory(content);
+                      }
+                    };
+                    reader.readAsText(file);
+                    e.target.value = '';
+                  }}
+                />
+              </label>
               <button
                 type="button"
                 id="random-story-dice-btn"
