@@ -432,7 +432,7 @@ export default function AssistantChatDrawer({
                     <div className="flex items-center space-x-2 text-xs text-[#8C8C86]">
                       <span className="inline-block w-2 h-2 rounded-full bg-white animate-pulse" />
                       <span className="font-mono text-[11px]">
-                        Thinking with {aiProvider === 'groq' ? 'Groq' : 'Gemini'}...
+                        thinking with {aiProvider === 'groq' ? 'groq' : 'gemini'}...
                       </span>
                     </div>
                     <div className="space-y-1.5 w-48 sm:w-64 pt-1">
