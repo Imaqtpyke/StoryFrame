@@ -101,3 +101,10 @@
 - **Date:** 2026-10-17
 - **Status:** Active
 
+## Manuscript Ingestion Engine & 11-Episode Series Continuity Tracking
+- **Fact/Decision:** Built deterministic manuscript ingestion (`scriptParser.ts`) enabling instant import of pre-structured episodic screenplays (such as Episode 1: Twelve Suspects from `storyframe_episode_1_twelve_suspects_d92e002c.md`) directly into 12 discrete 4-second scenes (48s total, vertical 9:16 text-to-video mode) with 8-part video prompts (camera motion, character biometrics, lighting, foley sound cues) and start-frame keyframe prompts. Integrated `ManuscriptIngestModal.tsx` in `GeneratorForm.tsx` with 1-click storyboard transition or form population, and added `SeriesRoadmapModal.tsx` in `ResultsView.tsx` to maintain the 11-episode arc, eliminated contestants, and the strict language rule forbidding "gay" or "straight" labels.
+- **Context:** Solves the challenge of executing finished episodic manuscripts without having an LLM re-write or hallucinate changes to author-crafted 4-second clip structures.
+- **Date:** 2026-10-20
+- **Status:** Active
+
+

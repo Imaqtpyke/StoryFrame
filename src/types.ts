@@ -103,6 +103,12 @@ export interface StoryGenerationResult {
   assumptions?: string[];
   authorNotes?: string;
   timingSource?: 'actual' | 'estimated';
+  seriesRoadmap?: {
+    episodeNumber: number;
+    title: string;
+    description: string;
+    status: 'draft' | 'completed' | 'planned';
+  }[];
 }
 
 export interface CustomBeatDefinition {

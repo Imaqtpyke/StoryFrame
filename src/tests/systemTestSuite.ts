@@ -683,6 +683,141 @@ const repairedCutoff = tryRepairTruncatedJson(cutOffJson);
 assert(repairedCutoff !== null && repairedCutoff.styleProfile?.artStyle === 'stickman', 'Groq API', 'Successfully repairs and salvages truncated JSON cut off mid-sentence');
 assert(Array.isArray(repairedCutoff.scenes) && repairedCutoff.scenes[0].index === 1, 'Groq API', 'Repairs unclosed scene and beats arrays');
 
+// ============================================================================
+// 16. EPISODE 1 MANUSCRIPT INGESTION & 11-EPISODE SERIES CONTINUITY
+// ============================================================================
+console.log('--- Running Test Suite 16: Episode 1 Manuscript Ingestion & 11-Episode Continuity ---');
+import { parseManuscriptMarkdown, ATTACHED_EPISODE_1_MARKDOWN } from '../services/scriptParser';
+
+const parsedEpisode1 = parseManuscriptMarkdown(ATTACHED_EPISODE_1_MARKDOWN);
+
+assert(parsedEpisode1.clips.length === 12, 'Manuscript Ingestion', 'Parses exactly 12 clips from Episode 1 manuscript');
+assert(parsedEpisode1.totalDurationSeconds === 48, 'Manuscript Ingestion', 'Calculates 48 seconds total duration (12 clips x 4s)');
+assert(parsedEpisode1.format === 'short', 'Manuscript Ingestion', 'Detects Vertical 9:16 short format');
+assert(parsedEpisode1.generationMode === 'video', 'Manuscript Ingestion', 'Maps to Text to Video generation mode');
+
+// Verify Clip 1 details
+const clip1 = parsedEpisode1.clips[0];
+assert(clip1.clipNumber === 1, 'Manuscript Ingestion', 'Clip 1 has index 1');
+assert(clip1.durationSeconds === 4, 'Manuscript Ingestion', 'Clip 1 duration is 4 seconds');
+assert(clip1.voiceOver.includes('Twelve men entered a million-dollar game'), 'Manuscript Ingestion', 'Clip 1 preserves exact voice-over line');
+assert(clip1.visualDescription.includes('mansion at night'), 'Manuscript Ingestion', 'Clip 1 preserves visual description');
+assert(clip1.videoPrompt.includes('Vertical 9:16 cinematic video'), 'Manuscript Ingestion', 'Clip 1 prompt enforces 9:16 vertical framing');
+assert(clip1.videoPrompt.includes('Camera:') && clip1.videoPrompt.includes('Sound Design:'), 'Manuscript Ingestion', 'Clip 1 prompt embeds camera motion and audio foley cues');
+
+// Verify Clip 12 cliffhanger
+const clip12 = parsedEpisode1.clips[11];
+assert(clip12.clipNumber === 12, 'Manuscript Ingestion', 'Clip 12 has index 12');
+assert(clip12.voiceOver.includes('playing the wrong game'), 'Manuscript Ingestion', 'Clip 12 preserves cliffhanger voice-over');
+assert(clip12.videoPrompt.includes('Zero on-screen text, subtitles, or digital watermarks'), 'Manuscript Ingestion', 'Enforces strict zero subtitle render constraint');
+
+// Verify 11-Episode Series Roadmap & Continuity
+assert(parsedEpisode1.seriesRoadmap.length === 11, 'Series Continuity', 'Tracks full 11-episode mystery series roadmap');
+assert(parsedEpisode1.seriesRoadmap[0].status === 'completed', 'Series Continuity', 'Episode 1 is marked completed/active');
+assert(parsedEpisode1.seriesRoadmap[1].title.includes('The First Name'), 'Series Continuity', 'Episode 2 is queued as The First Name');
+assert(parsedEpisode1.seriesRoadmap[10].title.includes('The Real Twist'), 'Series Continuity', 'Episode 11 concludes with The Real Twist');
+
+// Verify Language Rule Enforcement
+const forbiddenList = parsedEpisode1.storyResult.storyBible?.forbidden || [];
+const hasLanguageRule = forbiddenList.some((rule: string) => rule.includes('gay') || rule.includes('straight'));
+assert(hasLanguageRule, 'Series Continuity', 'Enforces language restriction forbidding gay or straight labels');
+
+// ============================================================================
+// 17. POST-IMPLEMENTATION AUDIT & VALIDATION ERROR COVERAGE
+// ============================================================================
+console.log('--- Running Test Suite 17: Manuscript Validation, Continuity Persistence & Exports ---');
+import { validateManuscript } from '../services/scriptParser';
+import {
+  syncStoryResultToContinuity,
+  loadSeriesContinuity,
+  initializeNextEpisodeDraft,
+} from '../services/seriesContinuityStorage';
+
+// 1. Target resolution & timeline verification across all 12 clips
+assert(parsedEpisode1.targetResolution.includes('360p'), 'Audit - Timing & Format', 'Target resolution includes 360p');
+let totalCalculatedDuration = 0;
+let clipsValid = true;
+for (let i = 0; i < parsedEpisode1.clips.length; i++) {
+  const c = parsedEpisode1.clips[i];
+  if (c.clipNumber !== i + 1 || c.durationSeconds !== 4 || !c.voiceOver || !c.visualDescription) {
+    clipsValid = false;
+  }
+  totalCalculatedDuration += c.durationSeconds;
+}
+assert(clipsValid && totalCalculatedDuration === 48, 'Audit - Timing & Format', 'All 12 clips last exactly 4 seconds totaling 48 seconds');
+
+// 2. Manuscript validation error coverage: Missing voiceover
+const badManuscriptMissingVO = `# Bad Story\n### Clip 1 — The Test (0:00–0:04)\n**Visual:** An empty room.`;
+const valMissingVO = validateManuscript(badManuscriptMissingVO);
+assert(!valMissingVO.isValid && valMissingVO.errors.some(e => e.includes('Voice-over')), 'Audit - Validation Errors', 'Rejects manuscript missing voice-over line');
+
+// 3. Manuscript validation error coverage: Missing visual description
+const badManuscriptMissingVis = `# Bad Story\n### Clip 1 — The Test (0:00–0:04)\n**Voice-over:** "Hello world."`;
+const valMissingVis = validateManuscript(badManuscriptMissingVis);
+assert(!valMissingVis.isValid && valMissingVis.errors.some(e => e.includes('Visual')), 'Audit - Validation Errors', 'Rejects manuscript missing visual description');
+
+// 4. Manuscript validation error coverage: Duplicate clip numbers
+const badManuscriptDup = `# Bad Story\n### Clip 1 — Test 1 (0:00–0:04)\n**Voice-over:** "Line 1"\n**Visual:** Vis 1\n### Clip 1 — Test Dup (0:04–0:08)\n**Voice-over:** "Line 2"\n**Visual:** Vis 2`;
+const valDup = validateManuscript(badManuscriptDup);
+assert(!valDup.isValid && valDup.errors.some(e => e.includes('Duplicate clip number')), 'Audit - Validation Errors', 'Rejects duplicate clip numbers');
+
+// 5. Manuscript validation error coverage: Malformed timecodes
+const badManuscriptMalformedTc = `# Bad Story\n### Clip 1 — Test (0:00-xyz)\n**Voice-over:** "Line"\n**Visual:** Vis`;
+const valMalformedTc = validateManuscript(badManuscriptMalformedTc);
+assert(!valMalformedTc.isValid && valMalformedTc.errors.some(e => e.includes('malformed timecode')), 'Audit - Validation Errors', 'Rejects malformed timecodes');
+
+// 6. Manuscript validation error coverage: Invalid duration (end <= start)
+const badManuscriptInvDur = `# Bad Story\n### Clip 1 — Test (0:05–0:02)\n**Voice-over:** "Line"\n**Visual:** Vis`;
+const valInvDur = validateManuscript(badManuscriptInvDur);
+assert(!valInvDur.isValid && valInvDur.errors.some(e => e.includes('invalid timecode') || e.includes('greater than start')), 'Audit - Validation Errors', 'Rejects invalid timecode where end is before start');
+
+// 7. Manuscript validation error coverage: Language rule violation in dialogue
+const badManuscriptLanguage = `# Bad Story\n### Clip 1 — Test (0:00–0:04)\n**Voice-over:** "He is definitely gay."\n**Visual:** Two men talking.`;
+const valLanguage = validateManuscript(badManuscriptLanguage);
+assert(!valLanguage.isValid && valLanguage.errors.some(e => e.includes('Language rule violation')), 'Audit - Validation Errors', 'Catches forbidden language labels in voiceover');
+
+// 8. Visual & Narrative Prompt Continuity
+const clip7 = parsedEpisode1.clips[6]; // Clip 7
+const clip8 = parsedEpisode1.clips[7]; // Clip 8
+assert(clip7.videoPrompt.includes('Contestant A') && clip7.videoPrompt.includes('olive green henley'), 'Audit - Visual Continuity', 'Clip 7 embeds Contestant A biometrics & private confessional setting');
+assert(clip8.videoPrompt.includes('Contestant B') && clip8.videoPrompt.includes('silver band'), 'Audit - Visual Continuity', 'Clip 8 embeds Contestant B biometrics & silver ring action');
+
+// 9. Persistent Series Continuity Save & Roundtrip
+// Polyfill memory storage if running in minimal headless environments
+if (typeof localStorage === 'undefined') {
+  const store: Record<string, string> = {};
+  (globalThis as any).localStorage = {
+    getItem: (k: string) => store[k] || null,
+    setItem: (k: string, v: string) => { store[k] = v; },
+    removeItem: (k: string) => { delete store[k]; },
+    clear: () => { Object.keys(store).forEach(k => delete store[k]); }
+  };
+}
+
+const savedState = syncStoryResultToContinuity(parsedEpisode1.storyResult, 1, "The One Who Doesn't Belong");
+assert(savedState !== null && savedState.activeEpisodeNumber === 1, 'Audit - Persistence', 'Syncs Episode 1 continuity to persistent storage');
+
+const loadedState = loadSeriesContinuity("The One Who Doesn't Belong");
+assert(loadedState !== null && loadedState.characterSheet["The Enigmatic Host"] !== undefined, 'Audit - Persistence', 'Loads persisted series continuity with intact character sheets');
+assert(loadedState !== null && loadedState.episodes[0].status === 'completed', 'Audit - Persistence', 'Episode 1 remains locked in completed status');
+
+// 10. Episode 2 Initialization from Episode 1 Continuity
+if (loadedState) {
+  const ep2Draft = initializeNextEpisodeDraft(loadedState, 2);
+  assert(ep2Draft.draftStoryText.includes('Episode 2 — The First Name'), 'Audit - Episode 2 Draft', 'Episode 2 draft inherits title The First Name');
+  assert(ep2Draft.draftStoryText.includes('12 contestants in the house (no eliminations finalized until approved vote result)'), 'Audit - Episode 2 Draft', 'Contestants are not prematurely marked eliminated');
+  assert(ep2Draft.inheritedCharacters["Twelve Male Contestants"] !== undefined, 'Audit - Episode 2 Draft', 'Episode 2 inherits exact character sheet from Episode 1');
+  assert(loadedState.episodes[0].approvedScenes?.length === 12, 'Audit - Episode 2 Draft', 'Episode 1 approved scenes remain isolated and unmutated');
+}
+
+// 11. Timeline Export Integrity
+import { generateCMX3600EDL, generateSRTSubtitles } from '../services/timelineExport';
+const edlExport = generateCMX3600EDL(parsedEpisode1.storyResult.scenes, parsedEpisode1.title);
+assert(edlExport.includes('TITLE: THE_ONE_WHO_DOESN_T_BELONG') && edlExport.includes('012  AX       V     C'), 'Audit - Export Integrity', 'Generates valid CMX 3600 EDL with 12 edit events');
+
+const srtExport = generateSRTSubtitles(parsedEpisode1.storyResult.scenes);
+assert(srtExport.includes('00:00:00,000 --> 00:00:04,000') && srtExport.includes('00:00:44,000 --> 00:00:48,000'), 'Audit - Export Integrity', 'Generates valid SRT subtitles spanning exactly 00:00 to 00:48');
+
 console.log('\n====================================================================');
 console.log('                  FULL-SYSTEM VERIFICATION REPORT                  ');
 console.log('====================================================================');

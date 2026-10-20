@@ -4,6 +4,7 @@ import { StoryGenerationResult, StoryFormat, Beat } from '../types';
 import BeatBottomSheet from './BeatBottomSheet';
 import CharacterReferenceModal from './CharacterReferenceModal';
 import StyleAndCharactersSection from './StyleAndCharactersSection';
+import SeriesRoadmapModal from './SeriesRoadmapModal';
 import { enforceBeatCeilings, getPreviewText } from '../services/beatSplitting';
 import { TargetModel, compileBeatPrompt, lintStoryboard, LintIssue } from '../services/promptCompiler';
 import { generateCMX3600EDL, generateSRTSubtitles, calculatePacing } from '../services/timelineExport';
@@ -38,12 +39,28 @@ import {
   Users,
 } from 'lucide-react';
 
+import {
+  syncStoryResultToContinuity,
+  loadSeriesContinuity,
+  initializeNextEpisodeDraft,
+  hasSavedSeriesContinuity,
+} from '../services/seriesContinuityStorage';
+
 interface ResultsViewProps {
   result: StoryGenerationResult;
   format: StoryFormat;
   platform: string;
   onBackToEdit: () => void;
   onReset: () => void;
+  onStartEpisodeDraft?: (payload: {
+    story: string;
+    characterStyle: string;
+    format: 'short' | 'long';
+    generationMode: 'video' | 'image';
+    targetVideoDuration: number;
+    platform: string;
+    characterSheet?: Record<string, string>;
+  }) => void;
 }
 
 // Convert numbers (1, 2, 3...) to Roman Numerals ("I", "II", "III"...) for editorial scene headers
@@ -84,6 +101,7 @@ export default function ResultsView({
   platform,
   onBackToEdit,
   onReset,
+  onStartEpisodeDraft,
 }: ResultsViewProps) {
   const [copiedIndex, setCopiedIndex] = useState<string | null>(null);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
@@ -93,6 +111,38 @@ export default function ResultsView({
   const [selectedTargetModel, setSelectedTargetModel] = useState<TargetModel>('universal');
   const [isRefModalOpen, setIsRefModalOpen] = useState<boolean>(false);
   const [isStyleModalOpen, setIsStyleModalOpen] = useState<boolean>(false);
+  const [isRoadmapModalOpen, setIsRoadmapModalOpen] = useState<boolean>(false);
+  const [isContinuitySaved, setIsContinuitySaved] = useState<boolean>(() => hasSavedSeriesContinuity());
+
+  // Auto-persist series continuity if manuscript has series roadmap
+  useEffect(() => {
+    if (result.seriesRoadmap && result.seriesRoadmap.length > 0) {
+      syncStoryResultToContinuity(result, 1);
+      setIsContinuitySaved(true);
+    }
+  }, [result]);
+
+  const handleManualSaveContinuity = () => {
+    syncStoryResultToContinuity(result, 1);
+    setIsContinuitySaved(true);
+  };
+
+  const handleSelectEpisodeForDraft = (ep: { episodeNumber: number; title: string; description: string }) => {
+    const continuity = loadSeriesContinuity("The One Who Doesn't Belong") || syncStoryResultToContinuity(result, 1);
+    const draft = initializeNextEpisodeDraft(continuity, ep.episodeNumber);
+    if (onStartEpisodeDraft) {
+      onStartEpisodeDraft({
+        story: draft.draftStoryText,
+        characterStyle: draft.characterStyle,
+        format: draft.format,
+        generationMode: draft.generationMode,
+        targetVideoDuration: draft.targetVideoDuration,
+        platform: 'TikTok',
+        characterSheet: draft.inheritedCharacters,
+      });
+    }
+    setIsRoadmapModalOpen(false);
+  };
 
   // Mobile bottom sheet beat breakdown state
   const [mobileActiveBeat, setMobileActiveBeat] = useState<{
@@ -495,6 +545,20 @@ export default function ResultsView({
             >
               <Users size={11} className="mr-1 text-[#9C9C96]" />
               <span>Character Packets</span>
+            </button>
+          )}
+
+          {/* Series Roadmap Modal Button */}
+          {result.seriesRoadmap && result.seriesRoadmap.length > 0 && (
+            <button
+              type="button"
+              id="open-series-roadmap-header-btn"
+              onClick={() => setIsRoadmapModalOpen(true)}
+              className="inline-flex items-center px-2.5 py-1 bg-[#161614] hover:bg-[#20201e] text-[#D4D4D0] hover:text-white border border-white/15 text-[11px] font-display transition-colors rounded min-h-[28px]"
+              title="Open 11-Episode Series Continuity Roadmap"
+            >
+              <Film size={11} className="mr-1 text-amber-400" />
+              <span>Series Roadmap ({result.seriesRoadmap.length} Ep)</span>
             </button>
           )}
 
@@ -948,6 +1012,17 @@ export default function ResultsView({
         characterSheet={result.characterSheet || {}}
         styleProfile={result.styleProfile}
         format={format}
+      />
+
+      {/* 11-Episode Series Continuity Roadmap Modal */}
+      <SeriesRoadmapModal
+        isOpen={isRoadmapModalOpen}
+        onClose={() => setIsRoadmapModalOpen(false)}
+        seriesTitle="The One Who Doesn't Belong"
+        roadmap={result.seriesRoadmap}
+        onSelectEpisodeForGeneration={handleSelectEpisodeForDraft}
+        onSaveContinuity={handleManualSaveContinuity}
+        isSaved={isContinuitySaved}
       />
     </div>
   );

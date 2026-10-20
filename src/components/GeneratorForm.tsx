@@ -1,8 +1,9 @@
 import { useState, FormEvent, MouseEvent, useEffect } from 'react';
 import CustomDropdown, { DropdownOption } from './CustomDropdown';
 import { useApiKey } from '../context/ApiKeyContext';
-import { StoryFormat, GenerateStoryRequest, GenerationMode, CustomSceneDefinition, CustomBeatDefinition, ActivePage, AiProvider } from '../types';
-import { Sliders, RefreshCw, AlertCircle, Dices, Eye, EyeOff, KeyRound, Trash2, CheckCircle2, Shield, Camera, Video, Sparkles, Scissors, ExternalLink, ShieldCheck, Cpu, Zap } from 'lucide-react';
+import { StoryFormat, GenerateStoryRequest, GenerationMode, CustomSceneDefinition, CustomBeatDefinition, ActivePage, AiProvider, StoryGenerationResult } from '../types';
+import { Sliders, RefreshCw, AlertCircle, Dices, Eye, EyeOff, KeyRound, Trash2, CheckCircle2, Shield, Camera, Video, Sparkles, Scissors, ExternalLink, ShieldCheck, Cpu, Zap, FileText, Film } from 'lucide-react';
+import ManuscriptIngestModal from './ManuscriptIngestModal';
 
 interface GeneratorFormProps {
   onSubmit: (data: GenerateStoryRequest) => void;
@@ -11,6 +12,7 @@ interface GeneratorFormProps {
   onNavigate?: (page: ActivePage) => void;
   initialValues?: GenerateStoryRequest | null;
   openModelOptionsTrigger?: number;
+  onDirectResult?: (result: StoryGenerationResult, request: GenerateStoryRequest) => void;
 }
 
 const RANDOM_STORIES: string[] = [
@@ -149,7 +151,9 @@ export default function GeneratorForm({
   onNavigate,
   initialValues,
   openModelOptionsTrigger,
+  onDirectResult,
 }: GeneratorFormProps) {
+  const [isIngestModalOpen, setIsIngestModalOpen] = useState(false);
   const {
     apiKey,
     hasCustomKey,
@@ -419,6 +423,22 @@ export default function GeneratorForm({
     }
   };
 
+  const handleLoadParsedIntoForm = (parsed: {
+    story: string;
+    characterStyle: string;
+    format: 'short' | 'long';
+    generationMode: 'video' | 'image';
+    targetVideoDuration: number;
+    platform: string;
+  }) => {
+    setStory(parsed.story);
+    setCharacterStyle(parsed.characterStyle);
+    setFormat(parsed.format);
+    setGenerationMode(parsed.generationMode);
+    setVideoDurationValue(String(parsed.targetVideoDuration));
+    setPlatform(parsed.platform);
+  };
+
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (!story.trim() || isLoading) return;
@@ -631,6 +651,17 @@ export default function GeneratorForm({
               <span className="font-editorial-meta text-[9px] sm:text-[10px] text-[#7D7D76]">
                 {story.trim().split(/\s+/).filter(Boolean).length} WORDS
               </span>
+              <button
+                type="button"
+                id="open-manuscript-ingest-btn"
+                onClick={() => setIsIngestModalOpen(true)}
+                disabled={isLoading}
+                className="inline-flex items-center gap-1 px-2 py-1 bg-[#1C1C1A] hover:bg-[#282826] active:bg-[#333330] text-[#D4D4D0] hover:text-white border border-white/15 text-[11px] font-display transition-all shadow-sm"
+                title="Ingest structured Markdown screenplay (e.g. Episode 1)"
+              >
+                <FileText size={12} className="text-amber-400" />
+                <span>Ingest Manuscript</span>
+              </button>
               <label
                 htmlFor="story-file-upload"
                 className="inline-flex items-center gap-1 px-2 py-1 bg-[#1C1C1A] hover:bg-[#282826] active:bg-[#333330] text-[#9C9C96] hover:text-white border border-white/15 text-[11px] font-display transition-all cursor-pointer shadow-sm"
@@ -1312,6 +1343,14 @@ export default function GeneratorForm({
           )}
         </div>
       </form>
+
+      {/* Manuscript Ingestion Modal */}
+      <ManuscriptIngestModal
+        isOpen={isIngestModalOpen}
+        onClose={() => setIsIngestModalOpen(false)}
+        onDirectResult={onDirectResult}
+        onLoadIntoForm={handleLoadParsedIntoForm}
+      />
     </div>
   );
 }

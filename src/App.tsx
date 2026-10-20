@@ -137,6 +137,44 @@ function StoryFrameMain() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const handleDirectResult = (resultData: StoryGenerationResult, requestData: GenerateStoryRequest) => {
+    setIsLoading(false);
+    setErrorMessage(null);
+    setLastRequest(requestData);
+    setResult(resultData);
+    const updatedHistory = addHistoryItem(requestData, resultData);
+    setHistoryItems(updatedHistory);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleStartEpisodeDraft = (draftPayload: {
+    story: string;
+    characterStyle: string;
+    format: 'short' | 'long';
+    generationMode: 'video' | 'image';
+    targetVideoDuration: number;
+    platform: string;
+    characterSheet?: Record<string, string>;
+  }) => {
+    setIsLoading(false);
+    setResult(null);
+    setErrorMessage(null);
+    setLastRequest({
+      story: draftPayload.story,
+      characterStyle: draftPayload.characterStyle,
+      format: draftPayload.format,
+      platform: draftPayload.platform,
+      durationMode: 'preset',
+      durationSeconds: 48,
+      generationMode: draftPayload.generationMode,
+      targetVideoDuration: draftPayload.targetVideoDuration,
+      beatMode: 'automatic',
+      autoArchitectMode: false,
+    });
+    setActivePage('generator');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-[#0C0C0B] text-[#F5F5F0] selection:bg-white selection:text-black relative font-narrative">
       {/* Subtle monochrome motion background layer */}
@@ -177,6 +215,7 @@ function StoryFrameMain() {
               platform={lastRequest.platform}
               onBackToEdit={handleBackToEdit}
               onReset={handleReset}
+              onStartEpisodeDraft={handleStartEpisodeDraft}
             />
           ) : (
             <GeneratorForm
@@ -186,6 +225,7 @@ function StoryFrameMain() {
               onNavigate={setActivePage}
               initialValues={lastRequest}
               openModelOptionsTrigger={openModelOptionsTrigger}
+              onDirectResult={handleDirectResult}
             />
           )
         ) : (

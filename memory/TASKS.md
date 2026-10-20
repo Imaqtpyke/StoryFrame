@@ -63,6 +63,12 @@
   - Implemented BYOK management with `byok_groq_key` in sessionStorage, key masking/visibility toggle, and direct link to `console.groq.com/keys`.
   - Connected Groq Cloud across all pipelines: Stage 0-4 grounded pipeline, Enhance Story Architect, and StoryFrame Assistant Chat drawer.
   - Updated automated test suite to 75 assertions in `src/tests/systemTestSuite.ts` (100% passing).
+- [x] **Manuscript Ingestion Engine & 11-Episode Series Continuity Tracking:**
+  - Created deterministic screenplay parser `src/services/scriptParser.ts` to directly ingest structured Markdown manuscripts (specifically `storyframe_episode_1_twelve_suspects_d92e002c.md` and custom script files).
+  - Automatically partitioned Episode 1 into 12 discrete 4-second scenes (total 48 seconds, vertical 9:16 text-to-video mode) with 8-part video prompts containing camera movements, biometric character postures, lighting, foley sound cues, and start-frame keyframe prompts.
+  - Implemented `ManuscriptIngestModal.tsx` in `GeneratorForm.tsx` providing 1-click loading into the production storyboard or form population with zero API overhead or hallucination risks.
+  - Built `SeriesRoadmapModal.tsx` and integrated it into `ResultsView.tsx` to track the full 11-episode mystery series arc, locked continuity rules (including strict ban on "gay" / "straight" labels), and active vs planned episodes.
+  - Verified with 97 automated tests passing in `src/tests/systemTestSuite.ts` and clean compilation.
 
 ## Next Steps / Active Tasks
-- [ ] Monitor user feedback on storyboard layout and model prompt copy workflows.
+- [ ] Monitor user workflow for subsequent episode drafting (Episode 2: "The First Name").
