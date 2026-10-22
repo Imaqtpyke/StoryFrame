@@ -77,6 +77,14 @@
   - Added zero-token deterministic ingestion directly from the main Generate button for structured manuscripts, with standard generation preserved for normal prose.
   - Decoupled hardcoded demo story ("The One Who Doesn't Belong") in favor of dynamic title extraction from pasted scripts and results.
   - Verified with 121 automated system tests passing (100%), clean TypeScript check, and clean build.
+- [x] **Modality Header, Kinetic Verb Sanitizer, Style Decoupling & Visual Information Budget:**
+  - Added explicit modality declarations (`Generate a single still image of:` vs `Generate a continuous video clip of:`) and static frozen-frame negative prompts in `src/services/promptCompiler.ts`.
+  - Implemented `sanitizeKineticMotionForImage` converting kinetic process verbs (`swirl above`, `flickers`, `churns`, `streaming`) into frozen visual moments to prevent Gemini/diffusion router modality confusion.
+  - Implemented `resolveStyleAndCastingCompatibility` stripping animal/character clauses when a scene has no characters or is an empty environment.
+  - Enforced Visual Information Budget & Reveal Discipline in `geminiClient.ts` and `enhanceStoryArchitect.ts` to ensure setup beats strictly withhold future destinations (e.g. harbor withheld until reveal beat).
+  - Added linter rules L07 (Style vs Casting Contradiction) and L08 (Premature Information Leakage) to `lintStoryboard`.
+  - Expanded test suite to 128 automated system tests in `src/tests/systemTestSuite.ts` (100% passing).
+  - Verified clean `tsc --noEmit` and successful production build.
 
 ## Next Steps / Active Tasks
 - [ ] Monitor user workflow for subsequent episode drafting across multi-episode projects.

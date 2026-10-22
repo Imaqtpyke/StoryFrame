@@ -115,3 +115,15 @@
 
 
 
+
+
+## Modality Header, Kinetic Motion Sanitizer, Style Decoupling & Visual Information Budget
+- **Fact/Decision:** Resolved narrative misalignment, Gemini modality confusion (generating video instead of still images on active-verb prompts like Beat 3), and style-vs-casting contradictions:
+  1. Compiles explicit model modality headers: `Generate a single still image of:` with frozen-frame constraints (`Static frame. One exact moment in time. No animation, no video`) and negative prompts for Image Mode, versus `Generate a continuous video clip of:` for Video Mode in `promptCompiler.ts`.
+  2. Implemented `sanitizeKineticMotionForImage` converting active process verbs (`streaming`, `swirl above`, `flickers`, `churns`, `fluid motion`) into frozen visual states (`suspended in a thin frozen ribbon`, `dense curved storm-cloud formations hang frozen above`, `captured in a single frozen lightning strike`, `has crisp frozen ripples`) to stop Gemini/diffusion routers from triggering video mode.
+  3. Implemented `resolveStyleAndCastingCompatibility` stripping mascot/animal/character requirements from art style when a scene is tagged `no characters` or describes an empty environment.
+  4. Enforced Visual Information Budget & Reveal Discipline across `geminiClient.ts` and `enhanceStoryArchitect.ts`: setup beats (e.g. "If you pour tea") strictly withhold destination ("harbor") until the reveal beat arrives.
+  5. Added Linter rules L07 (Style vs Casting Contradiction) and L08 (Premature Information Leakage) to `lintStoryboard`.
+- **Context:** Prevents diffusion models from generating unwanted video clips, hallucinating bizarre rubber hose characters in empty landscapes, or spoiling narrative twists prematurely.
+- **Date:** 2026-10-22
+- **Status:** Active

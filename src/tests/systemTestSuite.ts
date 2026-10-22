@@ -21,6 +21,12 @@ import {
 import { cleanAndDeduplicatePrompt } from '../services/geminiClient';
 import { sanitizeGroqErrorMessage, extractCleanJson, GROQ_API_BASE_URL, sanitizePromptText, tryRepairTruncatedJson } from '../services/groqClient';
 import { robustJsonParse } from '../services/unifiedAiService';
+import {
+  sanitizeKineticMotionForImage,
+  resolveStyleAndCastingCompatibility,
+  compileBeatPrompt,
+  lintStoryboard,
+} from '../services/promptCompiler';
 import { Scene, Beat, StyleProfile, StoryGenerationResult } from '../types';
 
 interface TestResult {
@@ -833,6 +839,102 @@ const parsedEpisode2 = parseManuscriptMarkdown(sampleScriptText);
 assert(parsedEpisode2.title === 'Mystery Manor', 'Dynamic Title', 'Extracts dynamic project title without default fallback');
 assert(parsedEpisode2.episodeTitle === 'Episode 2 — The Red Envelope', 'Dynamic Title', 'Extracts dynamic episode title');
 assert(parsedEpisode2.clips.length === 2, 'Dynamic Title', 'Parses all clips dynamically from pasted script');
+
+// 13. Modality Headers, Kinetic Sanitizer, Style Decoupling, and Linter (L07, L08)
+console.log('\n--- Running Test Suite 13: Modality Control & Visual Budget Integrity ---');
+
+// 13.1 Kinetic Motion Sanitization for Still Images
+const dirtyKineticPrompt = 'Tea streaming in a thin ribbon as dark clouds swirl above, lightning flickers, and harbor water churns.';
+const sanitizedStillPrompt = sanitizeKineticMotionForImage(dirtyKineticPrompt);
+assert(
+  sanitizedStillPrompt.includes('suspended in a thin frozen ribbon') &&
+  sanitizedStillPrompt.includes('dense curved storm-cloud formations hang frozen above') &&
+  sanitizedStillPrompt.includes('captured in a single frozen lightning strike') &&
+  sanitizedStillPrompt.includes('has crisp frozen ripples'),
+  'Kinetic Verb Sanitizer',
+  'Transforms process verbs (streaming, swirl above, flickers, churns) into frozen visual states'
+);
+
+// 13.2 Style and Casting Decoupling
+const rubberHoseStyle = '1930s Rubber Hose Animation with exaggerated stretchy animal characters';
+const emptyHarborPrompt = 'A close-up of a porcelain teapot nozzle tilting, focus on liquid. No characters present.';
+const decoupled = resolveStyleAndCastingCompatibility(emptyHarborPrompt, rubberHoseStyle);
+assert(
+  !decoupled.artStyle.includes('animal characters') && decoupled.artStyle.includes('1930s Rubber Hose Animation'),
+  'Style & Casting Decoupling',
+  'Strips animal character requirement from style when scene has no characters'
+);
+
+const sceneWithCharacterPrompt = 'A lively harbor scene where a sailor unloads crates.';
+const coupled = resolveStyleAndCastingCompatibility(sceneWithCharacterPrompt, rubberHoseStyle);
+assert(
+  coupled.artStyle.includes('exaggerated stretchy animal characters'),
+  'Style & Casting Decoupling',
+  'Preserves character style directives when scene includes characters'
+);
+
+// 13.3 Explicit Modality Headers in Compiled Prompts
+const sampleBeat: Beat = {
+  beatIndex: 1,
+  textSpan: 'If you pour tea',
+  shotType: 'Close-Up',
+  cameraAngle: 'Eye-level',
+  cameraMovement: 'Static Frame',
+  imagePrompt: 'Macro shot of hot amber tea pouring from silver spout, clouds swirl above.',
+  estimatedSeconds: 2,
+};
+const sampleScene: Scene = {
+  index: 1,
+  narratorLine: 'If you pour tea into a harbor, something terrifying happens.',
+  estimatedSeconds: 5,
+  videoPrompt: 'Subject: Teapot. Action: Pouring tea.',
+  beats: [sampleBeat],
+};
+const sampleStyle: StyleProfile = {
+  artStyle: 'Cinematic hyperrealism',
+  colorPalette: 'Muted warm tones',
+  lighting: 'Soft directional daylight',
+  eraAndSetting: '18th century Boston',
+  lensAndFilmStock: '35mm anamorphic prime lens',
+};
+
+const imageCompiled = compileBeatPrompt(sampleBeat, sampleScene, sampleStyle, 'universal', 'short', 'image');
+assert(
+  imageCompiled.promptText.startsWith('Generate a single still image of:') &&
+  imageCompiled.promptText.includes('Static frame. One exact moment in time.') &&
+  imageCompiled.negativePrompt?.includes('video') === true,
+  'Modality Header Enforcement',
+  'Image mode compiles with explicit still image declaration and negative video constraints'
+);
+
+const videoCompiled = compileBeatPrompt(sampleBeat, sampleScene, sampleStyle, 'universal', 'short', 'video');
+assert(
+  videoCompiled.promptText.startsWith('Generate a continuous video clip of:') &&
+  videoCompiled.negativePrompt?.includes('sudden cuts') === true,
+  'Modality Header Enforcement',
+  'Video mode compiles with explicit continuous video clip declaration'
+);
+
+// 13.4 Storyboard Linter Rules L07 and L08
+const leakScene: Scene = {
+  index: 1,
+  narratorLine: 'If you pour tea into a harbor',
+  estimatedSeconds: 4,
+  beats: [
+    {
+      beatIndex: 1,
+      textSpan: 'If you pour tea',
+      shotType: 'Close-Up',
+      imagePrompt: 'A teapot pours liquid over Boston harbor with ships docked in background. No characters, with exaggerated stretchy animal characters.',
+      estimatedSeconds: 2,
+    },
+  ],
+};
+const lintResults = lintStoryboard([leakScene]);
+const hasL07 = lintResults.some((issue) => issue.id.startsWith('L07'));
+const hasL08 = lintResults.some((issue) => issue.id.startsWith('L08'));
+assert(hasL07, 'Storyboard Linter L07', 'Detects contradictory casting directives in prompts');
+assert(hasL08, 'Storyboard Linter L08', 'Detects premature reveal of harbor before textSpan reaches it');
 
 console.log('\n====================================================================');
 console.log('                  FULL-SYSTEM VERIFICATION REPORT                  ');

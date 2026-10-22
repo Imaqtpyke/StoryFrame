@@ -40,6 +40,66 @@ export function normalizeCameraMovement(movement?: string): string {
 }
 
 /**
+ * Sanitizes kinetic process verbs into frozen-state descriptions for still images
+ */
+export function sanitizeKineticMotionForImage(prompt: string): string {
+  let cleaned = prompt;
+
+  // Replace process verbs with frozen static states
+  cleaned = cleaned.replace(/\b(?:clouds?\s+)?swirls?\s+above\b/gi, 'dense curved storm-cloud formations hang frozen above');
+  cleaned = cleaned.replace(/\bswirling\b/gi, 'frozen in curved spiral patterns');
+  cleaned = cleaned.replace(/\bflickers?\b/gi, 'captured in a single frozen lightning strike');
+  cleaned = cleaned.replace(/\bflickering\b/gi, 'captured in a single frozen illumination');
+  cleaned = cleaned.replace(/\bchurns?\b/gi, 'has crisp frozen ripples');
+  cleaned = cleaned.replace(/\bchurning\b/gi, 'crisp frozen ripples');
+  cleaned = cleaned.replace(/\bstreaming\s+in\s+a\s+thin\s+ribbon\b/gi, 'suspended in a thin frozen ribbon');
+  cleaned = cleaned.replace(/\bstreaming\b/gi, 'suspended mid-pour');
+  cleaned = cleaned.replace(/\bpouring\b/gi, 'suspended mid-pour');
+  cleaned = cleaned.replace(/\bhovering\b/gi, 'hanging motionless');
+  cleaned = cleaned.replace(/\bfluid\s+motion\b/gi, 'hand-drawn line work');
+  cleaned = cleaned.replace(/\bliquid\s+motion\b/gi, 'frozen liquid details');
+  cleaned = cleaned.replace(/\bmoving\b/gi, 'static');
+
+  return cleaned;
+}
+
+/**
+ * Resolves style and casting compatibility:
+ * If prompt indicates no characters or an empty environment, strip character-specific clauses from the style.
+ */
+export function resolveStyleAndCastingCompatibility(prompt: string, artStyle: string): { prompt: string; artStyle: string } {
+  const lowerPrompt = prompt.toLowerCase();
+  const hasNoCharacters =
+    lowerPrompt.includes('no characters') ||
+    lowerPrompt.includes('empty scene') ||
+    lowerPrompt.includes('focus on harbor setting') ||
+    lowerPrompt.includes('focus on liquid') ||
+    lowerPrompt.includes('focus on terrifying atmosphere') ||
+    lowerPrompt.includes('no people') ||
+    lowerPrompt.includes('no figures');
+
+  let sanitizedArtStyle = artStyle;
+  let sanitizedPrompt = prompt;
+
+  if (hasNoCharacters) {
+    sanitizedArtStyle = sanitizedArtStyle
+      .replace(/\s*with\s+exaggerated\s+stretchy\s+animal\s+characters/gi, '')
+      .replace(/\s*with\s+stretchy\s+animal\s+characters/gi, '')
+      .replace(/\s*with\s+anthropomorphic\s+characters/gi, '')
+      .replace(/\s*with\s+characters/gi, '')
+      .trim();
+
+    sanitizedPrompt = sanitizedPrompt
+      .replace(/\s*with\s+exaggerated\s+stretchy\s+animal\s+characters/gi, '')
+      .replace(/\s*with\s+stretchy\s+animal\s+characters/gi, '')
+      .replace(/\s*with\s+anthropomorphic\s+characters/gi, '')
+      .trim();
+  }
+
+  return { prompt: sanitizedPrompt, artStyle: sanitizedArtStyle };
+}
+
+/**
  * Compiles a visual beat into target-model-specific prompt syntax.
  */
 export function compileBeatPrompt(
@@ -50,13 +110,23 @@ export function compileBeatPrompt(
   format: StoryFormat = 'short',
   generationMode: GenerationMode = 'video'
 ): CompiledPrompt {
-  const baseImagePrompt = (beat.imagePrompt || '').trim();
+  const rawBasePrompt = (beat.imagePrompt || '').trim();
+  const isImageMode = generationMode === 'image';
+
+  // 1. Resolve Style vs Casting Compatibility
+  const rawArtStyle = styleProfile?.artStyle || 'Cinematic photorealism';
+  const { prompt: promptWithoutStyleConflict, artStyle } = resolveStyleAndCastingCompatibility(rawBasePrompt, rawArtStyle);
+
+  // 2. Sanitize kinetic process verbs for image mode
+  const baseImagePrompt = isImageMode
+    ? sanitizeKineticMotionForImage(promptWithoutStyleConflict)
+    : promptWithoutStyleConflict;
+
   const shotType = beat.shotType || 'Medium shot';
   const cameraAngle = beat.cameraAngle || 'Eye-level';
   const cameraMovement = normalizeCameraMovement(beat.cameraMovement);
   const optics = beat.optics || '35mm anamorphic lens, f/2.8 aperture';
   const lighting = styleProfile?.lighting || 'natural cinematic lighting, 5600K balanced daylight';
-  const artStyle = styleProfile?.artStyle || 'Cinematic photorealism';
   const aspectRatio = format === 'long' ? '16:9' : '9:16';
 
   let compiledText = '';
@@ -67,7 +137,12 @@ export function compileBeatPrompt(
     case 'midjourney': {
       // Midjourney prefers: [Subject & Action], [Framing & Shot Type], [Lighting & Color], [Optics & Lens] --ar --v 6.1 --stylize
       const arFlag = format === 'long' ? '--ar 16:9' : '--ar 9:16';
-      compiledText = `${baseImagePrompt}, ${shotType}, ${cameraAngle}, ${lighting}, shot on ${optics}, ${artStyle} ${arFlag} --v 6.1 --stylize 150`;
+      if (isImageMode) {
+        compiledText = `Generate a single still image: ${baseImagePrompt}, ${shotType}, ${cameraAngle}, ${lighting}, shot on ${optics}, ${artStyle} ${arFlag} --v 6.1 --stylize 150`;
+        negativePrompt = '--no motion, animation, video, moving camera, text, watermark';
+      } else {
+        compiledText = `${baseImagePrompt}, ${shotType}, ${cameraAngle}, ${lighting}, shot on ${optics}, ${artStyle} ${arFlag} --v 6.1 --stylize 150`;
+      }
       parameters['ar'] = aspectRatio;
       parameters['v'] = '6.1';
       parameters['stylize'] = '150';
@@ -107,7 +182,13 @@ export function compileBeatPrompt(
 
     case 'universal':
     default: {
-      compiledText = baseImagePrompt;
+      if (isImageMode) {
+        compiledText = `Generate a single still image of: ${baseImagePrompt}. Static frame. One exact moment in time. No animation, no camera movement, no video.`;
+        negativePrompt = 'motion, animation, video, timelapse, moving camera, GIF, multiple frames, text, watermark';
+      } else {
+        compiledText = `Generate a continuous video clip of: ${baseImagePrompt}. Dynamic continuous video shot.`;
+        negativePrompt = 'morphing, jitter, deformed hands, sudden cuts, blur, low resolution, watermark, text overlays';
+      }
       break;
     }
   }
@@ -197,6 +278,31 @@ export function lintStoryboard(
           severity: 'info',
           message: `Beat ${beatIndex}: Lighting direction is unspecified.`,
           suggestion: 'Add lighting guidance (e.g. key light 5600K, rim light, golden hour) to prevent flat renders.',
+          sceneIndex,
+          beatIndex,
+        });
+      }
+
+      // Rule L07: Style vs Casting Contradiction
+      if (prompt.includes('no characters') && (prompt.includes('animal characters') || prompt.includes('stretchy animal'))) {
+        issues.push({
+          id: `L07-scene-${sceneIndex}-beat-${beatIndex}`,
+          severity: 'warning',
+          message: `Beat ${beatIndex}: Contradictory casting directives detected ('no characters' paired with character-based style).`,
+          suggestion: 'Use resolveStyleAndCastingCompatibility to ensure empty scenes do not inject animal or mascot rules.',
+          sceneIndex,
+          beatIndex,
+        });
+      }
+
+      // Rule L08: Premature Information Leakage
+      const spokenText = (beat.textSpan || '').toLowerCase();
+      if ((spokenText.includes('pour tea') || spokenText.includes('if you pour')) && !spokenText.includes('harbor') && prompt.includes('harbor')) {
+        issues.push({
+          id: `L08-scene-${sceneIndex}-beat-${beatIndex}`,
+          severity: 'warning',
+          message: `Beat ${beatIndex}: Potential premature reveal. Destination ('harbor') is depicted before narration spoken phrase reaches it.`,
+          suggestion: 'Withhold the destination until the reveal beat to protect dramatic narrative suspense.',
           sceneIndex,
           beatIndex,
         });

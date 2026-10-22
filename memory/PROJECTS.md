@@ -30,3 +30,8 @@
    - Maps pre-timed clips into discrete 4-second scenes (e.g. 12 clips = 48s total, 9:16 vertical video) with camera motion, audio sound design cues, and start-frame keyframes without LLM hallucination risks or API key requirements.
    - Tracks 11-episode mystery series roadmaps, character continuity sheets, and locked continuity directives (including language bans) via `SeriesRoadmapModal.tsx`. Dynamic title resolution supports any episodic series.
 
+6. **Modality Control & Visual Information Budget:**
+   - Prepends explicit generation modality headers (`Generate a single still image of:` vs `Generate a continuous video clip of:`) and targeted negative prompts to eliminate model modality routing confusion (e.g. Gemini triggering video on Beat 3).
+   - Sanitizes kinetic process verbs (`swirl above`, `flickers`, `churns`, `streaming`) into frozen visual states for still images.
+   - Decouples art style from character casting when scenes have no characters.
+   - Enforces Visual Information Budget and Reveal Discipline so setup beats strictly withhold future destinations until the reveal beat occurs.

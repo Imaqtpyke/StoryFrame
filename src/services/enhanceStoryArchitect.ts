@@ -355,6 +355,16 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - "transitionHint": optional string describing a shared visual anchor
    - "imagePrompt": A complete, standalone, production-ready TEXT TO VIDEO PROMPT formatted for AI video generators capturing this specific beat's action.
 
+6. VISUAL INFORMATION BUDGET & REVEAL DISCIPLINE (STRICT NO-LEAKAGE RULE):
+   - In multi-beat sentences (e.g. "If you pour tea into a harbor, something terrifying happens"):
+     * SETUP BEAT (e.g. "If you pour tea"): Depict ONLY the immediate origin action (the teapot tilting, tea ribbon pouring downward). MUST STRICTLY WITHHOLD the destination! Show NO harbor, NO water surface, NO ships, NO ocean. The liquid descends beyond the lower frame edge into darkness.
+     * REVEAL BEAT (e.g. "into a harbor"): This is the FIRST beat allowed to introduce the harbor, piers, anchored ships, and the tea stream striking the water surface. MUST WITHHOLD the subsequent terrifying reaction/escalation.
+     * ESCALATION BEAT (e.g. "something terrifying happens"): Now introduces the dramatic consequence or tension through lighting, stillness, or ominous visual changes. Do NOT invent unrelated monsters or premature spoilers.
+   - NEVER leak a future beat's location, destination, or outcome into an earlier beat!
+
+7. CASTING & STYLE DECOUPLING:
+   - When a scene or beat has NO characters (e.g. empty harbor, still life of an object), NEVER write character or mascot requirements into the prompt (e.g. do not write "with exaggerated stretchy animal characters" if the scene has no characters).
+
 STRICT CONSTRAINTS:
 1. DO NOT use em dashes anywhere. Use commas, periods, or parentheses instead.
 2. Platform and Framing: Target platform is "${platform || (isLongForm ? 'YouTube' : 'TikTok')}". Format is ${isLongForm ? '16:9 widescreen' : '9:16 vertical'}.
@@ -428,6 +438,16 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
 3. Nested Scenes and Beats:
    Each scene has index, narratorLine, estimatedSeconds, and beats array.
    Each beat contains beatIndex, textSpan, estimatedSeconds, shotType, cameraAngle, cameraMovement, imagePrompt, etc.
+
+4. VISUAL INFORMATION BUDGET & REVEAL DISCIPLINE (STRICT NO-LEAKAGE RULE):
+   - In multi-beat sentences (e.g. "If you pour tea into a harbor, something terrifying happens"):
+     * SETUP BEAT (e.g. "If you pour tea"): Depict ONLY the immediate origin action (the teapot tilting, tea ribbon pouring downward). MUST STRICTLY WITHHOLD the destination! Show NO harbor, NO water surface, NO ships, NO ocean. The liquid descends beyond the lower frame edge into darkness.
+     * REVEAL BEAT (e.g. "into a harbor"): This is the FIRST beat allowed to introduce the harbor, piers, anchored ships, and the tea stream striking the water surface. MUST WITHHOLD the subsequent terrifying reaction/escalation.
+     * ESCALATION BEAT (e.g. "something terrifying happens"): Now introduces the dramatic consequence or tension through lighting, stillness, or ominous visual changes. Do NOT invent unrelated monsters or premature spoilers.
+   - NEVER leak a future beat's location, destination, or outcome into an earlier beat!
+
+5. CASTING & STYLE DECOUPLING:
+   - When a scene or beat has NO characters (e.g. empty harbor, still life of an object), NEVER write character or mascot requirements into the prompt (e.g. do not write "with exaggerated stretchy animal characters" if the scene has no characters).
 
 STRICT CONSTRAINTS:
 1. DO NOT use em dashes anywhere.

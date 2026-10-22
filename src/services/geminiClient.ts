@@ -330,16 +330,26 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - CONCRETE NOUNS ONLY: Every noun must be a tangible, real-world object. Never write vague disjunctive placeholders ("holding something like a bag or a book"). Every item must be locked and explicit.
    - NARRATIVE FAITHFULNESS: Do NOT invent fictitious specific story facts, character names, senders, or plot details not present in the narration or already locked in continuity sheets.
 
-7. Unified Stylistic Register (CONSISTENT ART MEDIUM VOCABULARY):
-   When a specific art style or medium is requested, apply that art style's specific descriptive vocabulary consistently across ALL parts of the prompt.
+8. VISUAL INFORMATION BUDGET & REVEAL DISCIPLINE (STRICT NO-LEAKAGE RULE):
+   - In multi-beat sentences (e.g. "If you pour tea into a harbor, something terrifying happens"):
+     * SETUP BEAT (e.g. "If you pour tea"): Depict ONLY the immediate origin action (the teapot tilting, tea ribbon pouring downward). MUST STRICTLY WITHHOLD the destination! Show NO harbor, NO water surface, NO ships, NO ocean. The liquid descends beyond the lower frame edge into darkness.
+     * REVEAL BEAT (e.g. "into a harbor"): This is the FIRST beat allowed to introduce the harbor, piers, anchored ships, and the tea stream striking the water surface. MUST WITHHOLD the subsequent terrifying reaction/escalation.
+     * ESCALATION BEAT (e.g. "something terrifying happens"): Now introduces the dramatic consequence or tension through lighting, stillness, or ominous visual changes. Do NOT invent unrelated monsters or premature spoilers.
+   - NEVER leak a future beat's location, destination, or outcome into an earlier beat!
 
-8. NO REAL OR IDENTIFIABLE PERSON NAMES IN VISUAL PROMPTS:
-   NEVER use a real, identifiable person's actual proper name in visual prompts.
+9. CASTING & STYLE DECOUPLING:
+   - When a scene or beat has NO characters (e.g. empty harbor, still life of an object), NEVER write character or mascot requirements into the prompt (e.g. do not write "with exaggerated stretchy animal characters" if the scene has no characters).
 
-9. OPENING BEAT VISUAL HOOK RULE (SCENE 1, BEAT 1):
-   Scene 1 Beat 1 MUST show something concrete and visually arresting: the main character, a striking action already in motion, or the single most compelling visual element.
+10. Unified Stylistic Register (CONSISTENT ART MEDIUM VOCABULARY):
+    When a specific art style or medium is requested, apply that art style's specific descriptive vocabulary consistently across ALL parts of the prompt.
 
-10. TEMPORAL ANCHOR & ON-SCREEN DATE/YEAR DISPLAY RULE (SINGLE BEAT ONLY):
+11. NO REAL OR IDENTIFIABLE PERSON NAMES IN VISUAL PROMPTS:
+    NEVER use a real, identifiable person's actual proper name in visual prompts.
+
+12. OPENING BEAT VISUAL HOOK RULE (SCENE 1, BEAT 1):
+    Scene 1 Beat 1 MUST show something concrete and visually arresting: the main character, a striking action already in motion, or the single most compelling visual element.
+
+13. TEMPORAL ANCHOR & ON-SCREEN DATE/YEAR DISPLAY RULE (SINGLE BEAT ONLY):
     If the narrator line or beat phrase mentions a date, year, or elapsed duration, populate "temporalAnchor" on that single beat ONLY.
 
 11. Start Frame Ingredients (Text to Image Prompt):
@@ -487,7 +497,17 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
      * CONSEQUENCE BEATS ("preventing humans from ever becoming the dominant species"): Focus exclusively on the aftermath (e.g., small, cloaked human scavengers huddled in fortified stone cliff crevices, watching dinosaur shadows).
    - NEVER repeat or duplicate the previous beat's imagePrompt! Every beat MUST represent a new stage, a different subject perspective, or an evolving dramatic reaction.
 
-10. Nested Scenes and Beats:
+10. VISUAL INFORMATION BUDGET & REVEAL DISCIPLINE (STRICT NO-LEAKAGE RULE):
+   In multi-beat sentences (e.g. "If you pour tea into a harbor, something terrifying happens"):
+   - SETUP BEATS (e.g. "If you pour tea"): Depict ONLY the immediate origin action (the teapot tilting, tea ribbon descending into darkness). MUST STRICTLY WITHHOLD the destination! Show NO harbor, NO water, NO ocean, NO ships.
+   - REVEAL BEATS (e.g. "into a harbor"): This is the FIRST beat allowed to introduce the harbor setting, ships, piers, and the tea stream striking the water surface.
+   - ESCALATION BEATS (e.g. "something terrifying happens"): Now introduces the dramatic consequence or tension through lighting, stillness, or ominous visual changes. Do NOT invent unrelated monsters or premature spoilers.
+   - NEVER leak a future beat's location, destination, or outcome into an earlier beat!
+
+11. STYLE AND CASTING COMPATIBILITY:
+   - If a scene or beat has NO characters (e.g. empty harbor, still life object), do NOT include character or animal mascot requirements in the visual prompt (e.g. do not write "with exaggerated stretchy animal characters" if the scene is an empty environment).
+
+12. Nested Scenes and Beats:
    Break the story into a sequence of scenes with rich, dynamic visual beats.
    Each scene has index, narratorLine, estimatedSeconds, and beats array.
 
