@@ -818,6 +818,22 @@ assert(edlExport.includes('TITLE: THE_ONE_WHO_DOESN_T_BELONG') && edlExport.incl
 const srtExport = generateSRTSubtitles(parsedEpisode1.storyResult.scenes);
 assert(srtExport.includes('00:00:00,000 --> 00:00:04,000') && srtExport.includes('00:00:44,000 --> 00:00:48,000'), 'Audit - Export Integrity', 'Generates valid SRT subtitles spanning exactly 00:00 to 00:48');
 
+// 12. Smart Auto-Detection & Dynamic Title Ingestion
+const testManuscriptDetection = (text: string) =>
+  /(?:###\s*Clip\s*\d+|Clip\s*\d+:)/i.test(text) &&
+  /(?:\*\*Voice-over:\*\*|\*\*Visual:\*\*|Voice-over:|Visual:)/i.test(text);
+
+const sampleScriptText = `# Mystery Manor\n## Episode 2 — The Red Envelope\n\n### Clip 1 (0:00–0:04)\n**Voice-over:** The envelope sat unopened.\n**Visual:** A sealed envelope on mahogany.\n**Camera:** Push in.\n\n### Clip 2 (0:04–0:08)\n**Voice-over:** No one dared touch it.\n**Visual:** Contestants staring in silence.\n**Camera:** Static wide.\n`;
+const sampleProseText = "A detective arrives at a dark mansion during a thunderstorm to investigate a missing artifact.";
+
+assert(testManuscriptDetection(sampleScriptText) === true, 'Smart Auto-Detection', 'Detects structured script markdown without needing upload modal');
+assert(testManuscriptDetection(sampleProseText) === false, 'Smart Auto-Detection', 'Recognizes standard narrative prose as standard generation');
+
+const parsedEpisode2 = parseManuscriptMarkdown(sampleScriptText);
+assert(parsedEpisode2.title === 'Mystery Manor', 'Dynamic Title', 'Extracts dynamic project title without default fallback');
+assert(parsedEpisode2.episodeTitle === 'Episode 2 — The Red Envelope', 'Dynamic Title', 'Extracts dynamic episode title');
+assert(parsedEpisode2.clips.length === 2, 'Dynamic Title', 'Parses all clips dynamically from pasted script');
+
 console.log('\n====================================================================');
 console.log('                  FULL-SYSTEM VERIFICATION REPORT                  ');
 console.log('====================================================================');

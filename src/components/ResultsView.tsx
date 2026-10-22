@@ -123,12 +123,14 @@ export default function ResultsView({
   }, [result]);
 
   const handleManualSaveContinuity = () => {
-    syncStoryResultToContinuity(result, 1);
+    const currentTitle = result.title || "Untitled Series";
+    syncStoryResultToContinuity(result, 1, currentTitle);
     setIsContinuitySaved(true);
   };
 
   const handleSelectEpisodeForDraft = (ep: { episodeNumber: number; title: string; description: string }) => {
-    const continuity = loadSeriesContinuity("The One Who Doesn't Belong") || syncStoryResultToContinuity(result, 1);
+    const currentTitle = result.title || "Untitled Series";
+    const continuity = loadSeriesContinuity(currentTitle) || syncStoryResultToContinuity(result, 1, currentTitle);
     const draft = initializeNextEpisodeDraft(continuity, ep.episodeNumber);
     if (onStartEpisodeDraft) {
       onStartEpisodeDraft({
@@ -1018,7 +1020,7 @@ export default function ResultsView({
       <SeriesRoadmapModal
         isOpen={isRoadmapModalOpen}
         onClose={() => setIsRoadmapModalOpen(false)}
-        seriesTitle="The One Who Doesn't Belong"
+        seriesTitle={result.title || "Series Roadmap"}
         roadmap={result.seriesRoadmap}
         onSelectEpisodeForGeneration={handleSelectEpisodeForDraft}
         onSaveContinuity={handleManualSaveContinuity}

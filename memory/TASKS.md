@@ -70,5 +70,13 @@
   - Built `SeriesRoadmapModal.tsx` and integrated it into `ResultsView.tsx` to track the full 11-episode mystery series arc, locked continuity rules (including strict ban on "gay" / "straight" labels), and active vs planned episodes.
   - Verified with 97 automated tests passing in `src/tests/systemTestSuite.ts` and clean compilation.
 
+- [x] **Smart Script Auto-Detection & Uncluttered Textarea Ingestion:**
+  - Removed "Ingest Manuscript" and "Upload File" buttons from `GeneratorForm.tsx` to eliminate UI cramping.
+  - Removed obsolete `ManuscriptIngestModal.tsx`.
+  - Built real-time smart auto-detection for structured scripts in the story textarea (`Script Detected: X clips`).
+  - Added zero-token deterministic ingestion directly from the main Generate button for structured manuscripts, with standard generation preserved for normal prose.
+  - Decoupled hardcoded demo story ("The One Who Doesn't Belong") in favor of dynamic title extraction from pasted scripts and results.
+  - Verified with 121 automated system tests passing (100%), clean TypeScript check, and clean build.
+
 ## Next Steps / Active Tasks
-- [ ] Monitor user workflow for subsequent episode drafting (Episode 2: "The First Name").
+- [ ] Monitor user workflow for subsequent episode drafting across multi-episode projects.

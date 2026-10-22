@@ -86,6 +86,7 @@ export interface Scene {
 }
 
 export interface StoryGenerationResult {
+  title?: string;
   totalDurationSeconds: number;
   styleProfile: StyleProfile;
   characterSheet: Record<string, string>;

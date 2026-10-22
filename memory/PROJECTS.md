@@ -26,7 +26,7 @@
    - **Original Story Pipeline:** In `geminiClient.ts` (`generateOriginalStory`), preserves pure user narrative rhythm.
    - **Enhance Story Pipeline:** In `enhanceStoryArchitect.ts` (`generateEnhancedStory`), performs automated concept research, causal mechanics breakdown, and Zack D. Films viral hook engineering.
 5. **Manuscript Ingestion & Series Continuity:**
-   - Direct deterministic import of structured screenplay and episode markdown scripts (`src/services/scriptParser.ts`) via `ManuscriptIngestModal.tsx`.
-   - Maps pre-timed clips into discrete 4-second scenes (e.g. 12 clips = 48s total, 9:16 vertical video) with camera motion, audio sound design cues, and start-frame keyframes without LLM hallucination risks.
-   - Tracks 11-episode mystery series roadmaps, character continuity sheets, and locked continuity directives (including language bans) via `SeriesRoadmapModal.tsx`.
+   - Direct deterministic import of structured screenplay and episode markdown scripts (`src/services/scriptParser.ts`) via direct paste into the unified story textarea with real-time smart auto-detection (`Script Detected: X clips`).
+   - Maps pre-timed clips into discrete 4-second scenes (e.g. 12 clips = 48s total, 9:16 vertical video) with camera motion, audio sound design cues, and start-frame keyframes without LLM hallucination risks or API key requirements.
+   - Tracks 11-episode mystery series roadmaps, character continuity sheets, and locked continuity directives (including language bans) via `SeriesRoadmapModal.tsx`. Dynamic title resolution supports any episodic series.
 

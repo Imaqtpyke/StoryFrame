@@ -15,7 +15,7 @@ interface SeriesRoadmapModalProps {
 export default function SeriesRoadmapModal({
   isOpen,
   onClose,
-  seriesTitle = "The One Who Doesn't Belong",
+  seriesTitle = "Series Continuity Roadmap",
   roadmap = [],
   onSelectEpisodeForGeneration,
   onSaveContinuity,

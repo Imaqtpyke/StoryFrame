@@ -203,9 +203,10 @@ export function initializeNextEpisodeDraft(
 export function syncStoryResultToContinuity(
   result: StoryGenerationResult,
   episodeNumber: number = 1,
-  seriesTitle: string = "The One Who Doesn't Belong"
+  seriesTitle?: string
 ): SeriesContinuityState {
-  const existing = loadSeriesContinuity(seriesTitle);
+  const resolvedTitle = seriesTitle || result.title || "Untitled Series";
+  const existing = loadSeriesContinuity(resolvedTitle);
 
   // Map 11 roadmap episodes
   const roadmapEpisodes = result.seriesRoadmap && result.seriesRoadmap.length > 0
@@ -248,11 +249,11 @@ export function syncStoryResultToContinuity(
   });
 
   const state: SeriesContinuityState = {
-    seriesId: seriesTitle.toLowerCase().replace(/[^a-z0-9]/g, '_'),
-    seriesTitle,
-    genre: "Social experiment, mystery, dark comedy",
-    corePremise: result.hookAnalysis?.headlineHook || "Twelve men entered a million-dollar game to expose one outsider—but every single one believed he was that outsider.",
-    languageRule: "Do not use the labels 'gay' or 'straight' in narration, dialogue, on-screen text, or generated visuals.",
+    seriesId: resolvedTitle.toLowerCase().replace(/[^a-z0-9]/g, '_'),
+    seriesTitle: resolvedTitle,
+    genre: (result.storyBible?.worldStyle as string) || "Narrative Series",
+    corePremise: result.hookAnalysis?.headlineHook || "Series narrative arc",
+    languageRule: "Preserve character and narrative continuity across all episodes.",
     totalEpisodes: episodes.length,
     styleProfile: result.styleProfile,
     characterSheet: result.characterSheet || {},
@@ -270,6 +271,6 @@ export function syncStoryResultToContinuity(
 /**
  * Checks whether persistent continuity exists for the given series
  */
-export function hasSavedSeriesContinuity(seriesTitle: string = "The One Who Doesn't Belong"): boolean {
+export function hasSavedSeriesContinuity(seriesTitle: string = "Untitled Series"): boolean {
   return loadSeriesContinuity(seriesTitle) !== null;
 }

@@ -2,8 +2,8 @@ import { useState, FormEvent, MouseEvent, useEffect } from 'react';
 import CustomDropdown, { DropdownOption } from './CustomDropdown';
 import { useApiKey } from '../context/ApiKeyContext';
 import { StoryFormat, GenerateStoryRequest, GenerationMode, CustomSceneDefinition, CustomBeatDefinition, ActivePage, AiProvider, StoryGenerationResult } from '../types';
-import { Sliders, RefreshCw, AlertCircle, Dices, Eye, EyeOff, KeyRound, Trash2, CheckCircle2, Shield, Camera, Video, Sparkles, Scissors, ExternalLink, ShieldCheck, Cpu, Zap, FileText, Film } from 'lucide-react';
-import ManuscriptIngestModal from './ManuscriptIngestModal';
+import { Sliders, RefreshCw, AlertCircle, Dices, Eye, EyeOff, KeyRound, Trash2, CheckCircle2, Shield, Camera, Video, Sparkles, Scissors, ExternalLink, ShieldCheck, Cpu, Zap, Film } from 'lucide-react';
+import { parseManuscriptMarkdown } from '../services/scriptParser';
 
 interface GeneratorFormProps {
   onSubmit: (data: GenerateStoryRequest) => void;
@@ -153,7 +153,6 @@ export default function GeneratorForm({
   openModelOptionsTrigger,
   onDirectResult,
 }: GeneratorFormProps) {
-  const [isIngestModalOpen, setIsIngestModalOpen] = useState(false);
   const {
     apiKey,
     hasCustomKey,
@@ -423,29 +422,50 @@ export default function GeneratorForm({
     }
   };
 
-  const handleLoadParsedIntoForm = (parsed: {
-    story: string;
-    characterStyle: string;
-    format: 'short' | 'long';
-    generationMode: 'video' | 'image';
-    targetVideoDuration: number;
-    platform: string;
-  }) => {
-    setStory(parsed.story);
-    setCharacterStyle(parsed.characterStyle);
-    setFormat(parsed.format);
-    setGenerationMode(parsed.generationMode);
-    setVideoDurationValue(String(parsed.targetVideoDuration));
-    setPlatform(parsed.platform);
-  };
+  const isManuscriptFormat =
+    /(?:###\s*Clip\s*\d+|Clip\s*\d+:)/i.test(story) &&
+    /(?:\*\*Voice-over:\*\*|\*\*Visual:\*\*|Voice-over:|Visual:)/i.test(story);
+  const detectedClipsCount = isManuscriptFormat
+    ? (story.match(/(?:###\s*Clip\s*\d+|Clip\s*\d+:)/gi) || []).length
+    : 0;
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (!story.trim() || isLoading) return;
 
+    // Smart auto-detection: if structured manuscript with clips is pasted, ingest directly
+    if (isManuscriptFormat) {
+      try {
+        const parsed = parseManuscriptMarkdown(story);
+        if (onDirectResult) {
+          const directRequest: GenerateStoryRequest = {
+            story: story.trim(),
+            characterStyle: characterStyle.trim() || parsed.storyResult.styleProfile.artStyle,
+            format: parsed.format,
+            platform,
+            durationMode: 'preset',
+            durationSeconds: parsed.totalDurationSeconds,
+            generationMode: parsed.generationMode,
+            targetVideoDuration: parsed.clips[0]?.durationSeconds || 4,
+            beatMode: 'automatic',
+            autoArchitectMode: false,
+          };
+          onDirectResult(parsed.storyResult, directRequest);
+          return;
+        }
+      } catch (err: any) {
+        setFormValidationNotice(err?.message || 'Failed to parse structured manuscript.');
+        return;
+      }
+    }
+
     if (!apiKey || !apiKey.trim()) {
       setShowAdvanced(true);
-      setFormValidationNotice('Please provide and apply your Gemini API key in the Model Options panel below before generating a breakdown.');
+      setFormValidationNotice(
+        aiProvider === 'groq'
+          ? 'Please provide and apply your Groq API key in the Model Options panel below before generating a breakdown.'
+          : 'Please provide and apply your Gemini API key in the Model Options panel below before generating a breakdown.'
+      );
       return;
     }
 
@@ -651,44 +671,16 @@ export default function GeneratorForm({
               <span className="font-editorial-meta text-[9px] sm:text-[10px] text-[#7D7D76]">
                 {story.trim().split(/\s+/).filter(Boolean).length} WORDS
               </span>
-              <button
-                type="button"
-                id="open-manuscript-ingest-btn"
-                onClick={() => setIsIngestModalOpen(true)}
-                disabled={isLoading}
-                className="inline-flex items-center gap-1 px-2 py-1 bg-[#1C1C1A] hover:bg-[#282826] active:bg-[#333330] text-[#D4D4D0] hover:text-white border border-white/15 text-[11px] font-display transition-all shadow-sm"
-                title="Ingest structured Markdown screenplay (e.g. Episode 1)"
-              >
-                <FileText size={12} className="text-amber-400" />
-                <span>Ingest Manuscript</span>
-              </button>
-              <label
-                htmlFor="story-file-upload"
-                className="inline-flex items-center gap-1 px-2 py-1 bg-[#1C1C1A] hover:bg-[#282826] active:bg-[#333330] text-[#9C9C96] hover:text-white border border-white/15 text-[11px] font-display transition-all cursor-pointer shadow-sm"
-                title="Upload Markdown or Text story file"
-              >
-                <span>Upload File</span>
-                <input
-                  id="story-file-upload"
-                  type="file"
-                  accept=".txt,.md"
-                  disabled={isLoading}
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    const reader = new FileReader();
-                    reader.onload = (event) => {
-                      const content = event.target?.result;
-                      if (typeof content === 'string') {
-                        setStory(content);
-                      }
-                    };
-                    reader.readAsText(file);
-                    e.target.value = '';
-                  }}
-                />
-              </label>
+              {isManuscriptFormat && (
+                <span
+                  id="manuscript-detected-badge"
+                  className="inline-flex items-center gap-1 font-editorial-meta text-[9px] sm:text-[10px] text-amber-300 bg-amber-950/60 border border-amber-800/60 px-2 py-0.5 rounded-[2px] tracking-wider uppercase shadow-sm"
+                  title="Structured manuscript detected. Clicking Generate will ingest clips directly."
+                >
+                  <Film size={11} className="text-amber-400 shrink-0" />
+                  <span>Script Detected ({detectedClipsCount} {detectedClipsCount === 1 ? 'clip' : 'clips'})</span>
+                </span>
+              )}
               <button
                 type="button"
                 id="random-story-dice-btn"
@@ -1343,14 +1335,6 @@ export default function GeneratorForm({
           )}
         </div>
       </form>
-
-      {/* Manuscript Ingestion Modal */}
-      <ManuscriptIngestModal
-        isOpen={isIngestModalOpen}
-        onClose={() => setIsIngestModalOpen(false)}
-        onDirectResult={onDirectResult}
-        onLoadIntoForm={handleLoadParsedIntoForm}
-      />
     </div>
   );
 }

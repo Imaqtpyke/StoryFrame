@@ -84,7 +84,7 @@ export function validateManuscript(rawMarkdown: string): ManuscriptValidationRes
       errors.push(`Language rule violation: The word "${line.match(/\b(gay|straight)\b/i)?.[0]}" was detected in manuscript narration or dialogue. The premise strictly forbids using these labels.`);
     }
 
-    const clipMatch = line.match(/^###\s+Clip\s+(\d+)\s*[—–-]\s*([^(]+)(?:\(([^)]+)\))?/i);
+    const clipMatch = line.match(/^###\s+Clip\s+(\d+)(?:\s*[:—–-]\s*([^(]+))?(?:\s*\(([^)]+)\))?/i);
     if (clipMatch) {
       if (currentClip) {
         if (!currentClip.hasVO) {
@@ -332,13 +332,13 @@ export function parseManuscriptMarkdown(rawMarkdown: string): ParsedScriptResult
 
   const lines = rawMarkdown.split('\n');
 
-  let title = "The One Who Doesn't Belong";
-  let episodeTitle = "Episode 1 — Twelve Suspects";
+  let title = "Untitled Manuscript";
+  let episodeTitle = "Episode 1";
   let format: 'short' | 'long' = 'short';
   let totalDurationSeconds = 48;
-  let genre = "Social experiment, mystery, dark comedy";
-  let corePremise = "Twelve men locked inside a luxurious house for a million-dollar game. Every contestant secretly believes he is the outsider.";
-  let languageRule = "Do not use the labels 'gay' or 'straight' in narration, dialogue, on-screen text, or generated visuals.";
+  let genre = "Drama / Narrative";
+  let corePremise = "Episodic story arc";
+  let languageRule = "Preserve character and narrative continuity.";
   let targetResolution = "360p, text-to-video";
   
   const productionNotes: string[] = [];
@@ -442,7 +442,7 @@ export function parseManuscriptMarkdown(rawMarkdown: string): ParsedScriptResult
     }
 
     // Clip parsing: ### Clip 1 — The hook (0:00–0:04)
-    const clipHeaderMatch = line.match(/^###\s+Clip\s+(\d+)\s*[—–-]\s*([^(]+)(?:\(([^)]+)\))?/i);
+    const clipHeaderMatch = line.match(/^###\s+Clip\s+(\d+)(?:\s*[:—–-]\s*([^(]+))?(?:\s*\(([^)]+)\))?/i);
     if (clipHeaderMatch) {
       commitCurrentClip();
       inProductionNotes = false;
@@ -606,6 +606,7 @@ export function parseManuscriptMarkdown(rawMarkdown: string): ParsedScriptResult
   };
 
   const storyResult: StoryGenerationResult = {
+    title,
     totalDurationSeconds,
     styleProfile,
     characterSheet,

@@ -107,4 +107,11 @@
 - **Date:** 2026-10-20
 - **Status:** Active
 
+## Smart Script Auto-Detection & Uncluttered Textarea Ingestion
+- **Fact/Decision:** Removed separate "Ingest Manuscript" and "Upload File" buttons, as well as `ManuscriptIngestModal.tsx`. Built inline smart format auto-detection in `GeneratorForm.tsx` that inspects the story textarea for structured clip markers (`### Clip` and `Voice-over:`) in real time, displays a subtle amber badge (`Script Detected: X clips`), and automatically routes to deterministic manuscript ingestion upon clicking Generate (zero API token cost, no key required). Standard story prose routes to normal AI generation. Decoupled hardcoded demo titles in favor of dynamic manuscript/result titles.
+- **Context:** Eliminates UI cramping above the story input box, removes unnecessary file picker dialogs, and allows users to paste any story idea, long-form prose, or multi-clip manuscript directly into a single unified input.
+- **Date:** 2026-10-22
+- **Status:** Active
+
+
 
