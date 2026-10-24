@@ -138,3 +138,14 @@
 - **Context:** Replicates high-retention documentary and explainer video editing standards (Vox, Johnny Harris, Kurzgesagt) where spoken country/nationality callouts cut to rapid cartographic map graphics before showing the historical character in the following beat.
 - **Date:** 2026-10-23
 - **Status:** Active
+
+## Assistant Response Versatility, Strict Question Discipline & Minimized Action Buttons
+- **Fact/Decision:** Upgraded StoryFrame Assistant in `assistantChatService.ts` and `AssistantChatDrawer.tsx`:
+  1. Adapt to Any Genre or Style: Replaced the rigid Zack D. Films constraint with comprehensive style change triggers covering every phrasing pattern ("make it...", "write this in the style of...", "change the tone to...", "switch to...", "rewrite as...", "turn this into...", "give it a ... vibe", "rephrase in...", "narrate like...", "in the voice of...", "tell it as if...", "stylize as...", "transform into...", "render as...", "apply a ... aesthetic", "shift mood to...", "more cinematic", "less cheesy", "darker", "grittier", "sound more professional", "like an old-school broadcast", etc.) across documentary, viral shorts, fiction/cinema, technical breakdowns, and 12+ animation/art mediums.
+  2. Strict Question-Answering Discipline: When the user asks a question, the assistant responds strictly and directly to what was asked without any unsolicited extra information, follow-up offers, or background fluff.
+  3. Free-Tier Token Efficiency: Preserved lightweight payload with zero conversational filler or throat-clearing, protecting free-tier rate limits.
+  4. UI Button Layout & Mobile Sizing: Excluded tool actions (edit, copy, stars) from inside the message bubble container so that only the text/words reside within the bubble. Reverted the icon tool sizes back to touch-friendly dimensions (`w-3.5 h-3.5` with `p-1.5` hit areas) positioned directly beneath each bubble for effortless mobile and desktop interaction, with the words "Edit" and "Copy" remaining completely removed.
+- **Context:** Directly aligns with creator intent to maintain a pure, versatile creative assistant without bloating token usage, while eliminating distracting text labels on message cards and keeping touch controls comfortable on mobile screens.
+- **Date:** 2026-10-24
+- **Status:** Active
+

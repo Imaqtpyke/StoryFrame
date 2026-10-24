@@ -94,5 +94,14 @@
   - Added Suite 14 test cases; verified with 137 automated system tests passing (100%).
   - Verified clean type check (`tsc --noEmit`) and successful build compilation.
 
+- [x] **Assistant Response Versatility, Strict Question Discipline & Minimized Action Buttons:**
+  - Upgraded `SYSTEM_INSTRUCTION` in `src/services/assistantChatService.ts` to accommodate every possible phrasing pattern for style and genre changes (documentary, cinema, horror, cyberpunk, anime, claymation, and viral shorts).
+  - Enforced strict question-answering discipline: direct answers to the exact question asked without unsolicited extra information or background fluff.
+  - Eliminated conversational filler to save free-tier tokens.
+  - Excluded tool buttons (edit, copy, stars) from inside the message container so only message text resides within the bubble.
+  - Reverted icon tool sizes back to touch-friendly dimensions (`w-3.5 h-3.5`, `p-1.5`) placed directly underneath each bubble for effortless tapping on mobile screens.
+  - Retained clean icon-only display with the words "Edit" and "Copy" completely removed.
+  - Verified clean applet compilation and all 137 tests passing in `src/tests/systemTestSuite.ts`.
+
 ## Next Steps / Active Tasks
 - [ ] Monitor user workflow for subsequent episode drafting across multi-episode projects.

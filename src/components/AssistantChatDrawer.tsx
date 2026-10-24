@@ -310,7 +310,7 @@ export default function AssistantChatDrawer({
                       Welcome to the StoryFrame Assistant
                     </h3>
                     <p className="text-xs text-[#9C9C96] leading-relaxed">
-                      Ask any questions about this project, request fresh story concepts inspired by Zack D. Films, or explore unique visual styles.
+                      Ask any questions about this project, request fresh story concepts in any genre, or explore unique visual styles.
                     </p>
                   </div>
 
@@ -355,69 +355,57 @@ export default function AssistantChatDrawer({
                       }`}
                     >
                       {msg.content}
+                    </div>
 
-                      {/* User message edit button - only accessible when assistant is done responding */}
-                      {msg.role === 'user' && !isSending && (
-                        <div className="mt-2.5 pt-2 border-t border-white/10 flex items-center justify-end">
+                    {/* User message edit button - outside container */}
+                    {msg.role === 'user' && !isSending && (
+                      <div className="mt-1 flex items-center justify-end">
+                        <button
+                          type="button"
+                          onClick={() => handleEditPrompt(msg.content)}
+                          className="p-1.5 text-[#8C8C86] hover:text-white hover:bg-white/5 transition-colors rounded-[2px] cursor-pointer"
+                          title="Edit prompt"
+                          aria-label="Edit prompt"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Assistant message action buttons - outside container */}
+                    {msg.role === 'assistant' && (
+                      <div className="mt-1 flex items-center space-x-1">
+                        <button
+                          type="button"
+                          onClick={() => handleCopyText(msg.id, msg.content)}
+                          className="p-1.5 text-[#8C8C86] hover:text-white hover:bg-white/5 transition-colors rounded-[2px] cursor-pointer"
+                          title={copiedId === msg.id ? 'Copied' : 'Copy'}
+                          aria-label={copiedId === msg.id ? 'Copied' : 'Copy'}
+                        >
+                          {copiedId === msg.id ? (
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+
+                        {onApplyStoryIdea && (
                           <button
                             type="button"
-                            onClick={() => handleEditPrompt(msg.content)}
-                            className="inline-flex items-center gap-1.5 text-[11px] font-mono text-[#8C8C86] hover:text-white transition-colors py-0.5 px-2 rounded-[2px] hover:bg-white/5 cursor-pointer"
-                            title="Edit this prompt"
+                            onClick={() => handleApplyToGenerator(msg.id, msg.content)}
+                            className="p-1.5 text-[#8C8C86] hover:text-white hover:bg-white/5 transition-colors rounded-[2px] cursor-pointer"
+                            title={appliedId === msg.id ? 'Applied' : 'Use in generator'}
+                            aria-label={appliedId === msg.id ? 'Applied' : 'Use in generator'}
                           >
-                            <Pencil className="w-3 h-3" />
-                            <span>Edit</span>
-                          </button>
-                        </div>
-                      )}
-
-                      {/* Assistant message action buttons */}
-                      {msg.role === 'assistant' && (
-                        <div className="mt-3 pt-2.5 border-t border-white/10 flex items-center justify-between text-[11px] font-mono text-[#8C8C86]">
-                          <div className="flex items-center space-x-2">
-                            <button
-                              type="button"
-                              onClick={() => handleCopyText(msg.id, msg.content)}
-                              className="inline-flex items-center gap-1 hover:text-white transition-colors p-1"
-                              title="Copy response"
-                            >
-                              {copiedId === msg.id ? (
-                                <>
-                                  <Check className="w-3 h-3 text-emerald-400" />
-                                  <span className="text-emerald-400">Copied</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Copy className="w-3 h-3" />
-                                  <span>Copy</span>
-                                </>
-                              )}
-                            </button>
-
-                            {onApplyStoryIdea && (
-                              <button
-                                type="button"
-                                onClick={() => handleApplyToGenerator(msg.id, msg.content)}
-                                className="inline-flex items-center gap-1 hover:text-white transition-colors p-1"
-                                title="Fill into Generator Form"
-                              >
-                                {appliedId === msg.id ? (
-                                  <>
-                                    <Check className="w-3 h-3 text-emerald-400" />
-                                    <span className="text-emerald-400">Applied</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Sparkles className="w-3 h-3" />
-                                    <span>Use in Generator</span>
-                                  </>
-                                )}
-                              </button>
+                            {appliedId === msg.id ? (
+                              <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            ) : (
+                              <Sparkles className="w-3.5 h-3.5" />
                             )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))
               )}
