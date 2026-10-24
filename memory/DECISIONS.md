@@ -127,3 +127,14 @@
 - **Context:** Prevents diffusion models from generating unwanted video clips, hallucinating bizarre rubber hose characters in empty landscapes, or spoiling narrative twists prematurely.
 - **Date:** 2026-10-22
 - **Status:** Active
+
+## Geographic Demonym Entity Beat Isolation & Cartographic Visual Anchors
+- **Fact/Decision:** Implemented automatic segmentation and dedicated visual anchoring for geographic nationalities/demonyms (e.g. "Swedish", "British", "French", "American", "German"), countries, and locations:
+  1. `isolateAnchorsAndEntities` and `splitPhraseIntoSubBeats` automatically partition phrases like "In 1896 Swedish scientist Svante Arrhenius" into exact dedicated micro-beats: Beat 1 ("In 1896"), Beat 2 ("Swedish"), and Beat 3 ("scientist Svante Arrhenius").
+  2. For geographic demonym beats, `generateCartographicPrompt` synthesizes an environment-focused cartographic visual prompt: a tactile 2.5D topographic map or rotating vintage terrestrial globe with glowing illuminated national boundary lines, a metallic dropped location pin, and the authentic national flag or crest beside the country outline (with characters and people strictly excluded).
+  3. `enforceBeatCeilings` automatically upgrades demonym beats to high-angle macro cartographic shots.
+  4. Added the Geographic Demonym & Cartographic Anchor Rule to prompt schemas in `geminiClient.ts` and `enhanceStoryArchitect.ts`.
+  5. Added Linter Rule L09 to `lintStoryboard` to verify cartographic environment focus on geographic beats.
+- **Context:** Replicates high-retention documentary and explainer video editing standards (Vox, Johnny Harris, Kurzgesagt) where spoken country/nationality callouts cut to rapid cartographic map graphics before showing the historical character in the following beat.
+- **Date:** 2026-10-23
+- **Status:** Active

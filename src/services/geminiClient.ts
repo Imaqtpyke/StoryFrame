@@ -340,7 +340,12 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
 9. CASTING & STYLE DECOUPLING:
    - When a scene or beat has NO characters (e.g. empty harbor, still life of an object), NEVER write character or mascot requirements into the prompt (e.g. do not write "with exaggerated stretchy animal characters" if the scene has no characters).
 
-10. Unified Stylistic Register (CONSISTENT ART MEDIUM VOCABULARY):
+10. GEOGRAPHIC DEMONYM & CARTOGRAPHIC ANCHOR RULE:
+    - Whenever a country, nationality/demonym (e.g. "Swedish", "British", "French", "German", "Japanese", "American", "in France", "in Sweden"), or prominent geographic area is spoken in narration, that entity MUST form its own standalone micro-beat (e.g. Beat 1: "In 1896", Beat 2: "Swedish", Beat 3: "scientist Svante Arrhenius").
+    - The visual prompt for this geographic beat MUST focus strictly on the environment and cartography: a tactile 2.5D topographic map or rotating vintage terrestrial globe with the country's national borders illuminated with glowing boundary lines, a metallic dropped location pin, and the authentic national flag or crest displayed beside the geographic outline. Shallow depth of field, warm directional lighting, macro lens aesthetic. NO humans, characters, or faces in frame.
+    - The character or historical action is introduced in the subsequent beat.
+
+11. Unified Stylistic Register (CONSISTENT ART MEDIUM VOCABULARY):
     When a specific art style or medium is requested, apply that art style's specific descriptive vocabulary consistently across ALL parts of the prompt.
 
 11. NO REAL OR IDENTIFIABLE PERSON NAMES IN VISUAL PROMPTS:
@@ -507,7 +512,12 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
 11. STYLE AND CASTING COMPATIBILITY:
    - If a scene or beat has NO characters (e.g. empty harbor, still life object), do NOT include character or animal mascot requirements in the visual prompt (e.g. do not write "with exaggerated stretchy animal characters" if the scene is an empty environment).
 
-12. Nested Scenes and Beats:
+12. GEOGRAPHIC DEMONYM & CARTOGRAPHIC ANCHOR RULE:
+   - Whenever a country, nationality/demonym (e.g. "Swedish", "British", "French", "German", "Japanese", "American", "in France", "in Sweden"), or prominent geographic area is spoken in narration, that entity MUST form its own standalone micro-beat (e.g. Beat 1: "In 1896", Beat 2: "Swedish", Beat 3: "scientist Svante Arrhenius").
+   - The visual prompt for this geographic beat MUST focus strictly on the environment and cartography: a tactile 2.5D topographic map or rotating vintage terrestrial globe with the country's national borders illuminated with glowing boundary lines, a metallic dropped location pin, and the authentic national flag or crest displayed beside the geographic outline. Shallow depth of field, warm directional lighting, macro lens aesthetic. NO humans, characters, or faces in frame.
+   - The character or historical action is introduced in the subsequent beat.
+
+13. Nested Scenes and Beats:
    Break the story into a sequence of scenes with rich, dynamic visual beats.
    Each scene has index, narratorLine, estimatedSeconds, and beats array.
 
@@ -916,6 +926,7 @@ ${durationInstruction}${customBeatsPrompt}`;
     const ceilingBeats = enforceBeatCeilings(scene.beats || [], scene.index, {
       isVideoMode,
       targetVideoDuration,
+      styleProfile: sanitizedStyleProfile,
     });
 
     const rawBeats = ceilingBeats.map((beat: any) => {

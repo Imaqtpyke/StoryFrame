@@ -85,6 +85,14 @@
   - Added linter rules L07 (Style vs Casting Contradiction) and L08 (Premature Information Leakage) to `lintStoryboard`.
   - Expanded test suite to 128 automated system tests in `src/tests/systemTestSuite.ts` (100% passing).
   - Verified clean `tsc --noEmit` and successful production build.
+- [x] **Geographic Demonym Entity Isolation & Cartographic Visual Anchors:**
+  - Implemented `extractGeographicAnchor`, `GEOGRAPHIC_DICTIONARY`, and `generateCartographicPrompt` in `src/services/beatSplitting.ts`.
+  - Implemented `isolateAnchorsAndEntities` to ensure phrases like "In 1896 Swedish scientist Svante Arrhenius" reliably partition into 3 distinct beats: Beat 1 ("In 1896"), Beat 2 ("Swedish"), and Beat 3 ("scientist Svante Arrhenius").
+  - Automated cartographic visual prompt generation in `enforceBeatCeilings` featuring tactile rotating globes, glowing boundary lines, dropped location pins, and national flags with characters strictly excluded.
+  - Added Geographic Demonym & Cartographic Anchor schema rules to `geminiClient.ts` and `enhanceStoryArchitect.ts`.
+  - Added Rule L09 (Geographic Cartographic Focus Check) to `lintStoryboard` in `src/services/promptCompiler.ts`.
+  - Added Suite 14 test cases; verified with 137 automated system tests passing (100%).
+  - Verified clean type check (`tsc --noEmit`) and successful build compilation.
 
 ## Next Steps / Active Tasks
 - [ ] Monitor user workflow for subsequent episode drafting across multi-episode projects.

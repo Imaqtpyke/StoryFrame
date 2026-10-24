@@ -52,6 +52,175 @@ export function extractTemporalAnchor(text: string): string | null {
   return null;
 }
 
+export interface GeographicAnchor {
+  rawMatch: string;
+  entityName: string;
+  countryOrRegion: string;
+  flagDescription: string;
+  type: 'demonym' | 'country' | 'city' | 'region';
+}
+
+export const GEOGRAPHIC_DICTIONARY: Record<string, { country: string; flag: string; type: 'demonym' | 'country' | 'city' | 'region' }> = {
+  // Demonyms
+  'swedish': { country: 'Sweden', flag: 'blue and yellow Scandinavian cross flag of Sweden', type: 'demonym' },
+  'british': { country: 'Great Britain', flag: 'Union Jack flag of the United Kingdom', type: 'demonym' },
+  'english': { country: 'England', flag: 'St George cross flag of England', type: 'demonym' },
+  'scottish': { country: 'Scotland', flag: 'St Andrew cross flag of Scotland', type: 'demonym' },
+  'irish': { country: 'Ireland', flag: 'green, white, and orange tricolor flag of Ireland', type: 'demonym' },
+  'french': { country: 'France', flag: 'blue, white, and red tricolor flag of France', type: 'demonym' },
+  'german': { country: 'Germany', flag: 'black, red, and gold horizontal tricolor flag of Germany', type: 'demonym' },
+  'italian': { country: 'Italy', flag: 'green, white, and red tricolor flag of Italy', type: 'demonym' },
+  'spanish': { country: 'Spain', flag: 'red and yellow striped flag of Spain with coat of arms', type: 'demonym' },
+  'portuguese': { country: 'Portugal', flag: 'green and red flag of Portugal with armillary sphere', type: 'demonym' },
+  'dutch': { country: 'The Netherlands', flag: 'red, white, and blue tricolor flag of the Netherlands', type: 'demonym' },
+  'russian': { country: 'Russia', flag: 'white, blue, and red tricolor flag of Russia', type: 'demonym' },
+  'ukrainian': { country: 'Ukraine', flag: 'blue and yellow horizontal bicolor flag of Ukraine', type: 'demonym' },
+  'polish': { country: 'Poland', flag: 'white and red horizontal bicolor flag of Poland', type: 'demonym' },
+  'swiss': { country: 'Switzerland', flag: 'red flag with bold white Greek cross of Switzerland', type: 'demonym' },
+  'austrian': { country: 'Austria', flag: 'red, white, and red triband flag of Austria', type: 'demonym' },
+  'norwegian': { country: 'Norway', flag: 'red, white, and blue Nordic cross flag of Norway', type: 'demonym' },
+  'danish': { country: 'Denmark', flag: 'Dannebrog red and white cross flag of Denmark', type: 'demonym' },
+  'finnish': { country: 'Finland', flag: 'white and blue Nordic cross flag of Finland', type: 'demonym' },
+  'greek': { country: 'Greece', flag: 'blue and white striped flag of Greece with cross', type: 'demonym' },
+  'japanese': { country: 'Japan', flag: 'white flag with crimson red sun disc of Japan', type: 'demonym' },
+  'chinese': { country: 'China', flag: 'crimson red flag with golden five-pointed stars of China', type: 'demonym' },
+  'korean': { country: 'Korea', flag: 'Taegeukgi white flag with red and blue circle of Korea', type: 'demonym' },
+  'south korean': { country: 'South Korea', flag: 'Taegeukgi white flag with red and blue circle and black trigrams', type: 'demonym' },
+  'north korean': { country: 'North Korea', flag: 'red, white, and blue striped flag with red star of North Korea', type: 'demonym' },
+  'indian': { country: 'India', flag: 'saffron, white, and green tricolor flag with navy blue Ashoka Chakra of India', type: 'demonym' },
+  'filipino': { country: 'Philippines', flag: 'blue, red, and white flag with golden sun and three stars of the Philippines', type: 'demonym' },
+  'philippine': { country: 'Philippines', flag: 'blue, red, and white flag with golden sun and three stars of the Philippines', type: 'demonym' },
+  'vietnamese': { country: 'Vietnam', flag: 'red flag with central golden star of Vietnam', type: 'demonym' },
+  'thai': { country: 'Thailand', flag: 'red, white, and blue striped Trairanga flag of Thailand', type: 'demonym' },
+  'indonesian': { country: 'Indonesia', flag: 'red and white horizontal bicolor flag of Indonesia', type: 'demonym' },
+  'malaysian': { country: 'Malaysia', flag: 'striped flag with crescent and 14-point star of Malaysia', type: 'demonym' },
+  'australian': { country: 'Australia', flag: 'navy blue ensign with Union Jack and Southern Cross stars of Australia', type: 'demonym' },
+  'canadian': { country: 'Canada', flag: 'red and white flag with stylized red maple leaf of Canada', type: 'demonym' },
+  'american': { country: 'United States', flag: 'Stars and Stripes red, white, and blue flag of the United States', type: 'demonym' },
+  'mexican': { country: 'Mexico', flag: 'green, white, and red tricolor flag with eagle emblem of Mexico', type: 'demonym' },
+  'brazilian': { country: 'Brazil', flag: 'green field with yellow rhombus and blue celestial globe of Brazil', type: 'demonym' },
+  'argentine': { country: 'Argentina', flag: 'light blue and white triband with Sun of May of Argentina', type: 'demonym' },
+  'egyptian': { country: 'Egypt', flag: 'red, white, and black tricolor with Golden Eagle of Saladin of Egypt', type: 'demonym' },
+  'south african': { country: 'South Africa', flag: 'multicolored Y-shaped banner flag of South Africa', type: 'demonym' },
+  'nigerian': { country: 'Nigeria', flag: 'green and white vertical triband flag of Nigeria', type: 'demonym' },
+  'turkish': { country: 'Turkey', flag: 'crimson red flag with white crescent moon and star of Turkey', type: 'demonym' },
+  'saudi': { country: 'Saudi Arabia', flag: 'green flag with Arabic calligraphy and white sword of Saudi Arabia', type: 'demonym' },
+  'persian': { country: 'Persia / Iran', flag: 'green, white, and red tricolor with emblem of Iran', type: 'demonym' },
+  'israeli': { country: 'Israel', flag: 'white flag with blue stripes and Star of David of Israel', type: 'demonym' },
+
+  // Countries / Nations
+  'sweden': { country: 'Sweden', flag: 'blue and yellow Scandinavian cross flag of Sweden', type: 'country' },
+  'great britain': { country: 'Great Britain', flag: 'Union Jack flag of the United Kingdom', type: 'country' },
+  'britain': { country: 'Great Britain', flag: 'Union Jack flag of the United Kingdom', type: 'country' },
+  'england': { country: 'England', flag: 'St George cross flag of England', type: 'country' },
+  'scotland': { country: 'Scotland', flag: 'St Andrew cross flag of Scotland', type: 'country' },
+  'france': { country: 'France', flag: 'blue, white, and red tricolor flag of France', type: 'country' },
+  'germany': { country: 'Germany', flag: 'black, red, and gold horizontal tricolor flag of Germany', type: 'country' },
+  'italy': { country: 'Italy', flag: 'green, white, and red tricolor flag of Italy', type: 'country' },
+  'spain': { country: 'Spain', flag: 'red and yellow striped flag of Spain with coat of arms', type: 'country' },
+  'portugal': { country: 'Portugal', flag: 'green and red flag of Portugal with armillary sphere', type: 'country' },
+  'netherlands': { country: 'The Netherlands', flag: 'red, white, and blue tricolor flag of the Netherlands', type: 'country' },
+  'russia': { country: 'Russia', flag: 'white, blue, and red tricolor flag of Russia', type: 'country' },
+  'ukraine': { country: 'Ukraine', flag: 'blue and yellow horizontal bicolor flag of Ukraine', type: 'country' },
+  'poland': { country: 'Poland', flag: 'white and red horizontal bicolor flag of Poland', type: 'country' },
+  'switzerland': { country: 'Switzerland', flag: 'red flag with bold white Greek cross of Switzerland', type: 'country' },
+  'austria': { country: 'Austria', flag: 'red, white, and red triband flag of Austria', type: 'country' },
+  'norway': { country: 'Norway', flag: 'red, white, and blue Nordic cross flag of Norway', type: 'country' },
+  'denmark': { country: 'Denmark', flag: 'Dannebrog red and white cross flag of Denmark', type: 'country' },
+  'finland': { country: 'Finland', flag: 'white and blue Nordic cross flag of Finland', type: 'country' },
+  'greece': { country: 'Greece', flag: 'blue and white striped flag of Greece with cross', type: 'country' },
+  'japan': { country: 'Japan', flag: 'white flag with crimson red sun disc of Japan', type: 'country' },
+  'china': { country: 'China', flag: 'crimson red flag with golden five-pointed stars of China', type: 'country' },
+  'india': { country: 'India', flag: 'saffron, white, and green tricolor flag with navy blue Ashoka Chakra of India', type: 'country' },
+  'philippines': { country: 'Philippines', flag: 'blue, red, and white flag with golden sun and three stars of the Philippines', type: 'country' },
+  'vietnam': { country: 'Vietnam', flag: 'red flag with central golden star of Vietnam', type: 'country' },
+  'thailand': { country: 'Thailand', flag: 'red, white, and blue striped Trairanga flag of Thailand', type: 'country' },
+  'indonesia': { country: 'Indonesia', flag: 'red and white horizontal bicolor flag of Indonesia', type: 'country' },
+  'malaysia': { country: 'Malaysia', flag: 'striped flag with crescent and 14-point star of Malaysia', type: 'country' },
+  'australia': { country: 'Australia', flag: 'navy blue ensign with Union Jack and Southern Cross stars of Australia', type: 'country' },
+  'new zealand': { country: 'New Zealand', flag: 'royal blue ensign with Union Jack and four red stars', type: 'country' },
+  'canada': { country: 'Canada', flag: 'red and white flag with stylized red maple leaf of Canada', type: 'country' },
+  'united states': { country: 'United States', flag: 'Stars and Stripes red, white, and blue flag of the United States', type: 'country' },
+  'america': { country: 'United States', flag: 'Stars and Stripes red, white, and blue flag of the United States', type: 'country' },
+  'mexico': { country: 'Mexico', flag: 'green, white, and red tricolor flag with eagle emblem of Mexico', type: 'country' },
+  'brazil': { country: 'Brazil', flag: 'green field with yellow rhombus and blue celestial globe of Brazil', type: 'country' },
+  'argentina': { country: 'Argentina', flag: 'light blue and white triband with Sun of May of Argentina', type: 'country' },
+  'egypt': { country: 'Egypt', flag: 'red, white, and black tricolor with Golden Eagle of Saladin of Egypt', type: 'country' },
+  'south africa': { country: 'South Africa', flag: 'multicolored Y-shaped banner flag of South Africa', type: 'country' },
+  'nigeria': { country: 'Nigeria', flag: 'green and white vertical triband flag of Nigeria', type: 'country' },
+  'turkey': { country: 'Turkey', flag: 'crimson red flag with white crescent moon and star of Turkey', type: 'country' },
+  'israel': { country: 'Israel', flag: 'white flag with blue stripes and Star of David of Israel', type: 'country' },
+
+  // Prominent Historic Cities & Landmarks
+  'boston': { country: 'Boston, Massachusetts', flag: 'historical 18th century colonial flag', type: 'city' },
+  'london': { country: 'London, England', flag: 'Union Jack flag of Great Britain', type: 'city' },
+  'paris': { country: 'Paris, France', flag: 'blue, white, and red tricolor flag of France', type: 'city' },
+  'rome': { country: 'Rome, Italy', flag: 'Italian tricolor and Roman crest', type: 'city' },
+  'tokyo': { country: 'Tokyo, Japan', flag: 'crimson sun disc flag of Japan', type: 'city' },
+  'stockholm': { country: 'Stockholm, Sweden', flag: 'blue and yellow Scandinavian cross flag of Sweden', type: 'city' },
+  'berlin': { country: 'Berlin, Germany', flag: 'tricolor flag of Germany', type: 'city' },
+  'washington': { country: 'Washington DC', flag: 'Stars and Stripes flag of the United States', type: 'city' },
+  'philadelphia': { country: 'Philadelphia, Pennsylvania', flag: 'historical 13-star Betsy Ross American flag', type: 'city' },
+};
+
+/**
+ * Extracts a geographic entity, nationality, country, or location anchor from text.
+ */
+export function extractGeographicAnchor(text: string): GeographicAnchor | null {
+  if (!text || !text.trim()) return null;
+  const clean = text.trim();
+
+  // Sort keys by length descending to match multi-word entries first (e.g. "great britain", "south korea")
+  const sortedKeys = Object.keys(GEOGRAPHIC_DICTIONARY).sort((a, b) => b.length - a.length);
+
+  for (const key of sortedKeys) {
+    const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`\\b(?:in\\s+|across\\s+|from\\s+)?(${escapedKey})\\b`, 'i');
+    const match = clean.match(regex);
+    if (match && match[1]) {
+      const entry = GEOGRAPHIC_DICTIONARY[key];
+      return {
+        rawMatch: match[0],
+        entityName: match[1],
+        countryOrRegion: entry.country,
+        flagDescription: entry.flag,
+        type: entry.type,
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Generates an environment-focused cartographic visual prompt for geographic entity beats
+ * showing a tactile rotating globe, illuminated country boundary lines, a dropped location pin, and the national flag.
+ */
+export function generateCartographicPrompt(
+  geo: GeographicAnchor,
+  isVideoMode: boolean = false,
+  styleProfile?: StyleProfile
+): string {
+  const lighting = styleProfile?.lighting || 'warm 3200K cinematic directional key light with soft atmospheric rim fill';
+  const rawArtStyle = styleProfile?.artStyle || 'cinematic hyperrealism';
+  const colorPalette = styleProfile?.colorPalette || 'harmonious color grading matching story tone';
+  const eraAndSetting = styleProfile?.eraAndSetting || 'scholarly historical setting';
+
+  // Strip character-specific clauses while preserving artistic medium & rendering technique
+  const artStyle = rawArtStyle
+    .replace(/\s*with\s+exaggerated\s+stretchy\s+animal\s+characters/gi, '')
+    .replace(/\s*with\s+stretchy\s+animal\s+characters/gi, '')
+    .replace(/\s*with\s+anthropomorphic\s+characters/gi, '')
+    .replace(/\s*with\s+characters/gi, '')
+    .trim();
+
+  if (isVideoMode) {
+    return `Subject: 2.5D topographic cartographic focus on ${geo.countryOrRegion}. Action: Smooth cinematic push-in toward a tactile terrestrial globe rotating to reveal ${geo.countryOrRegion}, with crisp glowing vector boundary lines tracing its national borders, a polished brass location pin dropping directly onto the territory, and the ${geo.flagDescription} waving subtly beside the geographical silhouette. Camera: Slow Push-In, high-angle 45-degree isometric view, shallow depth of field. Lighting & Environment: ${lighting}, palette of ${colorPalette}, ${eraAndSetting} background with soft ambient dust motes. Style: ${artStyle}, tilt-shift macro lens aesthetic. Physics: Smooth globe rotation, realistic fabric cloth physics on the flag. Audio: soft mechanical clockwork hum, subtle paper rustle, ambient room tone, no dialogue. Duration: 2 seconds.`;
+  }
+
+  return `Tactile 2.5D topographic cartographic macro view of ${geo.countryOrRegion}, centered on a detailed terrestrial globe with ${geo.countryOrRegion} illuminated with luminous glowing border lines. A metallic dropped location pin marks the territory, with the ${geo.flagDescription} displayed clearly beside the highlighted geographic boundary. High-angle 45-degree isometric angle, macro tilt-shift lens, shallow depth of field, ${lighting}, palette of ${colorPalette}, ${eraAndSetting} background, crisp geographic relief textures, no people or characters in frame, ${artStyle}.`;
+}
+
 /**
  * Strips any shot framing words, camera angles, perspective descriptions,
  * "focusing on" meta-framing, and bracketed labels from an imagePrompt.
@@ -282,6 +451,47 @@ export function mergeRedundantNearDuplicateBeats(
 }
 
 /**
+ * Isolates opening temporal anchors ("In 1896", "1945") and leading geographic
+ * demonyms/countries ("Swedish", "In France") so they form standalone beats.
+ */
+export function isolateAnchorsAndEntities(text: string): string[] {
+  let remaining = text.trim();
+  const segments: string[] = [];
+
+  // Check 1: Opening temporal anchor (e.g. "In 1896", "1896", "In 1773", "In the 1800s")
+  const tempMatch = remaining.match(/^(?:in\s+|by\s+|around\s+|during\s+|circa\s+)?([12]\d{3}s?|[5-9]\d{2}(?:\s*(?:bc|bce|ad|ce))?)\b/i);
+  if (tempMatch && tempMatch[0]) {
+    const matchedTemporal = tempMatch[0].trim();
+    const afterTemp = remaining.slice(tempMatch[0].length).replace(/^[,;:\s]+/, '').trim();
+    if (afterTemp.length > 0) {
+      segments.push(matchedTemporal);
+      remaining = afterTemp;
+    }
+  }
+
+  // Check 2: Leading geographic entity or demonym (e.g. "Swedish", "British", "In France", "In Sweden")
+  const geoAnchor = extractGeographicAnchor(remaining);
+  if (geoAnchor) {
+    const geoRegex = new RegExp(`^(?:in\\s+|across\\s+|from\\s+)?(${geoAnchor.entityName})\\b`, 'i');
+    const geoMatch = remaining.match(geoRegex);
+    if (geoMatch && geoMatch[0]) {
+      const matchedGeo = geoMatch[0].trim();
+      const afterGeo = remaining.slice(geoMatch[0].length).replace(/^[,;:\s]+/, '').trim();
+      if (afterGeo.length > 0) {
+        segments.push(matchedGeo);
+        remaining = afterGeo;
+      }
+    }
+  }
+
+  if (remaining.length > 0) {
+    segments.push(remaining);
+  }
+
+  return segments.length > 0 ? segments : [text];
+}
+
+/**
  * Cleanly extract sub-phrases from a broad phrase using punctuation,
  * conjunctions, prepositions, and grammatical clauses.
  */
@@ -292,9 +502,16 @@ export function splitPhraseIntoSubBeats(phrase: string, maxWordsPerBeat: number 
   // Step 1: First split on explicit punctuation (, ; : — - ...)
   const rawPunctParts = clean.split(/(?<=[,;:\u2014\u2013\-])\s+|(?<=\.{3})\s+/).map(p => p.trim()).filter(Boolean);
 
+  // Pre-pass: Isolate opening temporal and geographic anchors within each punctuation chunk
+  const expandedPunctParts: string[] = [];
+  for (const part of rawPunctParts) {
+    const isolated = isolateAnchorsAndEntities(part);
+    expandedPunctParts.push(...isolated);
+  }
+
   const clauseChunks: string[] = [];
 
-  for (const part of rawPunctParts) {
+  for (const part of expandedPunctParts) {
     const words = part.split(/\s+/).filter(Boolean);
 
     // If already small enough (<= maxWordsPerBeat), keep as is
@@ -356,7 +573,7 @@ export function splitPhraseIntoSubBeats(phrase: string, maxWordsPerBeat: number 
 export function enforceBeatCeilings(
   beats: Beat[],
   sceneIndex: number,
-  options?: { isVideoMode?: boolean; targetVideoDuration?: number }
+  options?: { isVideoMode?: boolean; targetVideoDuration?: number; styleProfile?: StyleProfile }
 ): Beat[] {
   const isVideoMode = !!options?.isVideoMode;
   const targetVideoDuration = options?.targetVideoDuration || 5;
@@ -488,6 +705,29 @@ export function enforceBeatCeilings(
       }
     }
   }
+
+  // Step 4: Geographic Demonym and Entity Cartographic Anchor Resolution
+  validatedBeats.forEach((b) => {
+    const geo = extractGeographicAnchor(b.textSpan);
+    if (geo) {
+      const isPredominantlyGeo = getWordCount(b.textSpan) <= 3;
+      const lowerPrompt = (b.imagePrompt || '').toLowerCase();
+      const hasCartographicFocus =
+        lowerPrompt.includes('globe') ||
+        lowerPrompt.includes('topographic') ||
+        lowerPrompt.includes('cartograph') ||
+        lowerPrompt.includes('border line') ||
+        lowerPrompt.includes('boundary') ||
+        lowerPrompt.includes('location pin');
+
+      if (isPredominantlyGeo && !hasCartographicFocus) {
+        b.imagePrompt = generateCartographicPrompt(geo, isVideoMode, options?.styleProfile);
+        b.shotType = 'High-Angle Macro Shot';
+        b.cameraAngle = 'high-angle';
+        b.cameraMovement = isVideoMode ? 'Slow Push-In' : 'Static Crisp Frame';
+      }
+    }
+  });
 
   return validatedBeats;
 }

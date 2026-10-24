@@ -1,4 +1,5 @@
 import { Beat, Scene, StyleProfile, StoryFormat, GenerationMode } from '../types';
+import { extractGeographicAnchor } from './beatSplitting';
 
 export type TargetModel = 'universal' | 'midjourney' | 'kling' | 'runway' | 'luma';
 
@@ -65,7 +66,7 @@ export function sanitizeKineticMotionForImage(prompt: string): string {
 
 /**
  * Resolves style and casting compatibility:
- * If prompt indicates no characters or an empty environment, strip character-specific clauses from the style.
+ * If prompt indicates no characters or an empty environment/cartography, strip character-specific clauses from the style.
  */
 export function resolveStyleAndCastingCompatibility(prompt: string, artStyle: string): { prompt: string; artStyle: string } {
   const lowerPrompt = prompt.toLowerCase();
@@ -76,7 +77,12 @@ export function resolveStyleAndCastingCompatibility(prompt: string, artStyle: st
     lowerPrompt.includes('focus on liquid') ||
     lowerPrompt.includes('focus on terrifying atmosphere') ||
     lowerPrompt.includes('no people') ||
-    lowerPrompt.includes('no figures');
+    lowerPrompt.includes('no figures') ||
+    lowerPrompt.includes('globe') ||
+    lowerPrompt.includes('cartograph') ||
+    lowerPrompt.includes('topographic') ||
+    lowerPrompt.includes('border line') ||
+    lowerPrompt.includes('location pin');
 
   let sanitizedArtStyle = artStyle;
   let sanitizedPrompt = prompt;
@@ -306,6 +312,29 @@ export function lintStoryboard(
           sceneIndex,
           beatIndex,
         });
+      }
+
+      // Rule L09: Geographic Cartographic Focus Check
+      const geoAnchor = extractGeographicAnchor(beat.textSpan || '');
+      const wordCountSpan = (beat.textSpan || '').split(/\s+/).filter(Boolean).length;
+      if (geoAnchor && wordCountSpan <= 3) {
+        const hasMapOrGlobe =
+          prompt.includes('globe') ||
+          prompt.includes('map') ||
+          prompt.includes('cartograph') ||
+          prompt.includes('border') ||
+          prompt.includes('pin') ||
+          prompt.includes('flag');
+        if (!hasMapOrGlobe) {
+          issues.push({
+            id: `L09-scene-${sceneIndex}-beat-${beatIndex}`,
+            severity: 'info',
+            message: `Beat ${beatIndex}: Spoken geographic entity ('${geoAnchor.entityName}') lacks cartographic environment focus (globe, map, border, or flag).`,
+            suggestion: 'Anchor country and nationality beats with tactile maps, border highlights, pins, or national flags.',
+            sceneIndex,
+            beatIndex,
+          });
+        }
       }
     });
   });

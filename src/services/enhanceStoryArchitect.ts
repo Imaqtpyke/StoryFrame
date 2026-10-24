@@ -365,6 +365,11 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
 7. CASTING & STYLE DECOUPLING:
    - When a scene or beat has NO characters (e.g. empty harbor, still life of an object), NEVER write character or mascot requirements into the prompt (e.g. do not write "with exaggerated stretchy animal characters" if the scene has no characters).
 
+8. GEOGRAPHIC DEMONYM & CARTOGRAPHIC ANCHOR RULE:
+   - Whenever a country, nationality/demonym (e.g. "Swedish", "British", "French", "German", "Japanese", "American", "in France", "in Sweden"), or prominent geographic area is spoken in narration, that entity MUST form its own standalone micro-beat (e.g. Beat 1: "In 1896", Beat 2: "Swedish", Beat 3: "scientist Svante Arrhenius").
+   - The visual prompt for this geographic beat MUST focus strictly on the environment and cartography: a tactile 2.5D topographic map or rotating vintage terrestrial globe with the country's national borders illuminated with glowing boundary lines, a metallic dropped location pin, and the authentic national flag or crest displayed beside the geographic outline. Shallow depth of field, warm directional lighting, macro lens aesthetic. NO humans, characters, or faces in frame.
+   - The character or historical action is introduced in the subsequent beat.
+
 STRICT CONSTRAINTS:
 1. DO NOT use em dashes anywhere. Use commas, periods, or parentheses instead.
 2. Platform and Framing: Target platform is "${platform || (isLongForm ? 'YouTube' : 'TikTok')}". Format is ${isLongForm ? '16:9 widescreen' : '9:16 vertical'}.
@@ -448,6 +453,11 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
 
 5. CASTING & STYLE DECOUPLING:
    - When a scene or beat has NO characters (e.g. empty harbor, still life of an object), NEVER write character or mascot requirements into the prompt (e.g. do not write "with exaggerated stretchy animal characters" if the scene has no characters).
+
+6. GEOGRAPHIC DEMONYM & CARTOGRAPHIC ANCHOR RULE:
+   - Whenever a country, nationality/demonym (e.g. "Swedish", "British", "French", "German", "Japanese", "American", "in France", "in Sweden"), or prominent geographic area is spoken in narration, that entity MUST form its own standalone micro-beat (e.g. Beat 1: "In 1896", Beat 2: "Swedish", Beat 3: "scientist Svante Arrhenius").
+   - The visual prompt for this geographic beat MUST focus strictly on the environment and cartography: a tactile 2.5D topographic map or rotating vintage terrestrial globe with the country's national borders illuminated with glowing boundary lines, a metallic dropped location pin, and the authentic national flag or crest displayed beside the geographic outline. Shallow depth of field, warm directional lighting, macro lens aesthetic. NO humans, characters, or faces in frame.
+   - The character or historical action is introduced in the subsequent beat.
 
 STRICT CONSTRAINTS:
 1. DO NOT use em dashes anywhere.
@@ -627,6 +637,7 @@ ${durationInstruction}`;
     const ceilingEnforcedBeats = enforceBeatCeilings(sanitizedBeats, sceneIndex, {
       isVideoMode,
       targetVideoDuration,
+      styleProfile: sanitizedStyleProfile,
     });
 
     const progressedBeats = enforceBeatToBeatProgression(ceilingEnforcedBeats);

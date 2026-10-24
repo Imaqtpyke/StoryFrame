@@ -10,6 +10,8 @@ import {
   splitPhraseIntoSubBeats,
   enforceBeatCeilings,
   cleanRedundantOnScreenText,
+  extractGeographicAnchor,
+  generateCartographicPrompt,
 } from '../services/beatSplitting';
 import {
   evaluateVideoSuitability,
@@ -935,6 +937,138 @@ const hasL07 = lintResults.some((issue) => issue.id.startsWith('L07'));
 const hasL08 = lintResults.some((issue) => issue.id.startsWith('L08'));
 assert(hasL07, 'Storyboard Linter L07', 'Detects contradictory casting directives in prompts');
 assert(hasL08, 'Storyboard Linter L08', 'Detects premature reveal of harbor before textSpan reaches it');
+
+// 14. Geographic Demonym Entity Isolation & Cartographic Anchor Suite
+console.log('\n--- Running Test Suite 14: Geographic Demonym Entity Isolation & Cartographic Anchors ---');
+
+// 14.1 Extraction of Demonym and Country Anchors
+const swedishAnchor = extractGeographicAnchor('Swedish');
+assert(
+  swedishAnchor !== null &&
+  swedishAnchor.countryOrRegion === 'Sweden' &&
+  swedishAnchor.flagDescription.includes('Scandinavian cross flag of Sweden'),
+  'Geographic Anchor Extraction',
+  'Extracts Swedish nationality and maps to Sweden with national flag'
+);
+
+const britishAnchor = extractGeographicAnchor('British');
+assert(
+  britishAnchor !== null &&
+  britishAnchor.countryOrRegion === 'Great Britain' &&
+  britishAnchor.flagDescription.includes('Union Jack'),
+  'Geographic Anchor Extraction',
+  'Extracts British nationality and maps to Great Britain with Union Jack'
+);
+
+const frenchAnchor = extractGeographicAnchor('In France');
+assert(
+  frenchAnchor !== null &&
+  frenchAnchor.countryOrRegion === 'France',
+  'Geographic Anchor Extraction',
+  'Extracts country anchor from "In France"'
+);
+
+// 14.2 Sub-beat Splitting for Temporal + Geographic Demonym + Character
+const testPhraseNoComma = 'In 1896 Swedish scientist Svante Arrhenius';
+const splitBeatsNoComma = splitPhraseIntoSubBeats(testPhraseNoComma);
+assert(
+  splitBeatsNoComma.length === 3 &&
+  splitBeatsNoComma[0] === 'In 1896' &&
+  splitBeatsNoComma[1] === 'Swedish' &&
+  splitBeatsNoComma[2] === 'scientist Svante Arrhenius',
+  'Geographic Demonym Splitting',
+  'Splits "In 1896 Swedish scientist Svante Arrhenius" into exact 3 beats: temporal, nationality, and character'
+);
+
+const testPhraseWithComma = 'In 1896, Swedish scientist Svante Arrhenius';
+const splitBeatsWithComma = splitPhraseIntoSubBeats(testPhraseWithComma);
+assert(
+  splitBeatsWithComma.length === 3 &&
+  splitBeatsWithComma[0].replace(/,$/, '') === 'In 1896' &&
+  splitBeatsWithComma[1] === 'Swedish' &&
+  splitBeatsWithComma[2] === 'scientist Svante Arrhenius',
+  'Geographic Demonym Splitting',
+  'Splits "In 1896, Swedish scientist Svante Arrhenius" into exact 3 beats even when comma is present'
+);
+
+// 14.3 Cartographic Visual Prompt Generation
+if (swedishAnchor) {
+  const stillCartoPrompt = generateCartographicPrompt(swedishAnchor, false);
+  assert(
+    stillCartoPrompt.includes('Sweden') &&
+    stillCartoPrompt.includes('terrestrial globe') &&
+    stillCartoPrompt.includes('glowing border lines') &&
+    stillCartoPrompt.includes('location pin') &&
+    stillCartoPrompt.includes('flag of Sweden') &&
+    stillCartoPrompt.includes('no people or characters'),
+    'Cartographic Prompt Generator',
+    'Generates still image prompt featuring globe, highlighted border, location pin, and flag without people'
+  );
+
+  const videoCartoPrompt = generateCartographicPrompt(swedishAnchor, true);
+  assert(
+    videoCartoPrompt.includes('terrestrial globe rotating') &&
+    videoCartoPrompt.includes('location pin dropping') &&
+    videoCartoPrompt.includes('waving subtly'),
+    'Cartographic Prompt Generator',
+    'Generates video prompt featuring rotating globe, dropping pin, and waving flag motion physics'
+  );
+}
+
+// 14.4 enforceBeatCeilings Automatic Cartographic Resolution
+const rawBeatsInput: Beat[] = [
+  {
+    beatIndex: 1,
+    textSpan: 'In 1896',
+    shotType: 'Close-Up',
+    imagePrompt: 'A calendar page reading 1896.',
+    estimatedSeconds: 1.5,
+  },
+  {
+    beatIndex: 2,
+    textSpan: 'Swedish',
+    shotType: 'Medium Shot',
+    imagePrompt: 'A scientist in a lab.', // Generic prompt lacking cartographic focus
+    estimatedSeconds: 1.5,
+  },
+  {
+    beatIndex: 3,
+    textSpan: 'scientist Svante Arrhenius',
+    shotType: 'Medium Shot',
+    imagePrompt: 'Svante Arrhenius working at his desk with chemistry glassware.',
+    estimatedSeconds: 2.0,
+  },
+];
+
+const ceilingResolved = enforceBeatCeilings(rawBeatsInput, 1, { isVideoMode: false });
+const beat2Resolved = ceilingResolved.find((b) => b.textSpan === 'Swedish');
+assert(
+  beat2Resolved !== undefined &&
+  beat2Resolved.imagePrompt.includes('globe') &&
+  beat2Resolved.imagePrompt.includes('Sweden') &&
+  beat2Resolved.shotType === 'High-Angle Macro Shot',
+  'Automatic Cartographic Upgrade',
+  'enforceBeatCeilings automatically upgrades a demonym beat with a globe, pin, and flag cartographic prompt'
+);
+
+// 14.5 Storyboard Linter Rule L09
+const nonCartoScene: Scene = {
+  index: 1,
+  narratorLine: 'In 1896 Swedish scientist Svante Arrhenius',
+  estimatedSeconds: 5,
+  beats: [
+    {
+      beatIndex: 1,
+      textSpan: 'Swedish',
+      shotType: 'Medium Shot',
+      imagePrompt: 'A scientist looking through a microscope.', // Lacks map, globe, pin, or flag
+      estimatedSeconds: 1.5,
+    },
+  ],
+};
+const lintResultL09 = lintStoryboard([nonCartoScene]);
+const hasL09 = lintResultL09.some((issue) => issue.id.startsWith('L09'));
+assert(hasL09, 'Storyboard Linter L09', 'Linter emits L09 when a demonym beat lacks cartographic environment focus');
 
 console.log('\n====================================================================');
 console.log('                  FULL-SYSTEM VERIFICATION REPORT                  ');

@@ -35,3 +35,7 @@
    - Sanitizes kinetic process verbs (`swirl above`, `flickers`, `churns`, `streaming`) into frozen visual states for still images.
    - Decouples art style from character casting when scenes have no characters.
    - Enforces Visual Information Budget and Reveal Discipline so setup beats strictly withhold future destinations until the reveal beat occurs.
+7. **Geographic Demonym Entity Isolation & Cartographic Anchors:**
+   - Automatically detects and isolates nationalities and demonyms (e.g. Swedish, British, French, German, Japanese, American), sovereign countries, and geographical landmarks into dedicated 1.0s to 1.5s micro-beats.
+   - Generates tactile cartographic environment prompts (2.5D topographic maps or rotating terrestrial globes with illuminated borders, metallic dropped location pins, and authentic national flags) while withholding human characters until the subsequent beat.
+   - Enforced across `beatSplitting.ts`, `promptCompiler.ts`, `geminiClient.ts`, and `enhanceStoryArchitect.ts`.
