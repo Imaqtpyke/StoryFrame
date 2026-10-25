@@ -106,25 +106,32 @@ export function resolveStyleAndCastingCompatibility(prompt: string, artStyle: st
 }
 
 /**
- * Compiles a visual beat into target-model-specific prompt syntax.
+ * Compiles a visual beat into a unified production-grade prompt.
+ * Synthesizes orientation, framing, subject action, environment, lighting, optics, and aspect ratio flags.
  */
 export function compileBeatPrompt(
   beat: Beat,
   scene: Scene,
   styleProfile: StyleProfile | undefined,
-  targetModel: TargetModel,
+  targetModel?: TargetModel,
   format: StoryFormat = 'short',
   generationMode: GenerationMode = 'video'
 ): CompiledPrompt {
   const rawBasePrompt = (beat.imagePrompt || '').trim();
   const isImageMode = generationMode === 'image';
+  const isWidescreen = format === 'long';
+  const aspectRatio: '16:9' | '9:16' = isWidescreen ? '16:9' : '9:16';
+  const arFlag = `--ar ${aspectRatio}`;
+  const orientationText = isWidescreen
+    ? 'Cinematic 16:9 widescreen composition'
+    : 'Vertical 9:16 portrait composition';
 
   // 1. Resolve Style vs Casting Compatibility
   const rawArtStyle = styleProfile?.artStyle || 'Cinematic photorealism';
   const { prompt: promptWithoutStyleConflict, artStyle } = resolveStyleAndCastingCompatibility(rawBasePrompt, rawArtStyle);
 
   // 2. Sanitize kinetic process verbs for image mode
-  const baseImagePrompt = isImageMode
+  let baseImagePrompt = isImageMode
     ? sanitizeKineticMotionForImage(promptWithoutStyleConflict)
     : promptWithoutStyleConflict;
 
@@ -133,79 +140,63 @@ export function compileBeatPrompt(
   const cameraMovement = normalizeCameraMovement(beat.cameraMovement);
   const optics = beat.optics || '35mm anamorphic lens, f/2.8 aperture';
   const lighting = styleProfile?.lighting || 'natural cinematic lighting, 5600K balanced daylight';
-  const aspectRatio = format === 'long' ? '16:9' : '9:16';
+
+  const parameters: Record<string, string> = {
+    ar: aspectRatio,
+    style: 'raw',
+    v: '6.1',
+  };
 
   let compiledText = '';
   let negativePrompt: string | undefined = undefined;
-  const parameters: Record<string, string> = {};
 
-  switch (targetModel) {
-    case 'midjourney': {
-      // Midjourney prefers: [Subject & Action], [Framing & Shot Type], [Lighting & Color], [Optics & Lens] --ar --v 6.1 --stylize
-      const arFlag = format === 'long' ? '--ar 16:9' : '--ar 9:16';
-      if (isImageMode) {
-        compiledText = `Generate a single still image: ${baseImagePrompt}, ${shotType}, ${cameraAngle}, ${lighting}, shot on ${optics}, ${artStyle} ${arFlag} --v 6.1 --stylize 150`;
-        negativePrompt = '--no motion, animation, video, moving camera, text, watermark';
-      } else {
-        compiledText = `${baseImagePrompt}, ${shotType}, ${cameraAngle}, ${lighting}, shot on ${optics}, ${artStyle} ${arFlag} --v 6.1 --stylize 150`;
-      }
-      parameters['ar'] = aspectRatio;
-      parameters['v'] = '6.1';
-      parameters['stylize'] = '150';
-      break;
-    }
+  // Build the unified, non-frugal prompt
+  const components: string[] = [];
 
-    case 'kling': {
-      // Kling AI prefers natural language imperative action with explicit motion verbs and camera control
-      const motionAction = cameraMovement !== 'Static lock-off shot'
-        ? `Cinematic camera: ${cameraMovement} with controlled speed.`
-        : `Locked-off tripod shot with zero camera drift.`;
-      
-      compiledText = `${motionAction} ${shotType}, ${cameraAngle}. ${baseImagePrompt}. Lighting: ${lighting}. High kinetic stability, realistic motion physics, photorealistic textures.`;
-      negativePrompt = 'morphing, jitter, deformed hands, extra limbs, frame jitter, flickering, sudden cuts, blur, low resolution';
-      break;
-    }
-
-    case 'runway': {
-      // Runway Gen-3 Alpha benefits from structured sections: Camera: ... Subject: ... Lighting: ...
-      const cameraPart = cameraMovement !== 'Static lock-off shot'
-        ? `Camera: ${cameraMovement}, ${cameraAngle}, ${shotType}.`
-        : `Camera: Static shot, ${shotType}.`;
-      
-      compiledText = `${cameraPart} Subject: ${baseImagePrompt} Lighting and Atmosphere: ${lighting}. Optics: ${optics}. Pacing: smooth cinematic tempo, high-fidelity physical interaction.`;
-      break;
-    }
-
-    case 'luma': {
-      // Luma Dream Machine responds well to clear start-frame subject descriptions with transition hints
-      const motionProgression = beat.transitionHint
-        ? `Beginning with ${shotType}, transitioning smoothly: ${beat.transitionHint}.`
-        : `Fluid camera motion: ${cameraMovement}.`;
-      
-      compiledText = `${shotType} of ${baseImagePrompt}. ${motionProgression} Atmosphere: ${lighting}. Clean spatial continuity, stable subject geometry, photorealistic render.`;
-      break;
-    }
-
-    case 'universal':
-    default: {
-      if (isImageMode) {
-        compiledText = `Generate a single still image of: ${baseImagePrompt}. Static frame. One exact moment in time. No animation, no camera movement, no video.`;
-        negativePrompt = 'motion, animation, video, timelapse, moving camera, GIF, multiple frames, text, watermark';
-      } else {
-        compiledText = `Generate a continuous video clip of: ${baseImagePrompt}. Dynamic continuous video shot.`;
-        negativePrompt = 'morphing, jitter, deformed hands, sudden cuts, blur, low resolution, watermark, text overlays';
-      }
-      break;
-    }
+  // A. Orientation & Mode Declaration
+  if (isImageMode) {
+    components.push(`STATIC STILL FRAME ONLY: ${orientationText}. One exact frozen moment in time, crisp edges, zero camera movement, no motion blur, no video.`);
+    negativePrompt = 'motion blur, animation, video, moving camera, timelapse, multiple frames, distorted limbs, extra fingers, text, watermark, low quality, artifacting';
+  } else {
+    const motionDirective = cameraMovement !== 'Static shot' && cameraMovement !== 'Static lock-off shot'
+      ? `Continuous camera motion: ${cameraMovement} at smooth controlled velocity.`
+      : `Static lock-off shot with steady camera positioning.`;
+    components.push(`CONTINUOUS CINEMATIC VIDEO SHOT: ${orientationText}. ${motionDirective}`);
+    negativePrompt = 'sudden cuts, frame jitter, morphing, deformed hands, extra limbs, blur, low resolution, watermark, text overlays, warped faces';
   }
 
-  // Deduplicate extra spaces
-  compiledText = compiledText.replace(/\s+/g, ' ').trim();
+  // B. Framing & Angle
+  components.push(`${shotType}, ${cameraAngle}.`);
+
+  // C. Core Visual Subject & Scene Action
+  components.push(baseImagePrompt);
+
+  // D. Atmospheric Lighting (if not already deeply described in base prompt)
+  if (!baseImagePrompt.toLowerCase().includes('lighting:') && !baseImagePrompt.toLowerCase().includes('kelvin') && !baseImagePrompt.toLowerCase().includes('key light')) {
+    components.push(`Atmospheric Lighting: ${lighting}.`);
+  }
+
+  // E. Optics & Lens Prescriptions (if not already embedded)
+  if (!baseImagePrompt.toLowerCase().includes('shot on') && !baseImagePrompt.toLowerCase().includes('lens') && !baseImagePrompt.toLowerCase().includes('mm f/')) {
+    components.push(`Optics: Shot on ${optics}, shallow depth of field, sharp foreground focus.`);
+  }
+
+  // F. Visual Style & Palette Continuity (if not already embedded)
+  if (!baseImagePrompt.toLowerCase().includes('visual style:') && !baseImagePrompt.toLowerCase().includes(artStyle.toLowerCase().slice(0, 15))) {
+    components.push(`Visual Style: ${artStyle}.`);
+  }
+
+  // G. Aspect ratio parameter flag (always guaranteed at prompt end)
+  if (!baseImagePrompt.includes('--ar')) {
+    components.push(`${arFlag} --style raw --v 6.1`);
+  }
+
+  compiledText = components.join(' ').replace(/\s+/g, ' ').trim();
   const wordCount = compiledText.split(/\s+/).filter(Boolean).length;
-  const budgetWordCount = targetModel === 'runway' || targetModel === 'kling' ? 75 : 95;
+  const budgetWordCount = 110;
 
   return {
-    targetModel,
+    targetModel: 'universal',
     promptText: compiledText,
     negativePrompt,
     parameters,
@@ -266,12 +257,12 @@ export function lintStoryboard(
 
       // Rule L04: Prompt length budget
       const wordCount = (beat.imagePrompt || '').split(/\s+/).filter(Boolean).length;
-      if (wordCount > 90) {
+      if (wordCount > 130) {
         issues.push({
           id: `L04-scene-${sceneIndex}-beat-${beatIndex}`,
           severity: 'info',
-          message: `Beat ${beatIndex}: Prompt length (${wordCount} words) is high for generative video clips.`,
-          suggestion: 'Video models (Kling, Runway) attend best to prompts between 40-75 words.',
+          message: `Beat ${beatIndex}: Prompt length (${wordCount} words) is unusually high.`,
+          suggestion: 'High-density visual prompts perform best between 75-110 words.',
           sceneIndex,
           beatIndex,
         });
@@ -459,7 +450,7 @@ export function compileThumbnailPrompt(params: {
   const storyAdaptiveFont =
     raw.fontStyle && raw.fontStyle.trim().length > 0
       ? raw.fontStyle.trim()
-      : inferStoryAdaptiveFont(params.styleProfile?.characterStyle, params.storyPremise);
+      : inferStoryAdaptiveFont(params.styleProfile?.artStyle, params.storyPremise);
 
   // Primary character extraction for identity lock
   const characters = Object.entries(params.characterSheet || {});
@@ -486,7 +477,7 @@ export function compileThumbnailPrompt(params: {
   const compiledPrompt = [
     `STATIC THUMBNAIL IMAGE ONLY. Single high-impact cover frame. No animation, video, camera movement, or motion blur.`,
     `Framed in ${aspectRatio} aspect ratio for a high-CTR ${targetPlatform} cover.`,
-    `Style continuity: ${params.styleProfile?.characterStyle || 'Cinematic realistic'}, ${params.styleProfile?.colorPalette || 'high-contrast dramatic lighting'}.`,
+    `Style continuity: ${params.styleProfile?.artStyle || 'Cinematic realistic'}, ${params.styleProfile?.colorPalette || 'high-contrast dramatic lighting'}.`,
     `Hero Subject: ${primaryCharClause}, expression ${expression}. ${subjectPlacement}.`,
     `Visual Conflict: Climactic turning point: ${heroMoment}. Deep shadows, intense ${accentColor} rim lighting from behind separating the subject from a dark simplified background: ${bgDescription}.`,
     `${safeZoneGuidance}`,
@@ -498,7 +489,7 @@ export function compileThumbnailPrompt(params: {
   const cleanPlatePrompt = [
     `STATIC THUMBNAIL IMAGE ONLY. Single high-impact background plate. No animation, video, camera movement, or motion blur.`,
     `Framed in ${aspectRatio} aspect ratio for a ${targetPlatform} cover.`,
-    `Style continuity: ${params.styleProfile?.characterStyle || 'Cinematic realistic'}, ${params.styleProfile?.colorPalette || 'high-contrast dramatic lighting'}.`,
+    `Style continuity: ${params.styleProfile?.artStyle || 'Cinematic realistic'}, ${params.styleProfile?.colorPalette || 'high-contrast dramatic lighting'}.`,
     `Hero Subject: ${primaryCharClause}, expression ${expression}. ${subjectPlacement}.`,
     `Visual Conflict: Climactic turning point: ${heroMoment}. Deep shadows, intense ${accentColor} rim lighting from behind separating the subject from a dark simplified background: ${bgDescription}.`,
     `${safeZoneGuidance}`,

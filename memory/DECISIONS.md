@@ -159,4 +159,11 @@
 - **Date:** 2026-10-25
 - **Status:** Active
 
+## Direct Universal Visual Prompts, Non-Frugal Density & Aspect Ratio Enforcement
+- **Fact/Decision:** Consolidated prompt output into a single, high-fidelity universal visual prompt format and removed all model tabs (Kling, Runway, Luma, Midjourney) and the "Universal" word/label across the UI to free up screen real estate. Every prompt now embeds explicit aspect ratio phrasing (`Vertical 9:16 portrait composition` or `Cinematic 16:9 widescreen composition`) and tags (`--ar 9:16` or `--ar 16:9`). Visual prompt density is non-frugal, weaving framing, optics, lighting, locked biometrics, action biomechanics, and micro-environment textures into every beat.
+- **Context:** Solves the issue where prompts lacked an explicit aspect ratio and defaulted to landscape in external diffusion tools, removes frugal 1-sentence prompt fallbacks, and eliminates unnecessary tool-switching clutter.
+- **Date:** 2026-10-25
+- **Status:** Active
+
+
 

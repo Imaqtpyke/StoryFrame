@@ -1,107 +1,61 @@
-# Ingesting Episode 1 Manuscript & 11-Episode Series Continuity
+# Direct Universal Visual Prompts with Non-Frugal Visual Density & Aspect Ratio Enforcement
 
-Directly ingest and execute the pre-structured Episode 1 manuscript ("The One Who Doesn't Belong") into StoryFrame as a 12-clip vertical (9:16) video storyboard with camera motion tags, while establishing an 11-episode persistent continuity tracker for the entire series.
+Consolidate prompt output into a single, high-fidelity universal visual prompt format, remove all third-party model selectors (Midjourney, Kling, Runway, Luma) and the "Universal" word/label to free up UI real estate, and eliminate frugal brevity by embedding explicit aspect ratio tags (`--ar 9:16` or `--ar 16:9`), cinematography, lighting, lens optics, and rich visual textures into every beat.
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> The following architectural decisions were confirmed in Phase 1:
-> - **Manuscript Ingestion Flow:** Directly ingest the 12 clips into StoryFrame's production storyboard pipeline as a native 12-scene sequence (4 seconds per clip, 48 seconds total duration), bypassing redundant re-generation while enabling prompt compilation and video motion tags.
-> - **Generation Target:** Configured for Vertical 9:16 video generation with explicit camera motion, kinetic velocity, and audio/foley cues (compatible with Kling, Runway Gen-3, Luma Dream Machine, Sora, and Veo).
-> - **Series Continuity:** Persistent multi-episode Story Bible tracking character visual identity, mansion environments, the secret premise, and the language rule ("no gay/straight labels") across all 11 episodes.
+> - **Zero Model Selectors / Third-Party Tabs:** Remove model selector dropdowns, tabs, and references to Kling, Runway, Luma, and Midjourney. The app outputs one direct, universally compatible visual prompt.
+> - **Remove "Universal" Labeling:** Remove the word "Universal" across the interface (headers, dropdowns, prompt badges) to eliminate visual clutter and save screen real estate.
+> - **Aspect Ratio Enforcement on Every Beat:** Explicitly specify portrait ratio (`Vertical 9:16 portrait composition` and `--ar 9:16`) for short-form, and landscape ratio (`Wide 16:9 landscape composition` and `--ar 16:9`) for long-form, preventing external generators from defaulting to landscape or 1:1.
+> - **Non-Frugal Visual Prompt Density:** Upgrade prompt compilation and generation so beat descriptions are never terse or minimal. Each beat embeds rich physical textures, environmental depth, lighting Kelvin/direction, lens optics, and biomechanics.
 
 ---
 
 ## 1. Overview & Core Concept
 
-- **What It Does:** Enables creators to take formatted production manuscripts (like `storyframe_episode_1_twelve_suspects_d92e002c.md`) and instantly ingest them into StoryFrame's vertical video storyboard matrix. It parses the 12 clips into 12 discrete 4-second scenes, compiles cinematic video prompts with camera movements, and anchors the 11-episode roadmap in the persistent Story Bible.
-- **Target Audience:** Short-form video creators, episodic web series directors, and fiction writers producing vertical mystery/drama series for TikTok, YouTube Shorts, and Instagram Reels.
-- **Key Value:** Eliminates the frustration of copying and pasting or having an AI re-write a finished script. Delivers instant, consistent 9:16 shot lists, prompt compilation for video AI models, and CMX 3600 EDL / SRT subtitle exports ready for video editing software (Premiere Pro, DaVinci Resolve, CapCut).
+- **What It Does:** Simplifies StoryFrame's results UI by replacing model-switching tabs with a single, highly detailed visual prompt per beat. Every prompt is ready to paste into any state-of-the-art image or video generator (Midjourney, Flux, Kling, Runway, Luma, Ideogram, Leonardo).
+- **Aspect Ratio Problem Solved:** Previously, beats lacked an explicit aspect ratio flag when using the universal fallback, causing external tools to produce unexpected widescreen or square images instead of 9:16 portrait. Every beat now carries explicit ratio phrasing and `--ar 9:16` / `--ar 16:9` tags.
+- **Visual Richness:** The previous universal fallback was minimal (1 sentence). The new universal prompt compiles the full sensory composition: framing, lighting, optics, character visual lock, action physics, and atmosphere.
 
 ---
 
-## 2. User Experience & Visual Design
+## 2. Technical Implementation Details
 
-- **Ingestion Access Point:**
-  - A clean, unboxed **Ingest Manuscript** button in `GeneratorForm.tsx` alongside the story input box.
-  - Allows either clicking **Load Attached Episode 1** (instantly loading the attached markdown file) or uploading/pasting any structured script file.
-  - Automatically detects format settings: **Vertical (9:16)**, **Text to Video**, **48s Target Runtime**, and **4s Clip Duration**.
-- **Results View Matrix (12 Clips):**
-  - Displays the 12 sequential clips in StoryFrame's compact matrix view (Scenes I through XII).
-  - Each clip card displays the voice-over narration, timecode range (`0:00–0:04`, `0:04–0:08`, etc.), camera motion tag (Glide, Spotlight Track, Dutch Angle, Macro Close-Up, Reveal Dolly), and compiled video prompt.
-  - Tapping any clip opens the `BeatBottomSheet` inspector with the 8-part video prompt, audio foley cues, and start-frame keyframe prompts.
-- **Series Roadmap & Continuity Modal:**
-  - In `ResultsView.tsx` and the Story Bible modal, a dedicated **Series Continuity: 11 Episodes** tab displays the full episodic arc (from Episode 1 "Twelve Suspects" to Episode 11 "The Real Twist").
-  - Highlights active contestants, eliminated contestants per episode, and locked premise rules (e.g., the language restriction).
-- **Design Conventions:**
-  - Dark-editorial theme (`#121211`, `#1C1C1A`), 8px rounded corners, Title Case buttons, Lucide SVG icons, zero purple gradients, zero emojis, and zero pill-shaped metadata enclosures.
+### A. Prompt Compiler (`src/services/promptCompiler.ts`)
+1. Refactor `compileBeatPrompt` to produce an expansive, non-frugal prompt containing:
+   - Composition & Aspect Ratio (`Vertical 9:16 portrait framing` or `Wide 16:9 landscape framing`).
+   - Camera Shot Type, Camera Angle, and Camera Movement.
+   - Core visual subject, locked biometric/wardrobe identity, and action.
+   - Micro-environment, lighting, and tactile physical surface textures.
+   - Camera lens and optics (e.g. `Shot on 35mm prime lens, shallow depth of field`).
+   - Art style and harmonious color grading.
+   - Ending aspect ratio tag: `--ar 9:16` (short) or `--ar 16:9` (long).
+   - Video motion directives when in video mode (velocity, continuous motion, physical stability).
+   - High-quality universal negative prompt.
+2. Ensure `budgetWordCount` allows rich 70-110 word visual descriptions without triggering lint truncation warnings.
 
----
+### B. Gemini Client & Stage Prompts (`src/services/geminiClient.ts` & `src/services/stage3PromptWriter.ts`)
+1. In `geminiClient.ts`, instruct the prompt generation engine to explicitly integrate the required aspect ratio into every beat's `imagePrompt`.
+2. Guarantee that the final beat prompt sanitization enforces the presence of `--ar 9:16` (for short-form) or `--ar 16:9` (for long-form).
+3. Update `stage3PromptWriter.ts` to instruct the per-scene prompt writer to include rich visual details and the explicit aspect ratio.
 
-## 3. Key Product Decisions & Trade-Offs
-
-- **Decision 1: Native Ingestion vs. Prompt Re-Generation**
-  - *Chosen Approach:* Direct deterministic parsing of the markdown manuscript into `StoryGenerationResult` scenes and beats, with prompt compilation for the target AI video model.
-  - *Why:* The user already wrote precise 4-second voice-overs and visual directions. Passing it through an LLM text generator risks truncating, altering the lines, or hallucinating unrequested plot changes.
-  - *Alternatives Considered:* Re-prompting Groq/Gemini to "analyze and storyboard" the text. Rejected because it wastes tokens and may violate the user's specific 4-second pacing.
-- **Decision 2: 1-Beat-Per-Clip Video Mapping**
-  - *Chosen Approach:* Map each 4-second clip directly as 1 scene with 1 video beat (or start/end keyframe transition) conforming to short-form video model constraints (4s–5s duration).
-  - *Why:* Short-form video generators (Veo, Runway Gen-3, Kling) generate 4 to 5 seconds per generation call. Aligning each clip to 1 generation prompt provides a 1:1 timeline match for video editors.
-- **Decision 3: Persistent Series Continuity Storage**
-  - *Chosen Approach:* Store the 11-episode roadmap and character profiles in `bibleCache.ts` and `sessionStorage`, allowing the user to progress from Episode 1 to Episode 2 while preserving identical cast descriptions.
-  - *Why:* Reality show mystery formats rely heavily on facial, hairstyle, and wardrobe consistency across voting rounds and elimination ceremonies.
-
----
-
-## 4. Technical Architecture & Data Strategy
-
-```
-┌────────────────────────────────────────────────────────┐
-│                   StoryFrame Engine                    │
-└───────────────────────────────────┬────────────────────┘
-                                    │
-       ┌────────────────────────────┴───────────────────────────┐
-       ▼                                                        ▼
-┌─────────────────────────────────┐          ┌───────────────────────────────────┐
-│  Manuscript Ingestion Parser    │          │     Series Continuity Manager     │
-│  (src/services/scriptParser.ts) │          │     (src/services/bibleCache.ts)  │
-├─────────────────────────────────┤          ├───────────────────────────────────┤
-│ • Parses Markdown Headings      │          │ • Tracks 11 Episodes Arc         │
-│ • Extracts 12 Clips & Times     │          │ • Biometric Contestant Profiles   │
-│ • Extracts VO & Visual Cues     │          │ • Enforces Language Constraints   │
-│ • Assembles Normalized Scenes   │          │ • Retains Visual Style & Setting  │
-└────────────────┬────────────────┘          └─────────────────┬─────────────────┘
-                 │                                             │
-                 └──────────────────────┬──────────────────────┘
-                                        │
-                                        ▼
-┌────────────────────────────────────────────────────────────────────────────────┐
-│                           ResultsView Matrix (9:16)                           │
-│  - 12 Sequential Clip Cards with Timecodes & Camera Motion                     │
-│  - Model Compiler (Universal, Runway Gen-3, Kling, Luma, Veo)                 │
-│  - Multi-Episode Roadmap Inspector Modal                                       │
-│  - Export Engine: CMX 3600 EDL, SRT Subtitles, CSV Shotlist, Markdown          │
-└────────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Key Modules & State Flow:
-1. `src/services/scriptParser.ts`:
-   - Pure parser that detects `### Clip N — Title (0:XX–0:YY)` blocks, extracting `voiceOver` and `visual` text.
-   - Converts visual descriptions into rich 8-part video prompts using StoryFrame's cinematography standards (lighting, framing, camera motion, tactile atmosphere, audio foley).
-   - Generates character entries for the 12 contestants and the host based on the production notes.
-2. `src/components/GeneratorForm.tsx`:
-   - Adds an **Ingest Script** button with instant preview for the attached Episode 1 markdown or custom file uploads.
-   - Sets video mode and 9:16 vertical orientation upon ingestion.
-3. `src/components/SeriesRoadmapModal.tsx`:
-   - Modal accessible from ResultsView showing the 11-episode arc, eliminated contestants tracker, and button to prep Episode 2.
-4. `src/components/ResultsView.tsx`:
-   - Renders the 12-clip sequence with timecodes and full export options (.edl, .srt, .csv, .md, .json).
+### C. UI Simplification (`src/components/ResultsView.tsx` & `src/components/BeatBottomSheet.tsx`)
+1. In `ResultsView.tsx`:
+   - Remove the Target Model selector `<select>` container from the top action bar to free space.
+   - Keep the clean "Copy All Prompts" button.
+   - Remove any residual "Universal" labels.
+2. In `BeatBottomSheet.tsx`:
+   - Remove the model badge tag.
+   - Cleanly label the prompt as "Visual Prompt" (Image mode) or "Video Prompt" (Video mode).
+   - Show the full, rich compiled prompt with one-click copy.
 
 ---
 
-## 5. Verification & Testing Plan
+## 3. Verification & Quality Checklist
 
-1. **Parser Unit Verification:** Test markdown parsing of all 12 clips, timecodes, voice-over text, and visual descriptions.
-2. **Video Prompt Quality:** Verify that each generated video prompt includes camera motion tags, 9:16 vertical aspect framing, Kelvin lighting, and audio foley cues without text leakage.
-3. **Export Integrity:** Verify that CMX 3600 EDL and SRT exports accurately reflect the 48-second timeline with 12 distinct 4-second events.
-4. **Build & Type Check:** Run `compile_applet` and `lint_applet` to guarantee error-free compilation.
+- [x] Zero references to model tabs (Kling, Runway, Luma, Midjourney) in the results interface.
+- [x] Zero occurrences of the word "Universal" taking up screen space in headers or badges.
+- [x] Every visual beat prompt contains explicit aspect ratio phrasing and `--ar 9:16` or `--ar 16:9`.
+- [x] Visual prompts are richly detailed (lighting, lens, textures, action), never frugal.
+- [x] Applet compiles with zero TypeScript errors via `compile_applet`.

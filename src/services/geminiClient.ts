@@ -492,8 +492,14 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - CONCRETE NOUNS ONLY: Every noun must be a tangible real-world item. Never write vague disjunctive placeholders ("holding something like a bag or a book").
    - SINGLE VISUAL FOCUS PER BEAT: Exactly ONE clear visual focus per beat. No conflicting hybrid framing.
 
-8. Token Economy & Deduplication:
-   - Prompts must remain punchy and evocative (45 to 75 descriptive words per beat).
+8. High-Density Visual Prompts (MANDATORY 75-110 WORDS PER BEAT, NEVER FRUGAL):
+   - Every visual beat MUST be rich, textured, and deeply descriptive (target 75 to 110 descriptive words per beat). Never write frugal, minimal, or brief prompts.
+   - Weave in the 5 required cinematic layers:
+     1) Exact framing, camera angle, and camera motion.
+     2) Grounded subject biomechanics, posture, facial micro-expressions, garment fabric folds, and tactile physical interaction.
+     3) Environmental depth, tactile textures (surfaces, particles, dust, moisture, ground elements).
+     4) Atmospheric lighting Kelvin, directional shadow falloff, and rim light contrast.
+     5) Precise optical lens prescription (focal length in mm, aperture) and aspect ratio flag.
    - DO NOT copy-paste the entire character sheet paragraph multiple times within the prompt. Weave locked traits directly into the scene action.
 
 9. "THE DIFFERENCE" & COUNTERFACTUAL JUXTAPOSITION RULE (STRICT NO-DUPLICATION BEAT PROGRESSION):
@@ -525,6 +531,7 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
 STRICT CONSTRAINTS:
 1. DO NOT use em dashes anywhere. Use commas, periods, or parentheses instead.
 2. Platform and Framing: Target platform is "${platform || (isLongForm ? 'YouTube' : 'TikTok')}". Format is ${isLongForm ? '16:9 widescreen' : '9:16 vertical'}.
+   CRITICAL ASPECT RATIO ENFORCEMENT: Every beat's imagePrompt MUST explicitly declare orientation ("${isLongForm ? 'Cinematic 16:9 widescreen composition' : 'Vertical 9:16 portrait composition'}") and end with the exact parameter flag "--ar ${isLongForm ? '16:9' : '9:16'}". Never generate landscape prompts for vertical formats!
 3. NO REAL OR IDENTIFIABLE PERSON NAMES IN VISUAL PROMPTS.
 4. You MUST respond with ONLY a valid JSON object matching this schema:
 {
@@ -797,6 +804,18 @@ ${durationInstruction}${customBeatsPrompt}`;
 
       // Clean redundant duplications and enforce strict mode isolation (no audio in image mode)
       finalImagePrompt = cleanAndDeduplicatePrompt(finalImagePrompt, isVideoMode);
+
+      // Guaranteed Aspect Ratio & Orientation injection
+      const targetRatio = isLongForm ? '16:9' : '9:16';
+      const arFlag = `--ar ${targetRatio}`;
+      const orientationText = isLongForm ? 'Cinematic 16:9 widescreen composition' : 'Vertical 9:16 portrait composition';
+
+      if (!finalImagePrompt.toLowerCase().includes('9:16') && !finalImagePrompt.toLowerCase().includes('16:9')) {
+        finalImagePrompt = `${orientationText}. ${finalImagePrompt.trim()}`;
+      }
+      if (!finalImagePrompt.includes('--ar')) {
+        finalImagePrompt = `${finalImagePrompt.trim()} ${arFlag}`;
+      }
 
       let soundCue: string | undefined = undefined;
       if (isVideoMode) {

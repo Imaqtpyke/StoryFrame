@@ -6,7 +6,7 @@ import CharacterReferenceModal from './CharacterReferenceModal';
 import StyleAndCharactersSection from './StyleAndCharactersSection';
 import SeriesRoadmapModal from './SeriesRoadmapModal';
 import { enforceBeatCeilings, getPreviewText } from '../services/beatSplitting';
-import { TargetModel, compileBeatPrompt, lintStoryboard, LintIssue, compileThumbnailPrompt } from '../services/promptCompiler';
+import { compileBeatPrompt, lintStoryboard, LintIssue, compileThumbnailPrompt } from '../services/promptCompiler';
 import { generateCMX3600EDL, generateSRTSubtitles, calculatePacing } from '../services/timelineExport';
 import {
   Copy,
@@ -107,8 +107,7 @@ export default function ResultsView({
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const exportMenuRef = useRef<HTMLDivElement>(null);
 
-  // Target model compiler & modal states
-  const [selectedTargetModel, setSelectedTargetModel] = useState<TargetModel>('universal');
+  // Modal states
   const [isRefModalOpen, setIsRefModalOpen] = useState<boolean>(false);
   const [isStyleModalOpen, setIsStyleModalOpen] = useState<boolean>(false);
   const [isRoadmapModalOpen, setIsRoadmapModalOpen] = useState<boolean>(false);

@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Beat, GenerationMode, StyleProfile, StoryFormat } from '../types';
-import { TargetModel, compileBeatPrompt } from '../services/promptCompiler';
+import { compileBeatPrompt } from '../services/promptCompiler';
 import { 
   X, 
   Copy, 
@@ -29,7 +29,6 @@ interface BeatBottomSheetProps {
   copiedIndex: string | null;
   onCopy: (text: string, identifier: string) => void;
   generationMode?: GenerationMode;
-  targetModel?: TargetModel;
   styleProfile?: StyleProfile;
   format?: StoryFormat;
 }
@@ -45,7 +44,6 @@ export default function BeatBottomSheet({
   copiedIndex,
   onCopy,
   generationMode = 'image',
-  targetModel = 'universal',
   styleProfile,
   format = 'short',
 }: BeatBottomSheetProps) {

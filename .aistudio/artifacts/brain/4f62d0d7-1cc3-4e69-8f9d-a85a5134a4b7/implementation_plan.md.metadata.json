@@ -1,6 +1,6 @@
 {
-  "summary": "Plan for direct manuscript ingestion of Episode 1 ('The One Who Doesn't Belong') into a 12-clip vertical 9:16 video storyboard, with motion tags, camera angles, and an 11-episode persistent series continuity tracker.",
-  "updatedAt": "2026-10-20T08:29:38.342542649Z",
-  "requestFeedback": true,
-  "userFacing": true
+  "summary":  "Updated plan to eliminate all tool/website selectors (Midjourney, Kling, Runway, Luma) and remove the word 'Universal' across the UI, establish direct non-frugal visual prompt beats with explicit aspect ratio tags (--ar 9:16 and --ar 16:9), and enhance visual density.",
+  "updatedAt":  "2026-10-25T17:28:04.392321569Z",
+  "requestFeedback":  true,
+  "userFacing":  true
 }
