@@ -149,3 +149,14 @@
 - **Date:** 2026-10-24
 - **Status:** Active
 
+## Production Cover & Thumbnail Blueprint Engine
+- **Fact/Decision:** Implemented a dedicated Cover & Thumbnail Blueprint engine in `src/services/promptCompiler.ts`, integrated across all generation pipelines (`geminiClient.ts`, `groundedPipeline.ts`, `enhanceStoryArchitect.ts`, `scriptParser.ts`), and rendered in `src/components/ResultsView.tsx`:
+  1. Narrative Position: Placed cleanly between the final scene and the Complete Narrator Script, completely isolated from scene arrays, timing, SRT subtitles, and EDL cut lists.
+  2. Story-Adaptive Typography: Font styling adapts dynamically to the narrative genre, tone, and character style via `inferStoryAdaptiveFont` (e.g. distressed weathered stencil for zombie/horror apocalypse, sleek futuristic neon sans-serif for cyberpunk, chiseled archaic roman serif for medieval dark fantasy, bold editorial headline serif for historical documentaries, playful bubble serif for 1930s rubber hose).
+  3. Platform Safe Zones: 16:9 widescreen YouTube layout positions the subject on the left third with bottom-right duration badge clearance; 9:16 vertical TikTok/Shorts layout centers the face in the upper-middle band with top 12%, bottom 25%, and right-edge engagement button clearance.
+  4. Dual Copy Options: Generates both the full production prompt with quoted headline text (<= 4 words in ALL CAPS) and a clean plate prompt leaving empty negative space for creators designing typography in Canva or Photoshop.
+- **Context:** Resolves creator need for high-CTR publishing assets matching the storyboard's locked character identity and aesthetic while preserving export integrity.
+- **Date:** 2026-10-25
+- **Status:** Active
+
+

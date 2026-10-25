@@ -1,4 +1,4 @@
-import { Beat, Scene, StyleProfile, StoryFormat, GenerationMode } from '../types';
+import { Beat, Scene, StyleProfile, StoryFormat, GenerationMode, ThumbnailData } from '../types';
 import { extractGeographicAnchor } from './beatSplitting';
 
 export type TargetModel = 'universal' | 'midjourney' | 'kling' | 'runway' | 'luma';
@@ -340,4 +340,183 @@ export function lintStoryboard(
   });
 
   return issues;
+}
+
+/**
+ * Adapts typography and font treatment to the narrative genre, tone, and character style
+ */
+export function inferStoryAdaptiveFont(styleText = '', narrativeText = ''): string {
+  const combined = `${styleText} ${narrativeText}`.toLowerCase();
+
+  if (
+    combined.includes('zombie') ||
+    combined.includes('horror') ||
+    combined.includes('apocalypse') ||
+    combined.includes('survival') ||
+    combined.includes('decay') ||
+    combined.includes('infection')
+  ) {
+    return 'distressed weathered stencil sans-serif with textured rugged edges';
+  }
+  if (
+    combined.includes('cyberpunk') ||
+    combined.includes('sci-fi') ||
+    combined.includes('neon') ||
+    combined.includes('future') ||
+    combined.includes('space') ||
+    combined.includes('robot')
+  ) {
+    return 'sleek futuristic geometric sans-serif with subtle luminous neon edging';
+  }
+  if (
+    combined.includes('medieval') ||
+    combined.includes('dark fantasy') ||
+    combined.includes('gothic') ||
+    combined.includes('ancient') ||
+    combined.includes('castle') ||
+    combined.includes('sword')
+  ) {
+    return 'chiseled archaic roman serif with carved stone texture and sharp serifs';
+  }
+  if (
+    combined.includes('rubber hose') ||
+    combined.includes('claymation') ||
+    combined.includes('cartoon') ||
+    combined.includes('1930') ||
+    combined.includes('playful')
+  ) {
+    return 'playful hand-lettered bold cartoon bubble serif with vintage curved letterforms';
+  }
+  if (
+    combined.includes('documentary') ||
+    combined.includes('historical') ||
+    combined.includes('archival') ||
+    combined.includes('investigative') ||
+    combined.includes('19th') ||
+    combined.includes('18th') ||
+    combined.includes('century') ||
+    /\b1[89]\d\d\b/.test(combined)
+  ) {
+    return 'bold editorial headline serif with classic broadsheet typography';
+  }
+  if (combined.includes('anime') || combined.includes('manga') || combined.includes('ink')) {
+    return 'ultra-heavy condensed industrial grotesque with high-impact angular cuts';
+  }
+  if (
+    combined.includes('noir') ||
+    combined.includes('detective') ||
+    combined.includes('crime') ||
+    combined.includes('mystery')
+  ) {
+    return 'dossier stamp sans-serif with dramatic cast-shadow letterforms';
+  }
+
+  // Default clean high-CTR display typography
+  return 'ultra-bold condensed heavy sans-serif with clean sharp outlines';
+}
+
+/**
+ * Compiles a production-grade, safe-zone compliant thumbnail prompt and clean plate prompt
+ */
+export function compileThumbnailPrompt(params: {
+  rawThumbnail?: Partial<ThumbnailData>;
+  styleProfile: StyleProfile;
+  characterSheet?: Record<string, string>;
+  storyPremise?: string;
+  format?: StoryFormat;
+  platform?: string;
+}): ThumbnailData {
+  const isWidescreen =
+    params.format === 'long' ||
+    (params.platform &&
+      params.platform.toLowerCase().includes('youtube') &&
+      !params.platform.toLowerCase().includes('shorts'));
+  const aspectRatio: '16:9' | '9:16' = isWidescreen ? '16:9' : '9:16';
+  const targetPlatform = isWidescreen ? 'YouTube Widescreen' : 'TikTok / Shorts / Reels';
+
+  const raw = params.rawThumbnail || {};
+  const heroMoment = (
+    raw.heroMoment || 'The climactic turning point and central conflict of the story'
+  ).trim();
+  const expression = (
+    raw.expression || 'intense, emotionally charged, and readable at thumbnail scale'
+  ).trim();
+  const bgDescription = (
+    raw.bgDescription || 'deep atmospheric background with strong contrast and dramatic depth separation'
+  ).trim();
+  const accentColor = (
+    raw.accentColor || (isWidescreen ? 'vibrant electric amber' : 'cold crimson')
+  ).trim();
+
+  // Clean hook text: uppercase, max 4 words, no stray punctuation
+  let cleanHook = (raw.hookText || 'SURVIVE').replace(/["'’]/g, '').trim().toUpperCase();
+  const hookWords = cleanHook.split(/\s+/).filter(Boolean);
+  if (hookWords.length > 4) {
+    cleanHook = hookWords.slice(0, 4).join(' ');
+  }
+  if (!cleanHook) cleanHook = 'SURVIVE';
+
+  const storyAdaptiveFont =
+    raw.fontStyle && raw.fontStyle.trim().length > 0
+      ? raw.fontStyle.trim()
+      : inferStoryAdaptiveFont(params.styleProfile?.characterStyle, params.storyPremise);
+
+  // Primary character extraction for identity lock
+  const characters = Object.entries(params.characterSheet || {});
+  let primaryCharClause = 'The protagonist';
+  if (characters.length > 0) {
+    const [name, desc] = characters[0];
+    primaryCharClause = `${name} (locked visual identity: ${desc})`;
+  }
+
+  // Safe zones and layout
+  const subjectPlacement = isWidescreen
+    ? 'subject positioned in the left third, filling roughly 50% of the frame'
+    : 'subject centered in the upper-middle vertical band, filling roughly 55% of the frame';
+
+  const textPlacement = isWidescreen
+    ? 'in the upper-right third of the frame'
+    : 'in the center-upper safe zone, above the hero shoulders';
+
+  const safeZoneGuidance = isWidescreen
+    ? 'Platform safe zone: strictly keep the bottom-right corner clear of text and faces for the YouTube timestamp duration badge; keep lower 10% clear for the scrub bar.'
+    : 'Platform safe zone: keep the top 12% clear for header/profile icons, bottom 25% clear for captions/music titles, and right edge clear for like/comment buttons.';
+
+  // Full compiled prompt with typography
+  const compiledPrompt = [
+    `STATIC THUMBNAIL IMAGE ONLY. Single high-impact cover frame. No animation, video, camera movement, or motion blur.`,
+    `Framed in ${aspectRatio} aspect ratio for a high-CTR ${targetPlatform} cover.`,
+    `Style continuity: ${params.styleProfile?.characterStyle || 'Cinematic realistic'}, ${params.styleProfile?.colorPalette || 'high-contrast dramatic lighting'}.`,
+    `Hero Subject: ${primaryCharClause}, expression ${expression}. ${subjectPlacement}.`,
+    `Visual Conflict: Climactic turning point: ${heroMoment}. Deep shadows, intense ${accentColor} rim lighting from behind separating the subject from a dark simplified background: ${bgDescription}.`,
+    `${safeZoneGuidance}`,
+    `Typography & Text Overlay: Graphic headline text "${cleanHook}" rendered in ${storyAdaptiveFont}, in bold uppercase with a thick dark outline and high-contrast fill, positioned ${textPlacement}. Text appears exactly once, perfectly spelled, perfectly legible at small mobile thumbnail scale. No other lettering, subtitles, dialogue, or watermarks.`,
+    `--ar ${aspectRatio} --style raw --s 150 --v 6.1`,
+  ].join(' ');
+
+  // Clean plate prompt without typography (for Canva / Photoshop editors)
+  const cleanPlatePrompt = [
+    `STATIC THUMBNAIL IMAGE ONLY. Single high-impact background plate. No animation, video, camera movement, or motion blur.`,
+    `Framed in ${aspectRatio} aspect ratio for a ${targetPlatform} cover.`,
+    `Style continuity: ${params.styleProfile?.characterStyle || 'Cinematic realistic'}, ${params.styleProfile?.colorPalette || 'high-contrast dramatic lighting'}.`,
+    `Hero Subject: ${primaryCharClause}, expression ${expression}. ${subjectPlacement}.`,
+    `Visual Conflict: Climactic turning point: ${heroMoment}. Deep shadows, intense ${accentColor} rim lighting from behind separating the subject from a dark simplified background: ${bgDescription}.`,
+    `${safeZoneGuidance}`,
+    `Negative Space & Clean Plate: Clean negative space ${textPlacement} left completely empty without any text, lettering, words, watermarks, or logos, designed as a clean text-free background plate for custom graphic overlay.`,
+    `--ar ${aspectRatio} --style raw --s 150 --v 6.1`,
+  ].join(' ');
+
+  return {
+    heroMoment,
+    expression,
+    bgDescription,
+    accentColor,
+    hookText: cleanHook,
+    fontStyle: storyAdaptiveFont,
+    alternateHooks: raw.alternateHooks || [],
+    compiledPrompt,
+    cleanPlatePrompt,
+    aspectRatio,
+    targetPlatform,
+  };
 }

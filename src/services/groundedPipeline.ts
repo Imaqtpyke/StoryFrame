@@ -20,6 +20,7 @@ import { stage1GenerateStoryBible } from './stage1StoryBible';
 import { stage2GenerateBeatPlan } from './stage2BeatPlan';
 import { stage3WriteScenePrompts } from './stage3PromptWriter';
 import { stage4VerifyAndRepairScene } from './stage4VerifyRepair';
+import { compileThumbnailPrompt } from './promptCompiler';
 
 export async function executeGroundedPipeline(
   req: GenerateStoryRequest,
@@ -193,6 +194,22 @@ export async function executeGroundedPipeline(
 
   const totalDurationSeconds = finalScenes.reduce((acc, sc) => acc + sc.estimatedSeconds, 0);
 
+  const thumbnail = compileThumbnailPrompt({
+    rawThumbnail: {
+      heroMoment: bible.events[bible.events.length - 1] || 'The decisive turning point of the narrative',
+      expression: 'intense, emotionally charged, and highly focused',
+      bgDescription: `${styleProfile.eraAndSetting} with deep atmospheric depth`,
+      accentColor: 'golden hour amber',
+      hookText: 'THE UNTOLD STORY',
+      alternateHooks: ['THE FINAL TRUTH', 'BEFORE THE FALL'],
+    },
+    styleProfile,
+    characterSheet,
+    storyPremise: req.story,
+    format: req.format,
+    platform: req.platform,
+  });
+
   return {
     totalDurationSeconds: Math.round(totalDurationSeconds * 10) / 10,
     styleProfile,
@@ -201,6 +218,7 @@ export async function executeGroundedPipeline(
     scenes: finalScenes,
     generationMode,
     targetVideoDuration: req.targetVideoDuration || (isVideo ? 5 : undefined),
+    thumbnail,
     storyBible: bible,
     assumptions: bible.assumptions,
     authorNotes: prepared.authorNotes,

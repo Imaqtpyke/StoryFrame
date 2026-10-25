@@ -85,6 +85,20 @@ export interface Scene {
   isAnchorScene?: boolean;
 }
 
+export interface ThumbnailData {
+  heroMoment: string;
+  expression: string;
+  bgDescription: string;
+  accentColor: string;
+  hookText: string;
+  fontStyle: string;
+  alternateHooks?: string[];
+  compiledPrompt: string;
+  cleanPlatePrompt: string;
+  aspectRatio: '16:9' | '9:16';
+  targetPlatform: string;
+}
+
 export interface StoryGenerationResult {
   title?: string;
   totalDurationSeconds: number;
@@ -100,6 +114,7 @@ export interface StoryGenerationResult {
     hookType?: string;
     hookRationale?: string;
   };
+  thumbnail?: ThumbnailData;
   storyBible?: StoryBible;
   assumptions?: string[];
   authorNotes?: string;

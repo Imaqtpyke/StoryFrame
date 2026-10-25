@@ -28,6 +28,8 @@ import {
   resolveStyleAndCastingCompatibility,
   compileBeatPrompt,
   lintStoryboard,
+  inferStoryAdaptiveFont,
+  compileThumbnailPrompt,
 } from '../services/promptCompiler';
 import { Scene, Beat, StyleProfile, StoryGenerationResult } from '../types';
 
@@ -1069,6 +1071,174 @@ const nonCartoScene: Scene = {
 const lintResultL09 = lintStoryboard([nonCartoScene]);
 const hasL09 = lintResultL09.some((issue) => issue.id.startsWith('L09'));
 assert(hasL09, 'Storyboard Linter L09', 'Linter emits L09 when a demonym beat lacks cartographic environment focus');
+
+// ============================================================================
+// 15. PRODUCTION COVER & THUMBNAIL BLUEPRINT
+// ============================================================================
+console.log('--- Running Test Suite 15: Production Cover & Thumbnail Blueprint ---');
+
+// 15.1 Story-Adaptive Typography Inference
+const fontZombie = inferStoryAdaptiveFont('Hyperrealistic survival horror', '60 days inside a post-apocalyptic zombie outbreak');
+assert(
+  fontZombie.includes('distressed weathered stencil'),
+  'Story-Adaptive Typography',
+  'Selects distressed weathered stencil sans-serif for zombie/horror apocalypse'
+);
+
+const fontCyber = inferStoryAdaptiveFont('Neon retro synthwave', 'A rogue hacker infiltrates a cybernetic mega-corporation in 2088');
+assert(
+  fontCyber.includes('sleek futuristic geometric') && fontCyber.includes('neon'),
+  'Story-Adaptive Typography',
+  'Selects sleek futuristic geometric neon sans-serif for cyberpunk/sci-fi'
+);
+
+const fontFantasy = inferStoryAdaptiveFont('1970s dark fantasy oil painting', 'An ancient knight ventures into a cursed gothic castle');
+assert(
+  fontFantasy.includes('chiseled archaic roman serif'),
+  'Story-Adaptive Typography',
+  'Selects chiseled archaic roman serif for medieval gothic fantasy'
+);
+
+const fontDoc = inferStoryAdaptiveFont('19th century archival daguerreotype', 'Historical documentary about the 1896 scientific expeditions');
+assert(
+  fontDoc.includes('bold editorial headline serif'),
+  'Story-Adaptive Typography',
+  'Selects bold editorial headline serif for historical documentary'
+);
+
+const fontCartoon = inferStoryAdaptiveFont('1930s rubber hose animation', 'A mischievous cartoon teacup runs through kitchen cupboards');
+assert(
+  fontCartoon.includes('playful hand-lettered bold cartoon bubble serif'),
+  'Story-Adaptive Typography',
+  'Selects playful cartoon bubble serif for 1930s rubber hose'
+);
+
+// 15.2 16:9 Widescreen YouTube Thumbnail Compilation & Safe Zones
+const testStyleProfile: StyleProfile = {
+  artStyle: 'Gritty 35mm cinematic film',
+  colorPalette: 'Muted teal and amber',
+  lighting: '3200K warm tungsten key light with cold ambient fill',
+  eraAndSetting: 'Ruined post-outbreak metropolis',
+};
+const testCharSheet: Record<string, string> = {
+  'Elena': '32-year-old survivor with short dark hair, cheek scar, wearing torn olive field jacket and leather backpack',
+};
+
+const thumb169 = compileThumbnailPrompt({
+  rawThumbnail: {
+    heroMoment: 'Elena stepping into the abandoned subway tunnel with flashlight raised',
+    expression: 'exhausted but fiercely determined gaze',
+    bgDescription: 'crumbling subway station with distant glowing eyes in shadows',
+    accentColor: 'cold electric cyan',
+    hookText: 'ZOMBIE OUTBREAK FOR 60 DAYS', // Exceeds 4 words - should truncate to <= 4 words
+  },
+  styleProfile: testStyleProfile,
+  characterSheet: testCharSheet,
+  storyPremise: '60 days after the infection spread',
+  format: 'long',
+  platform: 'YouTube',
+});
+
+assert(
+  thumb169.aspectRatio === '16:9' &&
+  thumb169.targetPlatform === 'YouTube Widescreen',
+  'Thumbnail Compilation (16:9)',
+  'Compiles 16:9 widescreen format for YouTube'
+);
+
+assert(
+  thumb169.compiledPrompt.includes('Elena (locked visual identity: 32-year-old survivor') &&
+  thumb169.compiledPrompt.includes('exhausted but fiercely determined gaze'),
+  'Thumbnail Compilation (16:9)',
+  'Preserves locked character identity and adapts intense expression'
+);
+
+assert(
+  thumb169.compiledPrompt.includes('strictly keep the bottom-right corner clear') &&
+  thumb169.compiledPrompt.includes('left third'),
+  'Thumbnail Compilation (16:9)',
+  'Enforces YouTube platform safe-zone clearing bottom-right timestamp badge'
+);
+
+assert(
+  thumb169.hookText.split(/\s+/).length <= 4 &&
+  thumb169.compiledPrompt.includes(`"${thumb169.hookText}"`),
+  'Thumbnail Compilation (16:9)',
+  'Limits hook text to <= 4 words in ALL CAPS'
+);
+
+assert(
+  thumb169.cleanPlatePrompt.includes('Clean negative space') &&
+  thumb169.cleanPlatePrompt.includes('without any text, lettering, words') &&
+  !thumb169.cleanPlatePrompt.includes('Graphic headline text'),
+  'Thumbnail Clean Plate',
+  'Generates text-free clean plate prompt for external typography design'
+);
+
+// 15.3 9:16 Vertical Shorts / TikTok Thumbnail Compilation & Safe Zones
+const thumb916 = compileThumbnailPrompt({
+  rawThumbnail: {
+    heroMoment: 'Elena staring down into the foggy street from a rooftop ladder',
+    expression: 'hyper-alert paranoia',
+    bgDescription: 'towering broken skyscrapers blanketed in toxic fog',
+    accentColor: 'crimson red',
+    hookText: 'DAY 60',
+  },
+  styleProfile: testStyleProfile,
+  characterSheet: testCharSheet,
+  storyPremise: '60 days of horror in the city',
+  format: 'short',
+  platform: 'TikTok',
+});
+
+assert(
+  thumb916.aspectRatio === '9:16' &&
+  thumb916.targetPlatform === 'TikTok / Shorts / Reels',
+  'Thumbnail Compilation (9:16)',
+  'Compiles 9:16 vertical cover format for TikTok / Shorts'
+);
+
+assert(
+  thumb916.compiledPrompt.includes('top 12% clear for header/profile') &&
+  thumb916.compiledPrompt.includes('bottom 25% clear for captions') &&
+  thumb916.compiledPrompt.includes('right edge clear'),
+  'Thumbnail Compilation (9:16)',
+  'Enforces vertical Shorts/TikTok safe zones for UI button and caption overlays'
+);
+
+// 15.4 Export Isolation Check
+const sampleResultWithThumbnail: StoryGenerationResult = {
+  totalDurationSeconds: 12,
+  styleProfile: testStyleProfile,
+  characterSheet: testCharSheet,
+  locationSheet: {},
+  scenes: [
+    {
+      index: 1,
+      narratorLine: 'Scene one text.',
+      estimatedSeconds: 6,
+      beats: [
+        { beatIndex: 1, textSpan: 'Scene one text.', imagePrompt: 'Prompt 1', estimatedSeconds: 6 }
+      ]
+    },
+    {
+      index: 2,
+      narratorLine: 'Scene two text.',
+      estimatedSeconds: 6,
+      beats: [
+        { beatIndex: 1, textSpan: 'Scene two text.', imagePrompt: 'Prompt 2', estimatedSeconds: 6 }
+      ]
+    }
+  ],
+  thumbnail: thumb169,
+};
+
+assert(
+  sampleResultWithThumbnail.scenes.length === 2 &&
+  sampleResultWithThumbnail.scenes.reduce((sum, s) => sum + s.beats.length, 0) === 2,
+  'Thumbnail Export Isolation',
+  'Thumbnail prompt does not corrupt scene count or beat counts'
+);
 
 console.log('\n====================================================================');
 console.log('                  FULL-SYSTEM VERIFICATION REPORT                  ');

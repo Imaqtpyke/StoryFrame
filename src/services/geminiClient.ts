@@ -15,6 +15,7 @@ import { updateVideoPromptDuration } from './videoSuitability';
 import { fetchWithExponentialBackoff } from '../utils/retryFetch';
 import { executeGroundedPipeline } from './groundedPipeline';
 import { executeJsonLlmCall } from './unifiedAiService';
+import { compileThumbnailPrompt } from './promptCompiler';
 
 function removeEmDashes(text: string): string {
   if (!text) return text;
@@ -539,6 +540,15 @@ STRICT CONSTRAINTS:
   "locationSheet": {
     "LocationName": "Fixed visual description of the specific recurring location..."
   },
+  "thumbnail": {
+    "heroMoment": "one line describing peak conflict/turning point",
+    "expression": "intense, emotionally charged facial expression",
+    "bgDescription": "dark, simplified high-contrast background with deep separation",
+    "accentColor": "dramatic rim lighting color (e.g. amber, cold cyan, crimson)",
+    "hookText": "bold 2 to 4 word headline in ALL CAPS (e.g. DAY 60: SURVIVED)",
+    "fontStyle": "story-adapted font description (e.g. distressed weathered stencil sans-serif, chiseled gothic serif)",
+    "alternateHooks": ["ALT HOOK 1", "ALT HOOK 2"]
+  },
   "totalDurationSeconds": number,
   "scenes": [
     {
@@ -963,6 +973,15 @@ ${durationInstruction}${customBeatsPrompt}`;
     ? parsedData.totalDurationSeconds
     : calculatedTotalSeconds;
 
+  const thumbnail = compileThumbnailPrompt({
+    rawThumbnail: parsedData.thumbnail,
+    styleProfile: sanitizedStyleProfile,
+    characterSheet: sanitizedCharacterSheet,
+    storyPremise: story,
+    format,
+    platform,
+  });
+
   return {
     styleProfile: sanitizedStyleProfile,
     characterSheet: sanitizedCharacterSheet,
@@ -971,6 +990,7 @@ ${durationInstruction}${customBeatsPrompt}`;
     scenes: scenesWithTransitionHints,
     generationMode: isVideoMode ? 'video' : 'image',
     targetVideoDuration: isVideoMode ? targetVideoDuration : undefined,
+    thumbnail,
   };
 }
 

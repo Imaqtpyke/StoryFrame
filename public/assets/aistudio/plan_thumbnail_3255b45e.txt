@@ -1,0 +1,972 @@
+chatgpt verdict: # StoryFrame Thumbnail Visual Prompt — Expert Verdict
+
+PROCEED
+
+# With architectural adjustments
+
+Your thumbnail generator is a strong addition to StoryFrame because it completes the pipeline from narrative → storyboard → publishing asset. However, I would not implement it as another scene prompt or simply append a generic “make this cinematic and clickable” instruction to the existing generator.
+
+Build it as a dedicated Thumbnail Prompt Compiler that understands the entire story, preserves the project's visual identity, and creates one intentionally designed, platform-aware cover image.
+
+The most important distinction: high visual quality, story accuracy, and high click-through rate (CTR) are three different objectives. A thumbnail can look spectacular but communicate the wrong story. It can accurately represent the story but have no compelling focal point. StoryFrame needs to optimize all three without sacrificing narrative integrity.
+
+[How to Survive the Medieval Zombie Apocalypse: The 10 Best Games](https://images.openai.com/static-rsc-4/xYPFmOUpJf91BYOZi7RJDq4PAH7PCEBdcOk6r5eyP7YtuaKR9_shl3Df0ck62AX3QltCoDJv-ar5Kw5Wf7Ps-B_dBGpu44j9HM9LNh49HzKNEewBNkfjngstgO_AOG0cHOrTYIpvsQKu9Eb4Nf0ImBpw4lLE1FUSgUPUeAHi6cM?purpose=inline)
+
+1\. Story-first composition
+
+The frame should communicate the central conflict, the protagonist's predicament, and the stakes at a glance—not merely depict the most visually impressive scene.
+
+[10 лучших фильмов о зомби за последние 100 лет по версии Collider / Кино и сериалы / iXBT Live](https://images.openai.com/static-rsc-4/og3bQ_8d8MbvXUfuwHe49ruYg8EC43NjFbFw3M_jXHNEJnztRsi7uBcYTQWkAwGH61ogOKEf0UTa4gVTQRynvLzo_hkqyEBByjs7U-T4INPNboOcGO2QX5xUjspGPkfUdJgg2lTAF4FlN7Y3Qphg2_VM_yNyUEYJS3VdifxOEXg?purpose=inline)
+
+2\. One dominant focal point
+
+A recognizable face, a consequential action, or an unmistakable threat should lead the viewer's eye. Supporting details must reinforce that focal point.
+
+[Top 10 Found Footage Horror Anthologies | Expert Guide - Movies and Collections](https://images.openai.com/static-rsc-4/xn0EADt0Ublf8N0TfAUAx-8ZNyiEv5uDJTv50SFvD1MIvQlxmzz5mVdW4HiNp7BEjxMVeVb78AxG0YtQq5cY_YygkZPSh_9h1no_cM1TYfxTWXXrjjdPUF4h-OmQ3Pux7z_GSL4g1CUT8KJ2kJQ1MI3M3KAYUyHLeK0y1erQdMI?purpose=inline)
+
+3\. Thumbnail-specific layout
+
+Design for a small screen, readable text, platform overlays, and a clear silhouette. Do not simply crop the first or last storyboard frame.
+
+## 1. Architectural and placement verdict
+
+### Where should the thumbnail card go?
+
+Your proposed placement—after the final scene and before the Complete Narrator Script—is sensible. It keeps the thumbnail attached to the finished storyboard and avoids interrupting scene-by-scene generation.
+
+I would keep that placement for the initial release.
+
+### Recommended storyboard output order
+
+Scene 01 → Scene N
+
+Narration, visual beat, image/video prompt, continuity details
+
+Thumbnail Visual Prompt
+
+New feature
+
+One cover concept · image-only prompt · copy/export actions
+
+Complete Narrator Script
+
+Consolidated narration, ready for recording or voice generation elsewhere
+
+### Why this placement works
+
+- The user has already seen the full narrative breakdown, so the thumbnail can function as the final visual summary.
+- It creates a natural handoff from production to packaging and publishing.
+- It does not confuse the thumbnail with a scene or insert it into the narration sequence.
+- It preserves the existing workflow and minimizes UI disruption.
+
+One adjustment: make the thumbnail a distinct, self-contained output block rather than a numbered scene. If StoryFrame already supports output sections, use that existing component system.
+
+Eventually, a dedicated publishing/export area could contain the thumbnail prompt, title ideas, and description. But I would not relocate it there before validating the feature with users.
+
+### Recommended cross-provider architecture
+
+Do not create one thumbnail schema for Gemini and another for Groq. Use a single canonical internal object and let provider-specific adapters translate the request and response.
+
+```
+
+type ThumbnailSpec = {
+  version: 1;
+  modality: "image";
+  aspectRatio: "16:9" | "9:16";
+
+  narrative: {
+    premise: string;
+    protagonist: string;
+    centralConflict: string;
+    stakes: string;
+    resolutionOrClimax: string;
+  };
+
+  visual: {
+    characterStyle: string;
+    worldAesthetic: string;
+    protagonistDescription: string;
+    antagonistOrThreat: string;
+    focalAction: string;
+    composition: string;
+    lighting: string;
+    colorPalette: string;
+  };
+
+  typography: {
+    exactText: string;
+    placement: string;
+    treatment: string;
+  };
+
+  constraints: {
+    preserveCharacterIdentity: true;
+    preserveStoryCanon: true;
+    noAdditionalText: true;
+    noWatermarks: true;
+  };
+};
+
+type ThumbnailOutput = {
+  prompt: string;
+  aspectRatio: "16:9" | "9:16";
+  headline: string;
+  negativePrompt?: string;
+};
+
+```
+
+This is a conceptual starting schema, not a requirement to introduce all these fields into your database. You can adapt the types to StoryFrame's existing architecture.
+
+The key design decisions are:
+
+- Reuse existing project state. Read the selected aspect ratio, character references, style configuration, world details, and story manuscript from the existing generation context.
+- Derive the climax from the narrative. The final chronological scene is not necessarily the most clickable moment.
+- Keep the modality fixed. Thumbnail output is always an image prompt, even in Text-to-Video mode.
+- Separate structured data from rendered prose. Store a compact thumbnail specification, then compile it into the target image model's prompt format.
+- Avoid duplicating the full script. Pass a concise story synopsis and relevant continuity details, not every scene prompt and narration line.
+
+For a long manuscript, use the story analysis or manuscript ingestion stage that StoryFrame already performs. Extract the relevant facts once and reuse them. If those facts already exist in structured project state, do not run a second full-story analysis just to make a thumbnail.
+
+### Token efficiency: Gemini versus Groq
+
+Gemini and Groq are model/API providers, not interchangeable model personalities. Your adapters should handle differences in supported structured output, response parsing, context limits, and model-specific capabilities.
+
+For free-tier users, the largest savings come from eliminating redundant analysis—not from aggressively shortening every instruction until the prompt becomes vague.
+
+| Strategy           | Recommendation                                                             |
+| ------------------ | -------------------------------------------------------------------------- |
+| Narrative input    | Reuse the existing story synopsis and extracted story facts                |
+| Structured output  | Use JSON Schema or constrained output when supported by the selected model |
+| Prompt compilation | Generate the final image prompt deterministically from the structured spec |
+| Provider fallback  | Validate and normalize the response before displaying it                   |
+| Caching            | Cache by story version, style, aspect ratio, and relevant settings         |
+| Output length      | Limit the number of generated concepts; start with one thumbnail           |
+
+A useful implementation pattern is:
+
+1. Extract the story's central conflict, stakes, protagonist, and climax during existing story processing.
+2. Save or reuse those compact facts.
+3. Ask the selected language model for the thumbnail-specific composition and headline.
+4. Compile those fields into the final image prompt using a shared template.
+5. Validate the output before inserting the card into the storyboard.
+
+You should not need a separate research call or a complete manuscript resubmission every time the user switches from 16:9 to 9:16. Recompile the composition from the same story facts.
+
+Important: Avoid treating a rigid JSON schema as universally supported across every Gemini and Groq model. Make structured output a provider-adapter capability and retain a validation-and-repair fallback.
+
+## 2. Prompt engineering and high-CTR design
+
+### The seven ingredients of a strong thumbnail prompt
+
+1\. Narrative specificity
+
+Name the actual protagonist, threat, setting, and stakes. If the story is about a medieval zombie outbreak, show medieval survivors and the established zombie threat—not generic people traveling through a dark landscape.
+
+2\. One curiosity-driving visual idea
+
+Show an instantly understandable question: Can this survivor escape? What happened on day 60? Why is the castle overrun? The image should suggest a story without explaining the entire plot.
+
+3\. Character identity preservation
+
+Reuse the project's character descriptions and reference images. Preserve distinguishing facial features, hairstyle, clothing, age, body proportions, and established design language.
+
+4\. Deliberate composition
+
+Choose a dominant subject, a secondary story element, a readable silhouette, and a clearly reserved area for the headline. Do not let the background compete with the face or action.
+
+5\. Controlled cinematic lighting
+
+Use a strong key light, directional rim lighting where appropriate, face illumination, and separation between the subject and background. Preserve the project's original aesthetic rather than imposing the same orange-and-teal look on every project.
+
+6\. Deliberate typography
+
+Use one short, exact headline, a simple heavy typeface, strong contrast, and a clearly specified location. Typography is part of the composition, not an afterthought.
+
+7\. Negative-space and clutter control
+
+Specify a clean focal area, distinct subject-background separation, and uncluttered text space. Avoid piling on unrelated props, extra characters, multiple headlines, and decorative effects.
+
+### Character consistency versus dramatic lighting
+
+This is a particularly important design problem for StoryFrame because you already have a character continuity system.
+
+The correct principle is: lock identity; vary presentation.
+
+Identity attributes should be inherited as constraints, while expression, pose, lighting, framing, and emotional intensity can be changed to suit the thumbnail.
+
+For example:
+
+- Locked: scar over the left eyebrow, shoulder-length dark hair, battered medieval armor, established low-poly horror style.
+- Adjustable: widened eyes, clenched jaw, three-quarter angle, stronger rim light, closer framing.
+- Story-dependent: whether the character looks terrified, determined, exhausted, or victorious.
+
+Do not use “make the character more dramatic” as an instruction to redesign their face, costume, or art style.
+
+Also, text-to-image prompting alone cannot guarantee exact identity preservation. If the downstream image model supports reference images, pass the existing character reference where possible. A description alone is a weaker identity anchor than an appropriate visual reference.
+
+### How to instruct the image model to render text
+
+Midjourney V6.1 supports text generation using double quotation marks, and its documentation recommends short phrases and clear text instructions. FLUX prompting guidance likewise recommends quoting the exact text, specifying font style, size hierarchy, and placement. Neither approach guarantees perfect lettering.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://docs.midjourney.com\&sz=32)
+
+Midjourney
+
++2
+
+
+
+Use an explicit typography specification near the beginning of the prompt:
+
+```
+
+The image must include exactly one headline, spelled exactly:
+"DAY 60: SURVIVED"
+
+Render the quoted phrase as large, bold, uppercase,
+heavy condensed sans-serif display typography.
+
+Place it in the reserved upper-left text area.
+Use a bright, high-contrast fill with a clean,
+subtle outline or shadow for readability.
+
+Preserve every character, space, and punctuation mark.
+The headline is intentional graphic typography,
+not dialogue, a subtitle, a caption, or environmental signage.
+No additional lettering, words, numbers, logos, or watermarks.
+
+```
+
+Treat this as a prompt instruction, not a guarantee of exact spelling.
+
+#### The production-grade solution: separate the image from the lettering
+
+For the most reliable output, I recommend supporting two modes internally:
+
+Mode A — Integrated typography
+
+Generate the artwork and headline together. This is the simplest workflow and works well when the user prioritizes speed.
+
+Mode B — Text-safe artwork
+
+Generate the artwork with a reserved headline area, then render the exact text separately using a deterministic typography layer. This is more reliable for exact spelling, alignment, outlines, and responsive layout.
+
+You do not need to build a new image-generation feature to adopt this distinction. StoryFrame's new feature can remain strictly a prompt generator. It can describe either intended rendering workflow without actually generating or compositing an image.
+
+For FLUX.1, also avoid assuming every endpoint supports a negative-prompt field; FLUX guidance emphasizes describing desired content positively.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://github.com\&sz=32)
+
+GitHub
+
++1
+
+
+
+### Should every thumbnail contain text?
+
+No. Your requirement should be that the generator supports a text hook, not that it forces text into every composition.
+
+Use a concise, story-specific headline when it adds useful context. For a mysterious visual with an already clear premise, a text-free composition may be stronger.
+
+For your 60-day zombie survival example:
+
+| Headline                      | Assessment                                                    |
+| ----------------------------- | ------------------------------------------------------------- |
+| `DAY 60: SURVIVED`            | Strong if survival is the story's key payoff                  |
+| `60 DAYS AGAINST THE DEAD`    | Stronger when the length of the ordeal is central             |
+| `ZOMBIE OUTBREAK FOR 60 DAYS` | Clear, but more descriptive than curiosity-driven             |
+| `THE LAST SURVIVOR`           | Potentially strong, but only if the story supports that claim |
+
+The headline must not reveal an outcome the narrative does not establish. Do not manufacture stakes, death counts, character identities, or endings just because they sound clickable.
+
+## 3. Short-form 9:16 versus widescreen 16:9
+
+The most important rule is do not treat vertical as a simple crop of horizontal. Both formats should tell the same story, but they require different compositions.
+
+[Todo lo que se sabe de Blight: Survival, el apocalipsis zombi en la Edad Media que está en el top 5 de los más deseados de Steam](https://images.openai.com/static-rsc-4/Knte3QlWSx9VMObD91l-GCWT1yRcIUqCtFX_lBHQJPGX-9bNOmTvXwg1niNw0M4p3wwJcXt43MdazzvIgcBnvBk2Abhmo9EW_yyVbn177zDjp1XW6y9RAAWOBVuuZ0FEdbpZ84_YYn1-XaaYmzsWyR7Luwsq5cQPP7vTgaMWRaE?purpose=inline)
+
+## 16:9 — YouTube
+
+Landscape composition
+
+- Use a face or primary subject on one side.
+- Put the threat or important environmental detail on the opposite side.
+- Reserve a clear headline area, often in a corner or open region.
+- Use depth, foreground silhouettes, and environmental scale to communicate stakes.
+- Check readability at small thumbnail sizes.
+
+[Knight vs Zombies - Free AI Photo Generator - starryai](https://images.openai.com/static-rsc-4/WiVTcP5Z7-9HsqFADQRvzCAAXVFjqnhh9jAfSlw9YmiQAOz4MqTCQ1N3ZlWTcgf43rkI19-TT2grRv1N40fKaAks_10QSYHtKHtYdJP9QNbNVkBbIgP8T3VoK9U4gIcoZABHiluSs3cMj1C_wzBqVAqMJxnC-U-UZrJULGJNOcU?purpose=inline)
+
+## 9:16 — Shorts and Reels
+
+Portrait composition
+
+- Make the protagonist's face and silhouette large.
+- Stack visual information vertically: foreground subject, midground threat, background setting.
+- Keep the headline short enough to read on a phone.
+- Avoid putting important details behind right-side action controls or bottom caption areas.
+- Leave room for platform-specific cropping and overlays.
+
+YouTube recommends 16:9 for standard video thumbnails and 9:16 for Shorts thumbnails. It also notes that vertical Shorts thumbnails may be displayed as 4:5 in some discovery surfaces.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://support.google.com\&sz=32)
+
+YouTube Help
+
++1
+
+
+
+### Platform safe zones: an important distinction
+
+TikTok's interface can cover content with profile, interaction, caption, and navigation elements. Its official creative guidance recommends keeping important content inside a safe zone, and the exact usable area can vary by placement, caption length, and interface.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://ads.tiktok.com\&sz=32)
+
+Creative Strategies
+
++2
+
+
+
+However, do not hard-code one universal safe-zone percentage into StoryFrame and claim it is accurate for every platform.
+
+There are three different things to account for:
+
+1. Canvas boundaries: the image itself may be cropped or resized.
+2. Platform UI overlays: buttons, captions, and controls may obscure the image.
+3. Thumbnail display context: a cover may appear in a profile grid, recommendation feed, video player, or other surface with different framing.
+
+These are not equivalent. A video cover viewed in a profile grid may be cropped differently from the same cover displayed full-screen.
+
+### My recommended safe-zone implementation
+
+Create a small, versioned platform-layout configuration, separate from the core thumbnail prompt.
+
+| Configuration     | Recommended behavior                                                                                    |
+| ----------------- | ------------------------------------------------------------------------------------------------------- |
+| YouTube landscape | Reserve margins for the canvas edges; prioritize the subject and headline                               |
+| YouTube Shorts    | Generate 9:16, but consider alternate discovery crops where relevant                                    |
+| TikTok            | Keep headline and critical details clear of the right-side controls and lower caption/navigation region |
+| Instagram Reels   | Use a vertical composition and account for both Reels viewing and profile-grid cropping                 |
+
+The safe-zone configuration should include:
+
+- `platform`
+- `surface` (feed, profile grid, player, etc.)
+- `aspectRatio`
+- `safeInsets` or a normalized safe-area polygon
+- `configVersion`
+- Optional crop preview settings
+
+Do not invent universal safe-zone percentages. Use current platform specifications and update the configurations when the platforms change. When the destination surface is unknown, use a conservative composition and label the safe-zone assumptions.
+
+## 4. Potential pitfalls and recommendations
+
+These are the mistakes I would prioritize during implementation and testing.
+
+Pitfall 1: Choosing the final scene automatically
+
+The ending may be quiet, anticlimactic, or a resolution that gives away too much. Choose the most compelling story-supported visual moment, which may come from the climax, a turning point, or an unanswered question.
+
+Pitfall 2: Generic cinematic language
+
+Words like “epic,” “ultra-detailed,” and “dramatic” are not a substitute for story understanding. Explicitly identify what the character is doing, what threatens them, and why the moment matters.
+
+Pitfall 3: Style drift
+
+Do not append a generic photorealistic movie-poster style to every project. A stylized low-poly story, an illustrated mystery, and a cinematic live-action thriller need different lighting, textures, and material descriptions.
+
+Pitfall 4: Overloading the prompt
+
+Excessive details can create competing instructions. Prioritize the focal subject, story conflict, style, composition, lighting, and typography. Keep secondary props only when they reinforce the narrative.
+
+Pitfall 5: Forcing text rendering
+
+A model may misspell the headline, invent additional lettering, or produce malformed typography. Keep the exact headline in a dedicated field and make text-safe artwork or external typography a future-compatible option.
+
+Pitfall 6: Misleading clickbait
+
+Do not introduce a giant monster, an apocalypse, a death, or a survival outcome that never happens in the story. YouTube's own guidance emphasizes accurate titles and thumbnails.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://support.google.com\&sz=32)
+
+YouTube Help
+
++1
+
+
+
+Pitfall 7: Changing the existing UI or generation pipeline
+
+Implement the feature as a separate output section using existing StoryFrame patterns. Avoid modifying the scene-generation contract, existing character sheets, or video-prompt generation just to support the thumbnail.
+
+### What I would test before releasing it
+
+Use a small evaluation suite with different narrative types rather than testing only the zombie example.
+
+| Test case                                     | What it verifies                                           |
+| --------------------------------------------- | ---------------------------------------------------------- |
+| Medieval zombie survival                      | Story-specific threat and continuity                       |
+| Historical documentary                        | Period accuracy and credible visual stakes                 |
+| Science or strange facts                      | Visual metaphor without invented facts                     |
+| Personal-finance story                        | Correct subject matter and no sensationalized false claims |
+| Mystery or thriller                           | Curiosity without revealing the resolution                 |
+| Same story in both aspect ratios              | Composition changes without narrative or style drift       |
+| Text-to-Image versus Text-to-Video storyboard | Thumbnail remains an image prompt in both modes            |
+| Long manuscript                               | Token efficiency and correct story synthesis               |
+
+Score each generated prompt on a 1–5 scale for story fidelity, character continuity, visual clarity, composition, typography specification, aspect-ratio suitability, and faithfulness to the chosen style.
+
+This measures prompt quality, not actual CTR. To evaluate CTR, creators must publish thumbnails and compare performance using platform analytics. YouTube specifically recommends evaluating click-through rates alongside impressions and the discovery surface.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://support.google.com\&sz=32)
+
+YouTube Help
+
++1
+
+
+
+## 5. Recommended final prompt template
+
+This is the template I would use as the shared compilation target for StoryFrame. It is designed to work with structured information extracted from the manuscript, while allowing provider-specific adapters to make minor adjustments.
+
+```
+
+ROLE
+You are StoryFrame's Thumbnail Visual Prompt Compiler, a specialist
+in narrative interpretation, cinematic composition, visual continuity,
+and high-impact thumbnail design.
+
+OBJECTIVE
+Create ONE production-ready IMAGE PROMPT for a thumbnail that
+communicates the central conflict and stakes of the complete story.
+
+The result must be a compelling, story-accurate hero frame designed
+for rapid comprehension at small screen sizes. Optimize for visual
+clarity, curiosity, and honest representation of the story. Do not
+promise or guarantee CTR.
+
+INPUT CONTEXT
+Story premise: {{story_premise}}
+Central conflict: {{central_conflict}}
+Protagonist and established appearance: {{protagonist_profile}}
+Antagonist or primary threat: {{primary_threat}}
+Stakes: {{story_stakes}}
+Climax or decisive turning point: {{climax_summary}}
+Resolution: {{resolution_summary}}
+Character reference details: {{character_reference_context}}
+Character style: {{character_style}}
+World aesthetic: {{world_aesthetic}}
+Color palette: {{project_color_palette}}
+Aspect ratio: {{selected_aspect_ratio}}
+Target platform: {{target_platform}}
+Display surface: {{target_surface}}
+Headline: {{approved_headline}}
+
+NARRATIVE SELECTION
+Analyze the supplied story facts and select the single most
+compelling, story-supported visual moment.
+
+Prefer a moment with a clear protagonist, an identifiable conflict,
+high visual stakes, and an unresolved question or meaningful payoff.
+
+The chosen moment may come from the climax, a major turning point,
+or an earlier moment that creates stronger curiosity.
+
+Do not automatically depict the final chronological scene.
+Do not combine unrelated events into an impossible scene.
+Do not invent characters, creatures, props, events, or outcomes.
+Do not reveal a twist unnecessarily.
+
+CHARACTER AND STYLE CONTINUITY
+Preserve the established character identity, facial features,
+hairstyle, clothing, age, body proportions, and distinguishing
+details wherever applicable.
+
+Preserve the selected character style, rendering technique,
+world aesthetic, material language, and established palette.
+
+Dramatic lighting, facial expression, pose, and framing may change
+to increase emotional impact, but must not redesign the character.
+
+Use supplied visual references when the target image model supports
+them. Do not claim exact identity preservation from text alone.
+
+COMPOSITION AND VISUAL HIERARCHY
+Create one dominant focal subject and one immediately readable
+story conflict.
+
+Specify the camera framing, subject placement, body orientation,
+facial expression, focal action, foreground, and relevant background.
+
+Separate the focal subject from the background using lighting,
+contrast, depth, and silhouette.
+
+Use cinematic key lighting and restrained rim lighting where
+appropriate to the established style.
+
+Keep the background visually subordinate. Remove unnecessary
+decorative details and competing focal points.
+
+ASPECT RATIO AND PLATFORM
+Use the exact selected aspect ratio: {{selected_aspect_ratio}}.
+
+For 16:9, design a balanced landscape composition with a clear
+primary subject, supporting threat or environment, and deliberate
+headline space.
+
+For 9:16, design natively for portrait framing. Enlarge the focal
+subject, use vertical depth, and avoid simply cropping a landscape
+composition.
+
+Respect the supplied platform safe-zone configuration for the
+specified display surface. Keep critical facial features and
+headline text away from likely UI overlays and crop boundaries.
+
+If the display surface or safe-zone configuration is unknown,
+use conservative margins without claiming platform-perfect safety.
+
+TYPOGRAPHY
+If a headline is supplied, render exactly this text:
+"{{approved_headline}}"
+
+Use large, bold, high-contrast display typography, preferably
+a heavy sans-serif style suitable for the project's aesthetic.
+
+Specify the headline's position, line breaks, text/background
+contrast, and outline or shadow only where necessary.
+
+Preserve exact spelling, punctuation, and wording.
+Include no extra text, subtitles, dialogue, dates, logos,
+watermarks, or incidental lettering.
+
+If no headline is supplied, specify a clean area suitable for
+optional later typography. Do not invent a headline.
+
+OUTPUT REQUIREMENTS
+Return one complete, natural-language image prompt.
+
+The prompt must describe the subject, action, story context,
+visual style, composition, lighting, color, and typography.
+
+Keep the instructions precise and non-contradictory.
+Do not output a storyboard, video prompt, animation instructions,
+narration, or a new story.
+
+Do not include model-specific parameters unless explicitly
+supported by the target image model.
+
+Return only the final image prompt.
+
+```
+
+### Implementation detail: do not send every field to every model
+
+The template above is the logical specification. In production, compile only the relevant information into the actual request.
+
+For example:
+
+- A story without an antagonist should not receive a fabricated antagonist field.
+- A project with a defined visual reference should reuse it rather than repeat a lengthy visual description.
+- A text-free thumbnail should not receive contradictory instructions to render a headline.
+- FLUX and Midjourney should receive their own prompt formatting where needed; do not assume they interpret all instructions or negative constraints identically.
+
+Also, the examples in this template use `{{...}}` as conceptual placeholders. Your application should populate these from validated project state, not ask the model to invent missing values.
+
+## Final verdict
+
+# Proceed — with a dedicated compiler
+
+Recommended implementation priority
+
+1. First: Add the thumbnail output block between the final scene and Complete Narrator Script.
+2. Second: Reuse StoryFrame's existing story facts, character continuity data, visual style, and selected aspect ratio.
+3. Third: Build a single canonical thumbnail specification with Gemini/Groq adapters and schema validation.
+4. Fourth: Add separate composition rules for 16:9 and 9:16, with configurable platform safe zones.
+5. Fifth: Make the headline short, story-grounded, and exact; retain a future path for text-safe artwork and deterministic typography.
+6. Finally: Test across different narrative genres and measure actual publishing performance before claiming CTR improvements.
+
+My strongest recommendation is to make the feature story-aware, style-locked, aspect-ratio-aware, and typography-conscious from day one, but keep its initial UI and output contract simple.
+
+That gives StoryFrame a useful new publishing capability without turning a focused thumbnail prompt generator into another expensive, complicated generation pipeline.
+
+perplexity's verdict:
+**Verdict: Adjust, then proceed.** A Thumbnail Visual Prompt generator is a strong, commercially valuable feature, but it should not be treated as merely “the last beat.” It needs its own generation contract, safe-zone rules, text-rendering constraints, and preview workflow. 
+
+## 1. Placement and architecture
+
+### Placement verdict
+
+Place the thumbnail card **after the final scene but before the Complete Narrator Script**, as planned. That is the right narrative position because the model should synthesize the entire arc before producing the cover.
+
+However, do not make it feel like Scene N+1. Label it clearly as a separate output artifact:
+
+```text
+Thumbnail & Cover Prompt
+Generated from the complete story arc
+```
+
+Also add a secondary entry point: a small **“Generate Thumbnail”** button in the project header or final-scene toolbar. Creators often want to regenerate the cover after changing the ending, character, or style without scrolling through the full storyboard.
+
+### Schema design
+
+Keep the thumbnail as a compact, separate object. Do **not** add it to `scenes[]`; that would force every downstream renderer, exporter, and token budget to treat it as narrative content.
+
+```ts
+export type ThumbnailPlatform =
+  | 'youtube_16_9'
+  | 'tiktok_9_16'
+  | 'reels_9_16'
+  | 'shorts_9_16'
+  | 'custom';
+
+export interface ThumbnailTextOverlay {
+  primaryText: string;       // 2-5 words, exact quoted string
+  secondaryText?: string;    // optional, max 3-4 words
+  placement:
+    | 'upper_left'
+    | 'upper_center'
+    | 'center_left'
+    | 'center'
+    | 'lower_left'
+    | 'lower_center';
+  typography: string;        // e.g. 'heavy condensed sans-serif'
+  textColor: string;         // e.g. '#FFFFFF'
+  outlineColor?: string;     // e.g. '#000000'
+  emphasisColor?: string;    // e.g. '#FFD400'
+}
+
+export interface ThumbnailPrompt {
+  thumbnailId: string;
+  projectId: string;
+  platform: ThumbnailPlatform;
+  aspectRatio: '16:9' | '9:16';
+  width: number;
+  height: number;
+  heroSubjectId?: string;
+  locationId?: string;
+  narrativeClimaxBeatId?: string;
+  visualConcept: string;
+  composition: string;
+  lighting: string;
+  expression: string;
+  textOverlay: ThumbnailTextOverlay;
+  styleProfileId: string;
+  imagePrompt: string;
+  negativePrompt?: string;
+  modelTargets: ('midjourney_v6_1' | 'flux_1')[];
+  safetyFlags: string[];
+  version: number;
+}
+```
+
+### Token-efficient generation flow
+
+For Gemini and Groq, do not resend the full storyboard every time. Send a **thumbnail synthesis brief**, not the entire project.
+
+```ts
+export interface ThumbnailSynthesisBrief {
+  projectTitle: string;
+  genre: string;
+  tone: string;
+  format: 'short' | 'long';
+  aspectRatio: '16:9' | '9:16';
+  targetPlatform: ThumbnailPlatform;
+  logline: string;
+  narrativeArc: {
+    setup: string;
+    escalation: string;
+    climax: string;
+    resolution: string;
+  };
+  heroCharacter?: {
+    canonicalName: string;
+    lockedAppearance: string;
+    wardrobe: string;
+    emotionalState: string;
+  };
+  keyLocation?: {
+    canonicalName: string;
+    visualIdentity: string;
+  };
+  styleProfile: StyleProfile;
+  candidateTextHooks: string[];
+}
+```
+
+Generation pipeline:
+
+1. Derive the brief locally from the existing project state.
+2. Ask the LLM for a compact JSON response: `visualConcept`, `composition`, `lighting`, `expression`, `primaryText`, `secondaryText`, and `placement`.
+3. Compile the final image prompt deterministically in the client.
+4. Store only the final compact `ThumbnailPrompt`, not the full model reasoning or full manuscript.
+
+This keeps free-tier usage low because the model receives a few hundred tokens of structured context and returns a few hundred tokens of structured output.
+
+## 2. High-CTR prompt engineering
+
+### Essential ingredients
+
+A high-CTR thumbnail needs more than a beautiful frame. It needs one readable story in under one second:
+
+- **One hero subject:** A face, object, or unmistakable visual icon.
+- **One clear emotion:** Fear, triumph, shock, determination, curiosity, or desperation.
+- **One moment of conflict:** The visual should imply a question, not summarize the ending.
+- **Extreme readability:** High subject-background separation, simplified background, strong rim or key light.
+- **One text idea:** Usually 2–5 words, never a sentence.
+- **Platform-safe composition:** Critical elements must survive UI overlays and cropping.
+- **Style continuity:** Same character wardrobe, art direction, palette, and world aesthetic as the storyboard.
+
+For Midjourney and Flux, front-load the subject and action, then environment, lighting, style, and technical specifications. This ordering is specifically recommended for Flux prompting. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/6140192/613bd410-45bf-43a9-a067-244adf23e655/STORYBOARD_DIGEST.md?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Checksum-Mode=ENABLED&X-Amz-Credential=ASIA2F3EMEYE6DDK4BGZ%2F20261025%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261025T121912Z&X-Amz-Expires=3278&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEPX%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJHMEUCIAbXAgSk7et7IdkkNuya3CTDRhq9d6Ww1pfH0SPaxcmFAiEAyWe%2FikiwkIGg72om4uXXwe8jlMNUwZpOYL9mUw%2FaPFkqiQUIvf%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FARABGgw2OTk3NTMzMDk3MDUiDDMU7Kqn%2Bt6bn5n9dSrdBAO%2BY%2BsMzm%2Fxt%2FjVbHA3HnxGhi3qeBw2D0XAi90L%2FCGAx7JNRYqBVVRH8CqwDMfb4kCjNSDZUW8uhAYuWX9Z%2B9HIMQ1Q%2FOegkaSN3UTiZRNExnfnxBzRAuOYWlkpLWsIIaZ0v%2FupQdeK5hTUuGNjUAk%2BAnoLDJSR74lWZ%2BTQ7x2CGVl5KkA16EiRrnCHnOE3IhXaJRhEkGP1Mfkr8xvy3RCjUp8PhNnyP%2BY1prbpglK%2FzFGIgSjQDaMbotyQdO5xqiyAxDQsa%2BnBGMNAw60rtH16CLC9bQZ1wlFciOHf4F96XX4oaeJ%2FTcI8sHjapIW1EEXx8sOi9BwTAWuwowoyef49HVNDDUASzhZRtFzi2QsIWoS8KM%2BdGUgMGYGOZ5%2FVD%2B433g0YPh2A5EUyWO1tc7VLSHOUUMcogWS%2FVoZHLgqsc6H3dV3FvF3NHXFtcKvlQ90MSAK1LlDpFmsN0sYVLlCpog9teIEYuKWHHMKsQhIOvP4zc%2FakLhstq152oft9Wkm%2BHx3vONty9K3g1%2Bb%2BNaIvMmIGjwI6tpmKViXfLegM5s2G0UFoULELUVgnCeuTkUTxla%2BOThsYzYx0N7us0rZUzQvAbMuZq8LU%2FlYUQAg8p%2BaMuG%2FEslScoh0DBQ%2F8CedrJ3PMoi%2Fpo3B%2BRKh345luw8%2FzfebmIqzRYxB1ZOAGBD53fCGz7V8pCcNXKi2qbwPAjfxwGXzdyAtN1gD1U6CK2b13VDy7wq%2BpmSJq%2FjDEFxe3EjFx5MAg%2B3vKdWneVtuNtkUZwZdO9ZDSjCgElubxVTAkU%2BfBDHmxIRYPMLvl99YGOpgBfo0gkdtbaaqrrj1BtXlIa9ZvdlUPl0ExobrDUXqE5pjQAGrlTdmKK%2B%2BSmX2FDSanhaXytXKbi3JDIInQFK%2BvYvdi2pfzAdRJgJ7hhbibShMESJIPZKN1gxB0qu4lsNaxYklL6J1wrIRCvH7oz8Pb1%2FcsuRiTUg263fFC6xcsEyrM5DZ983F6UHFShOB7AJ7EJL99TLgBU%2Bc%3D&X-Amz-SignedHeaders=host&x-id=GetObject&X-Amz-Signature=31070b6acd14471efc20806e9884330f11ed2c6a9b15c8544ab5d406b597a4ec)
+
+### Text rendering rules
+
+For Flux, put the exact overlay text in quotation marks, state its position, typography, color, relative size, and reading order. Short phrases of roughly 2–5 words render much more reliably than full sentences. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/6140192/613bd410-45bf-43a9-a067-244adf23e655/STORYBOARD_DIGEST.md?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Checksum-Mode=ENABLED&X-Amz-Credential=ASIA2F3EMEYE6DDK4BGZ%2F20261025%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261025T121912Z&X-Amz-Expires=3278&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEPX%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJHMEUCIAbXAgSk7et7IdkkNuya3CTDRhq9d6Ww1pfH0SPaxcmFAiEAyWe%2FikiwkIGg72om4uXXwe8jlMNUwZpOYL9mUw%2FaPFkqiQUIvf%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FARABGgw2OTk3NTMzMDk3MDUiDDMU7Kqn%2Bt6bn5n9dSrdBAO%2BY%2BsMzm%2Fxt%2FjVbHA3HnxGhi3qeBw2D0XAi90L%2FCGAx7JNRYqBVVRH8CqwDMfb4kCjNSDZUW8uhAYuWX9Z%2B9HIMQ1Q%2FOegkaSN3UTiZRNExnfnxBzRAuOYWlkpLWsIIaZ0v%2FupQdeK5hTUuGNjUAk%2BAnoLDJSR74lWZ%2BTQ7x2CGVl5KkA16EiRrnCHnOE3IhXaJRhEkGP1Mfkr8xvy3RCjUp8PhNnyP%2BY1prbpglK%2FzFGIgSjQDaMbotyQdO5xqiyAxDQsa%2BnBGMNAw60rtH16CLC9bQZ1wlFciOHf4F96XX4oaeJ%2FTcI8sHjapIW1EEXx8sOi9BwTAWuwowoyef49HVNDDUASzhZRtFzi2QsIWoS8KM%2BdGUgMGYGOZ5%2FVD%2B433g0YPh2A5EUyWO1tc7VLSHOUUMcogWS%2FVoZHLgqsc6H3dV3FvF3NHXFtcKvlQ90MSAK1LlDpFmsN0sYVLlCpog9teIEYuKWHHMKsQhIOvP4zc%2FakLhstq152oft9Wkm%2BHx3vONty9K3g1%2Bb%2BNaIvMmIGjwI6tpmKViXfLegM5s2G0UFoULELUVgnCeuTkUTxla%2BOThsYzYx0N7us0rZUzQvAbMuZq8LU%2FlYUQAg8p%2BaMuG%2FEslScoh0DBQ%2F8CedrJ3PMoi%2Fpo3B%2BRKh345luw8%2FzfebmIqzRYxB1ZOAGBD53fCGz7V8pCcNXKi2qbwPAjfxwGXzdyAtN1gD1U6CK2b13VDy7wq%2BpmSJq%2FjDEFxe3EjFx5MAg%2B3vKdWneVtuNtkUZwZdO9ZDSjCgElubxVTAkU%2BfBDHmxIRYPMLvl99YGOpgBfo0gkdtbaaqrrj1BtXlIa9ZvdlUPl0ExobrDUXqE5pjQAGrlTdmKK%2B%2BSmX2FDSanhaXytXKbi3JDIInQFK%2BvYvdi2pfzAdRJgJ7hhbibShMESJIPZKN1gxB0qu4lsNaxYklL6J1wrIRCvH7oz8Pb1%2FcsuRiTUg263fFC6xcsEyrM5DZ983F6UHFShOB7AJ7EJL99TLgBU%2Bc%3D&X-Amz-SignedHeaders=host&x-id=GetObject&X-Amz-Signature=31070b6acd14471efc20806e9884330f11ed2c6a9b15c8544ab5d406b597a4ec)
+
+Use this structure:
+
+```text
+Overlay text: "DAY 60: SURVIVED"
+Placement: upper center, leaving the lower third clear
+Typography: ultra-bold condensed sans-serif, all caps
+Size: headline fills about 55 percent of the image width
+Color: white with a thick black outline and subtle drop shadow
+Hierarchy: primary headline much larger than any secondary text
+```
+
+Avoid asking for long sentences, quotation marks inside the rendered text, small body copy, or text across a busy face. Clean, simple backgrounds behind text materially improve legibility and rendering accuracy. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/6140192/613bd410-45bf-43a9-a067-244adf23e655/STORYBOARD_DIGEST.md?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Checksum-Mode=ENABLED&X-Amz-Credential=ASIA2F3EMEYE6DDK4BGZ%2F20261025%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261025T121912Z&X-Amz-Expires=3278&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEPX%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJHMEUCIAbXAgSk7et7IdkkNuya3CTDRhq9d6Ww1pfH0SPaxcmFAiEAyWe%2FikiwkIGg72om4uXXwe8jlMNUwZpOYL9mUw%2FaPFkqiQUIvf%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FARABGgw2OTk3NTMzMDk3MDUiDDMU7Kqn%2Bt6bn5n9dSrdBAO%2BY%2BsMzm%2Fxt%2FjVbHA3HnxGhi3qeBw2D0XAi90L%2FCGAx7JNRYqBVVRH8CqwDMfb4kCjNSDZUW8uhAYuWX9Z%2B9HIMQ1Q%2FOegkaSN3UTiZRNExnfnxBzRAuOYWlkpLWsIIaZ0v%2FupQdeK5hTUuGNjUAk%2BAnoLDJSR74lWZ%2BTQ7x2CGVl5KkA16EiRrnCHnOE3IhXaJRhEkGP1Mfkr8xvy3RCjUp8PhNnyP%2BY1prbpglK%2FzFGIgSjQDaMbotyQdO5xqiyAxDQsa%2BnBGMNAw60rtH16CLC9bQZ1wlFciOHf4F96XX4oaeJ%2FTcI8sHjapIW1EEXx8sOi9BwTAWuwowoyef49HVNDDUASzhZRtFzi2QsIWoS8KM%2BdGUgMGYGOZ5%2FVD%2B433g0YPh2A5EUyWO1tc7VLSHOUUMcogWS%2FVoZHLgqsc6H3dV3FvF3NHXFtcKvlQ90MSAK1LlDpFmsN0sYVLlCpog9teIEYuKWHHMKsQhIOvP4zc%2FakLhstq152oft9Wkm%2BHx3vONty9K3g1%2Bb%2BNaIvMmIGjwI6tpmKViXfLegM5s2G0UFoULELUVgnCeuTkUTxla%2BOThsYzYx0N7us0rZUzQvAbMuZq8LU%2FlYUQAg8p%2BaMuG%2FEslScoh0DBQ%2F8CedrJ3PMoi%2Fpo3B%2BRKh345luw8%2FzfebmIqzRYxB1ZOAGBD53fCGz7V8pCcNXKi2qbwPAjfxwGXzdyAtN1gD1U6CK2b13VDy7wq%2BpmSJq%2FjDEFxe3EjFx5MAg%2B3vKdWneVtuNtkUZwZdO9ZDSjCgElubxVTAkU%2BfBDHmxIRYPMLvl99YGOpgBfo0gkdtbaaqrrj1BtXlIa9ZvdlUPl0ExobrDUXqE5pjQAGrlTdmKK%2B%2BSmX2FDSanhaXytXKbi3JDIInQFK%2BvYvdi2pfzAdRJgJ7hhbibShMESJIPZKN1gxB0qu4lsNaxYklL6J1wrIRCvH7oz8Pb1%2FcsuRiTUg263fFC6xcsEyrM5DZ983F6UHFShOB7AJ7EJL99TLgBU%2Bc%3D&X-Amz-SignedHeaders=host&x-id=GetObject&X-Amz-Signature=31070b6acd14471efc20806e9884330f11ed2c6a9b15c8544ab5d406b597a4ec)
+
+### Character lock versus thumbnail lighting
+
+Do not let “thumbnail lighting” override the project’s locked identity. Separate the layers:
+
+```text
+Character identity lock:
+[exact face, age, skin tone, hair, eye color, wardrobe, distinguishing features]
+
+Thumbnail lighting adaptation:
+Dramatic rim light from behind left, strong key light on face,
+high contrast, deep shadows, simplified background.
+```
+
+The character’s physical identity stays fixed; only the lighting, expression, framing, and background are adapted for thumbnail impact. This follows StoryFrame’s existing separation between persistent identity sheets and beat-level visual direction. 
+
+## 3. 9:16 versus 16:9
+
+### 16:9 YouTube thumbnail
+
+Design at 1280 × 720 or larger, maintaining 16:9. Keep critical text and the face inside roughly the central 80 percent of the frame, with extra clearance in the bottom-right for the duration badge and along the bottom edge for the progress bar. [runware](https://runware.ai/docs/models/bfl-flux-3-image/guides/text-rendering)
+
+Recommended composition:
+
+```text
+Hero face or subject: center-left or right third
+Primary text: upper-left, center-left, or center
+Avoid: bottom-right corner, bottom 10-15 percent, extreme edges
+Text size: bold enough to remain readable at small feed sizes
+```
+
+A practical safe envelope on a 1280 × 720 canvas is approximately x 80–1020 and y 60–600, with the bottom-right timestamp zone kept free of text and focal facial features. [runware](https://runware.ai/docs/models/bfl-flux-3-image/guides/text-rendering)
+
+### 9:16 TikTok, Reels, and Shorts cover
+
+Design at 1080 × 1920. The major constraint is vertical UI: profile and navigation occupy the top, captions and sound attribution occupy the bottom, and engagement buttons occupy the right side. One current safe-zone guide places usable content between y 290 and y 1540 and x 40 and x 1000 on a 1080 × 1920 canvas. [thumbsignal](https://thumbsignal.com/en/blog/youtube-thumbnail-safe-zones-where-text-gets-cut)
+
+Recommended composition:
+
+```text
+Hero face or subject: upper-center to center
+Primary text: center or upper-center
+Avoid: bottom third, right-side button column, extreme top and bottom
+Text width: no more than about 70-80 percent of frame width
+```
+
+For TikTok profile grids, covers may be cropped from 9:16 toward roughly 3:4, cutting material from the top and bottom. Keep the face and headline near the vertical center, not near either edge. [thumbsignal](https://thumbsignal.com/en/blog/youtube-thumbnail-safe-zones-where-text-gets-cut)
+
+## 4. Pitfalls and final template
+
+### Pitfalls to avoid
+
+1. **Treating the thumbnail as a story beat.** It should not inherit a beat duration, narration line, or timeline position.
+2. **Letting the LLM write final prompt syntax.** The LLM should choose concept, subject, emotion, and text; deterministic code should compile the prompt.
+3. **Using long overlay text.** “ZOMBIE OUTBREAK FOR 60 DAYS” is already near the upper limit. Prefer `DAY 60: SURVIVED` or `60 DAYS INSIDE`.
+4. **Placing text over the hero’s face.** Preserve facial readability; use negative space beside or above the subject.
+5. **Ignoring platform safe zones.** A beautiful bottom-right headline on YouTube can be covered by the duration badge. [runware](https://runware.ai/docs/models/bfl-flux-3-image/guides/text-rendering)
+6. **Breaking style continuity.** A photorealistic thumbnail on a rubber-hose storyboard will feel like a different product.
+7. **Generating only one option.** Offer three variants: face-led, object-led, and situation-led.
+8. **Assuming Flux and Midjourney behave identically.** Flux responds well to quoted text and explicit typography; Midjourney needs more conservative text handling and may be better used with text added in a design layer. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/6140192/613bd410-45bf-43a9-a067-244adf23e655/STORYBOARD_DIGEST.md?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Checksum-Mode=ENABLED&X-Amz-Credential=ASIA2F3EMEYE6DDK4BGZ%2F20261025%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261025T121912Z&X-Amz-Expires=3278&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEPX%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJHMEUCIAbXAgSk7et7IdkkNuya3CTDRhq9d6Ww1pfH0SPaxcmFAiEAyWe%2FikiwkIGg72om4uXXwe8jlMNUwZpOYL9mUw%2FaPFkqiQUIvf%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FARABGgw2OTk3NTMzMDk3MDUiDDMU7Kqn%2Bt6bn5n9dSrdBAO%2BY%2BsMzm%2Fxt%2FjVbHA3HnxGhi3qeBw2D0XAi90L%2FCGAx7JNRYqBVVRH8CqwDMfb4kCjNSDZUW8uhAYuWX9Z%2B9HIMQ1Q%2FOegkaSN3UTiZRNExnfnxBzRAuOYWlkpLWsIIaZ0v%2FupQdeK5hTUuGNjUAk%2BAnoLDJSR74lWZ%2BTQ7x2CGVl5KkA16EiRrnCHnOE3IhXaJRhEkGP1Mfkr8xvy3RCjUp8PhNnyP%2BY1prbpglK%2FzFGIgSjQDaMbotyQdO5xqiyAxDQsa%2BnBGMNAw60rtH16CLC9bQZ1wlFciOHf4F96XX4oaeJ%2FTcI8sHjapIW1EEXx8sOi9BwTAWuwowoyef49HVNDDUASzhZRtFzi2QsIWoS8KM%2BdGUgMGYGOZ5%2FVD%2B433g0YPh2A5EUyWO1tc7VLSHOUUMcogWS%2FVoZHLgqsc6H3dV3FvF3NHXFtcKvlQ90MSAK1LlDpFmsN0sYVLlCpog9teIEYuKWHHMKsQhIOvP4zc%2FakLhstq152oft9Wkm%2BHx3vONty9K3g1%2Bb%2BNaIvMmIGjwI6tpmKViXfLegM5s2G0UFoULELUVgnCeuTkUTxla%2BOThsYzYx0N7us0rZUzQvAbMuZq8LU%2FlYUQAg8p%2BaMuG%2FEslScoh0DBQ%2F8CedrJ3PMoi%2Fpo3B%2BRKh345luw8%2FzfebmIqzRYxB1ZOAGBD53fCGz7V8pCcNXKi2qbwPAjfxwGXzdyAtN1gD1U6CK2b13VDy7wq%2BpmSJq%2FjDEFxe3EjFx5MAg%2B3vKdWneVtuNtkUZwZdO9ZDSjCgElubxVTAkU%2BfBDHmxIRYPMLvl99YGOpgBfo0gkdtbaaqrrj1BtXlIa9ZvdlUPl0ExobrDUXqE5pjQAGrlTdmKK%2B%2BSmX2FDSanhaXytXKbi3JDIInQFK%2BvYvdi2pfzAdRJgJ7hhbibShMESJIPZKN1gxB0qu4lsNaxYklL6J1wrIRCvH7oz8Pb1%2FcsuRiTUg263fFC6xcsEyrM5DZ983F6UHFShOB7AJ7EJL99TLgBU%2Bc%3D&X-Amz-SignedHeaders=host&x-id=GetObject&X-Amz-Signature=31070b6acd14471efc20806e9884330f11ed2c6a9b15c8544ab5d406b597a4ec)
+
+### Final prompt template
+
+```text
+STATIC THUMBNAIL IMAGE ONLY. One single high-impact cover frame.
+No animation, video, motion, sequence, timelapse, GIF, or camera movement.
+
+Create a click-worthy [PLATFORM] cover for a [GENRE] story titled “[PROJECT TITLE]”.
+
+HERO SUBJECT:
+[LOCKED CHARACTER APPEARANCE AND WARDROBE]
+Expression: [ONE DOMINANT EMOTION], intense and readable at small sizes.
+Framing: [CLOSE-UP / MEDIUM CLOSE-UP], subject positioned [SAFE-ZONE POSITION].
+
+VISUAL CONFLICT:
+[ONE CLIMACTIC STORY MOMENT OR SYMBOLIC THREAT]
+The image asks one unanswered question: [CORE CURIOSITY GAP].
+
+ENVIRONMENT:
+[SIMPLIFIED LOCATION], with strong depth separation between subject and background.
+Do not include minor story details that compete with the hero subject.
+
+LIGHTING:
+High-contrast cinematic lighting. [RIM LIGHT DIRECTION] separates the subject from the background.
+[KEY LIGHT DIRECTION] illuminates the face. Deep controlled shadows, vivid focal color contrast,
+clean negative space for text.
+
+STYLE CONTINUITY:
+[EXACT PROJECT ART STYLE, COLOR PALETTE, LENS/FILM LOOK, AND WORLD AESTHETIC].
+Maintain the same visual identity as the storyboard.
+
+TEXT OVERLAY:
+Exact text: "[PRIMARY TEXT]"
+Placement: [SAFE-ZONE PLACEMENT]
+Typography: ultra-bold condensed sans-serif, all caps, highly legible at thumbnail size.
+Color: [TEXT COLOR] with a thick [OUTLINE COLOR] outline and subtle drop shadow.
+Primary text fills approximately [PERCENT] of the image width.
+[Optional] Smaller secondary text: "[SECONDARY TEXT]" positioned [PLACEMENT].
+
+COMPOSITION SAFETY:
+Keep all text, face, and critical visual elements inside the platform safe zone.
+For 16:9, avoid the bottom-right timestamp area and bottom progress-bar edge.
+For 9:16, avoid the bottom third, right-side engagement-button column, and extreme top and bottom edges.
+
+NEGATIVE:
+blurry text, misspelled text, duplicated letters, distorted typography, watermark, logo,
+extra fingers, malformed hands, cluttered background, low contrast, flat lighting,
+motion blur, animation, video frames, real-person likeness, celebrity likeness.
+```
+
+### Example: 60-day zombie survival
+
+```text
+STATIC THUMBNAIL IMAGE ONLY. One single high-impact vertical cover frame.
+No animation, video, motion, sequence, timelapse, GIF, or camera movement.
+
+Create a click-worthy TikTok cover for a survival horror story titled “60 Days Inside”.
+
+HERO SUBJECT:
+A 32-year-old female survivor with short dark hair, dirt-streaked cheeks, a torn olive jacket,
+and a improvised backpack strap across her chest. Her expression is exhausted but fiercely determined.
+Framing: tight medium close-up, face positioned in the upper-center safe zone.
+
+VISUAL CONFLICT:
+Behind her, a collapsed city street is swallowed by fog and distant silhouettes.
+A cracked wristwatch reads Day 60. The image asks: can she survive one more day?
+
+ENVIRONMENT:
+Simplified ruined urban street with strong depth separation. Do not include detailed crowds
+or secondary characters that compete with the hero.
+
+LIGHTING:
+High-contrast cinematic lighting. Cold blue rim light from behind left separates her from the fog.
+Warm flickering flashlight key light illuminates her face. Deep shadows, vivid teal-and-amber contrast,
+clean negative space above her shoulders for text.
+
+STYLE CONTINUATION:
+Hyperrealistic cinematic survival horror, muted teal and amber palette, 35mm film grain,
+shallow depth of field, gritty post-apocalyptic atmosphere.
+
+TEXT OVERLAY:
+Exact text: "DAY 60: SURVIVED"
+Placement: upper center, leaving the lower third clear.
+Typography: ultra-bold condensed sans-serif, all caps, highly legible at thumbnail size.
+Color: white with a thick black outline and subtle drop shadow.
+Primary text fills approximately 55 percent of the image width.
+
+COMPOSITION SAFETY:
+Keep all text, face, and critical visual elements in the central safe zone.
+Avoid the bottom third, right-side engagement-button column, and extreme top and bottom edges.
+
+NEGATIVE:
+blurry text, misspelled text, duplicated letters, distorted typography, watermark, logo,
+extra fingers, malformed hands, cluttered background, low contrast, flat lighting,
+motion blur, animation, video frames, real-person likeness, celebrity likeness.
+```
+
+## Final recommendation
+
+**Proceed**, with these adjustments:
+
+- Make the thumbnail a first-class `ThumbnailPrompt` artifact, not a scene or beat.
+- Generate three variants: hero-face-led, object-led, and situation-led.
+- Compile prompts deterministically after LLM concept selection.
+- Enforce platform safe zones in both the prompt and the preview UI.
+- Keep overlay text to 2–5 words, quoted exactly, with explicit placement and typography.
+- Add a small-scale preview toggle so users can check readability before exporting.
+
+claude verdict: 
+**Verdict: Proceed, with adjustments.** The concept is strong. Most of the risk is in text rendering and in how it interacts with your existing rules.
+
+## 1. Placement and schema
+
+- **Placement:** Keep it between the last scene and the narrator script in the document and in the MD/JSON/CSV exports. Creators usually want it first, though, so add a "Cover" chip or jump link at the top of results. Style the card differently from scene cards.
+- **Not a beat:** Keep it out of beat counts, WPM pacing, SRT and EDL.
+- **Token-cheap schema:** Have the model return short fields only, and assemble the final prompt in code. That also keeps Groq's smaller models from drifting. Generate it in the same call as the story bible, or in a small follow-up that sees only the bible summary, never the full story.
+
+```json
+"thumbnail": {
+  "heroMoment": "one line, peak tension, not the resolution",
+  "expression": "3-6 words",
+  "bgDescription": "dark, simplified, 6-10 words",
+  "accentColor": "one color",
+  "hooks": ["≤4 words", "alt 1", "alt 2"]
+}
+```
+
+Code adds the aspect ratio, the style lock, the character lock and the text phrasing. The alternate hooks give creators free A/B options.
+
+## 2. High-CTR ingredients
+
+- One subject, one emotion, one saturated accent color against a dark, simple background.
+- Subject fills 40-60% of the frame, with rim light and exaggerated expression.
+- Reserved negative space for the text.
+- It must read at about 170px wide.
+
+**Text phrasing:**
+- Use 4 words or fewer.
+- Put it in quotes, in ALL CAPS.
+- Name the typography ("bold heavy sans-serif, thick black outline").
+- Name the placement.
+- State it once, and add "no other text".
+- Flux.1 handles this well. Midjourney v6.1 is decent but fails on long strings.
+- Offer a "text-free plate" toggle that leaves clean negative space, since many creators add text in Canva anyway.
+
+**Locked character vs. dramatic lighting:** Keep the identity tokens verbatim (face, hair, outfit, marks). Let only expression, lighting and camera vary. Write "same character design and outfit, new lighting" and don't re-describe the wardrobe.
+
+## 3. 9:16 vs 16:9
+
+These zones are approximate, so verify them against current platform templates.
+
+- **16:9:** Keep the bottom-right clear for the timestamp. Put the subject on one third and the text on the opposite side. Use a single line of text.
+- **9:16:** Keep the top ~12% and bottom ~25% free of key content, plus the right edge for action buttons. Put the face and text in the central band. Profile grids crop to about 3:4, so keep key content inside that too. Stack the text on 2 lines, larger.
+
+## 4. Pitfalls
+
+- **Conflict with your no-text-in-images rule:** Scope the exception to the exact hook string only, or the generator will print narration as subtitles again.
+- **Invented or over-promised details:** The hook and frame must be supported by the story bible. Don't promise what the video doesn't deliver.
+- **Generic frame for abstract stories:** Anchor it in the bible's specific character and setting.
+- **Copying the final scene:** Require a different composition, and show the climax, not the resolution.
+- **No real people's names:** Keep the existing rule.
+- **Weak hook validation:** Check it in code (≤4 words, uppercase, no stray punctuation).
+
+## Final template (assembled in code)
+
+```
+{STYLE_LOCK}. {CHARACTER_LOCK}, same design and outfit, {expression}, {heroMoment}. Tight medium close-up, subject fills about 50% of frame, placed {left/right third}. Strong {accentColor} rim light from behind, deep shadows, high contrast, dark simplified background: {bgDescription}. Clean negative space {opposite side} for text. Text: the words "{HOOK}" in bold heavy white sans-serif capitals with thick black outline, {placement}, appears exactly once, perfectly spelled, no other text, no logos, no watermark.
+```
+
+- **Midjourney:** append `--ar {16:9|9:16} --style raw --s 150 --v 6.1`
+- **Flux.1:** no parameters. Add the orientation as a sentence ("vertical 9:16 composition, keep the top and bottom 20% free of key content").

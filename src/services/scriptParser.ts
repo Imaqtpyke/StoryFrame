@@ -5,6 +5,7 @@
  */
 
 import { StoryGenerationResult, Scene, Beat, StyleProfile, StoryBible } from '../types';
+import { compileThumbnailPrompt } from './promptCompiler';
 
 export interface ParsedClip {
   clipNumber: number;
@@ -620,6 +621,22 @@ export function parseManuscriptMarkdown(rawMarkdown: string): ParsedScriptResult
       hookType: "Identity & Counter-Intuitive Flip",
       hookRationale: "Instant psychological paradox in the first 4 seconds forces viewers to stay to see who confesses first.",
     },
+    thumbnail: compileThumbnailPrompt({
+      rawThumbnail: {
+        heroMoment: "Twelve suspicious contestants surrounding the glowing voting chamber, eyes locked in mutual distrust",
+        expression: "guarded, suspicious, and tightly coiled paranoia",
+        bgDescription: "subterranean architectural glass chamber with dark obsidian shadow pools",
+        accentColor: "spotlight amber",
+        hookText: "THE HIDDEN OUTSIDER",
+        fontStyle: "dossier stamp sans-serif with dramatic cast-shadow letterforms",
+        alternateHooks: ["WHO BREAKS FIRST", "MILLION DOLLAR LIE"],
+      },
+      styleProfile,
+      characterSheet,
+      storyPremise: corePremise,
+      format: 'short',
+      platform: 'TikTok / Shorts / Reels',
+    }),
     storyBible,
     assumptions: storyBible.assumptions,
     authorNotes: `Production Script for ${title} (${episodeTitle}). Format: 9:16 Vertical Video. 12 Clips @ 4s each. Total: 48s. Language constraint: Zero use of 'gay' or 'straight'.`,

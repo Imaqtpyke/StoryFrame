@@ -19,6 +19,7 @@ import { cleanAndDeduplicatePrompt, enforceBeatToBeatProgression } from './gemin
 import { fetchWithExponentialBackoff } from '../utils/retryFetch';
 import { executeGroundedPipeline } from './groundedPipeline';
 import { executeJsonLlmCall } from './unifiedAiService';
+import { compileThumbnailPrompt } from './promptCompiler';
 
 function removeEmDashes(text: string): string {
   if (!text) return text;
@@ -666,6 +667,15 @@ ${durationInstruction}`;
       }
     : undefined;
 
+  const thumbnail = compileThumbnailPrompt({
+    rawThumbnail: parsedData.thumbnail,
+    styleProfile: sanitizedStyleProfile,
+    characterSheet: sanitizedCharacterSheet,
+    storyPremise: story,
+    format,
+    platform,
+  });
+
   return {
     styleProfile: sanitizedStyleProfile,
     characterSheet: sanitizedCharacterSheet,
@@ -676,5 +686,6 @@ ${durationInstruction}`;
     targetVideoDuration: isVideoMode ? targetVideoDuration : undefined,
     autoArchitectMode: true,
     hookAnalysis,
+    thumbnail,
   };
 }

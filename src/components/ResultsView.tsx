@@ -6,7 +6,7 @@ import CharacterReferenceModal from './CharacterReferenceModal';
 import StyleAndCharactersSection from './StyleAndCharactersSection';
 import SeriesRoadmapModal from './SeriesRoadmapModal';
 import { enforceBeatCeilings, getPreviewText } from '../services/beatSplitting';
-import { TargetModel, compileBeatPrompt, lintStoryboard, LintIssue } from '../services/promptCompiler';
+import { TargetModel, compileBeatPrompt, lintStoryboard, LintIssue, compileThumbnailPrompt } from '../services/promptCompiler';
 import { generateCMX3600EDL, generateSRTSubtitles, calculatePacing } from '../services/timelineExport';
 import {
   Copy,
@@ -263,6 +263,20 @@ export default function ResultsView({
   const totalBeatsCount = normalizedScenes.reduce((acc, s) => acc + (s.beats?.length || 0), 0);
   const characterEntries = Object.entries(result.characterSheet || {});
   const isVideoMode = result.generationMode === 'video';
+
+  const [thumbnailPromptMode, setThumbnailPromptMode] = useState<'full' | 'clean'>('full');
+
+  const activeThumbnail = useMemo(() => {
+    if (result.thumbnail) return result.thumbnail;
+    return compileThumbnailPrompt({
+      rawThumbnail: undefined,
+      styleProfile: result.styleProfile,
+      characterSheet: result.characterSheet,
+      storyPremise: fullScript || '',
+      format,
+      platform,
+    });
+  }, [result.thumbnail, result.styleProfile, result.characterSheet, fullScript, format, platform]);
 
   // Calculate timeline ranges
   let accumulatedSeconds = 0;
@@ -564,6 +578,21 @@ export default function ResultsView({
             </button>
           )}
 
+          {/* Jump to Cover Thumbnail */}
+          <button
+            type="button"
+            id="jump-to-thumbnail-btn"
+            onClick={() => {
+              const el = document.getElementById('thumbnail-cover-panel');
+              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }}
+            className="inline-flex items-center px-2.5 py-1 bg-[#161614] hover:bg-[#20201e] text-[#D4D4D0] hover:text-white border border-white/15 text-[11px] font-display transition-colors rounded min-h-[28px]"
+            title="Jump to Cover & Thumbnail Blueprint"
+          >
+            <ImageIcon size={11} className="mr-1 text-amber-400" />
+            <span>Cover Thumbnail</span>
+          </button>
+
           {/* Quick Expand/Collapse Scenes Toggle */}
           <button
             type="button"
@@ -832,6 +861,150 @@ export default function ResultsView({
             </div>
           );
         })}
+      </div>
+
+      {/* Production Cover & Thumbnail Blueprint (Between final scene and Complete Narrator Script) */}
+      <div
+        id="thumbnail-cover-panel"
+        className="bg-[#121211] border border-white/10 p-3.5 sm:p-6 md:p-8 space-y-4 rounded-[2px] shadow-xl"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 border-b border-white/10 pb-3 sm:pb-4">
+          <div className="min-w-0 flex-1 pr-0 sm:pr-4">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              <span className="stamp-chip bg-amber-950/70 text-amber-300 border-amber-800/80 text-[8px] sm:text-[9px] font-bold">
+                COVER &amp; THUMBNAIL BLUEPRINT
+              </span>
+              <span className="font-editorial-meta text-[9px] sm:text-[10px] text-[#9C9C96]">
+                {activeThumbnail.aspectRatio} · {activeThumbnail.targetPlatform}
+              </span>
+            </div>
+            <h3 className="text-base sm:text-xl font-normal font-display tracking-tight text-white">
+              Production Cover &amp; Hero Thumbnail
+            </h3>
+            <p className="text-xs text-[#9C9C96] mt-0.5 sm:mt-1 font-narrative leading-relaxed">
+              High-CTR hero cover synthesized from the narrative conflict. Adapted to {activeThumbnail.targetPlatform} safe zones with locked character identity.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 self-start sm:self-auto shrink-0 flex-wrap">
+            {/* Mode Toggle: Full vs Clean Plate */}
+            <div className="inline-flex p-0.5 bg-[#181816] border border-white/10 rounded-[2px]">
+              <button
+                type="button"
+                id="thumbnail-with-type-toggle"
+                onClick={() => setThumbnailPromptMode('full')}
+                className={`px-2.5 py-1 text-[9px] sm:text-[10px] font-editorial-meta rounded-[2px] transition-colors ${
+                  thumbnailPromptMode === 'full'
+                    ? 'bg-white text-black font-semibold shadow-xs'
+                    : 'text-[#8C8C86] hover:text-white'
+                }`}
+              >
+                With Typography
+              </button>
+              <button
+                type="button"
+                id="thumbnail-clean-plate-toggle"
+                onClick={() => setThumbnailPromptMode('clean')}
+                className={`px-2.5 py-1 text-[9px] sm:text-[10px] font-editorial-meta rounded-[2px] transition-colors ${
+                  thumbnailPromptMode === 'clean'
+                    ? 'bg-white text-black font-semibold shadow-xs'
+                    : 'text-[#8C8C86] hover:text-white'
+                }`}
+                title="Text-free background plate for Canva or Photoshop"
+              >
+                Clean Plate
+              </button>
+            </div>
+
+            <button
+              type="button"
+              id="copy-thumbnail-prompt-btn"
+              onClick={() =>
+                copyToClipboard(
+                  thumbnailPromptMode === 'full'
+                    ? activeThumbnail.compiledPrompt
+                    : activeThumbnail.cleanPlatePrompt,
+                  `thumbnail-${thumbnailPromptMode}`
+                )
+              }
+              className="inline-flex items-center justify-center px-2.5 sm:px-3.5 py-1 sm:py-1.5 bg-white text-black hover:bg-neutral-200 active:bg-neutral-300 text-[9px] sm:text-[10px] font-editorial-meta font-semibold transition-colors whitespace-nowrap min-h-[28px] sm:min-h-[32px] rounded-[2px] shadow-sm cursor-pointer"
+              title="Copy thumbnail prompt"
+            >
+              {copiedIndex === `thumbnail-${thumbnailPromptMode}` ? (
+                <>
+                  <Check size={10} className="mr-1 text-black shrink-0 sm:w-3 sm:h-3" />
+                  <span>Copied</span>
+                </>
+              ) : (
+                <>
+                  <Copy size={10} className="mr-1 text-black shrink-0 sm:w-3 sm:h-3" />
+                  <span>Copy Prompt</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Narrative Hook & Story-Adaptive Typography Card */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 sm:gap-3">
+          <div className="bg-[#0A0A09] p-3 border border-white/10 rounded-[2px] space-y-1 md:col-span-1">
+            <span className="font-editorial-meta text-[8px] sm:text-[9px] text-amber-300 uppercase tracking-widest block">
+              Curiosity Hook Text
+            </span>
+            <div className="text-sm sm:text-base font-display font-bold text-white tracking-wide">
+              &ldquo;{activeThumbnail.hookText}&rdquo;
+            </div>
+            {activeThumbnail.alternateHooks && activeThumbnail.alternateHooks.length > 0 && (
+              <div className="pt-1 flex flex-wrap gap-1">
+                {activeThumbnail.alternateHooks.map((alt, i) => (
+                  <span
+                    key={i}
+                    className="text-[8px] font-mono px-1 py-0.5 bg-white/5 border border-white/10 text-[#C4C4C0] rounded-[2px]"
+                  >
+                    Alt: &ldquo;{alt}&rdquo;
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="bg-[#0A0A09] p-3 border border-white/10 rounded-[2px] space-y-1 md:col-span-1">
+            <span className="font-editorial-meta text-[8px] sm:text-[9px] text-[#9C9C96] uppercase tracking-widest block">
+              Story-Adapted Typography
+            </span>
+            <p className="text-xs text-[#E8E8E2] font-narrative leading-relaxed capitalize">
+              {activeThumbnail.fontStyle}
+            </p>
+          </div>
+
+          <div className="bg-[#0A0A09] p-3 border border-white/10 rounded-[2px] space-y-1 md:col-span-1">
+            <span className="font-editorial-meta text-[8px] sm:text-[9px] text-emerald-400 uppercase tracking-widest block">
+              Platform Safe Zone Clearance
+            </span>
+            <p className="text-[10px] sm:text-xs text-[#A8A8A2] font-editorial-meta leading-tight">
+              {activeThumbnail.aspectRatio === '16:9'
+                ? 'Bottom-right 15% kept clear for YouTube duration badge; lower 10% clear for scrub bar.'
+                : 'Top 12% clear for profile/header; bottom 25% clear for captions; right side clear for engagement icons.'}
+            </p>
+          </div>
+        </div>
+
+        {/* Compiled Prompt Text Block */}
+        <div className="bg-[#0A0A09] p-3.5 sm:p-5 border border-white/10 rounded-[2px] space-y-2 relative group">
+          <div className="flex items-center justify-between text-[9px] sm:text-[10px] font-editorial-meta text-[#8C8C86]">
+            <span>
+              {thumbnailPromptMode === 'full'
+                ? 'Production Prompt with Typography Overlay'
+                : 'Clean Plate Prompt (Text-Free Background Plate)'}
+            </span>
+            <span className="font-mono text-white/50">{activeThumbnail.aspectRatio}</span>
+          </div>
+          <p className="text-xs sm:text-sm text-[#F5F5F0] leading-relaxed font-mono whitespace-pre-wrap selection:bg-white selection:text-black">
+            {thumbnailPromptMode === 'full'
+              ? activeThumbnail.compiledPrompt
+              : activeThumbnail.cleanPlatePrompt}
+          </p>
+        </div>
       </div>
 
       {/* Full Script Summary Panel */}

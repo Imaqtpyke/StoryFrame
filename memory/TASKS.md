@@ -103,5 +103,13 @@
   - Retained clean icon-only display with the words "Edit" and "Copy" completely removed.
   - Verified clean applet compilation and all 137 tests passing in `src/tests/systemTestSuite.ts`.
 
+- [x] **Production Cover & Thumbnail Blueprint Engine:**
+  - Built `inferStoryAdaptiveFont` adapting font styling dynamically to story genre and character style (e.g. distressed weathered stencil for zombie/horror, futuristic neon for cyberpunk, archaic gothic serif for dark fantasy, editorial broadsheet for documentary, cartoon bubble for rubber hose).
+  - Built `compileThumbnailPrompt` in `src/services/promptCompiler.ts` compiling high-CTR prompts with platform safe zones (16:9 YouTube timestamp clearance vs 9:16 Shorts UI overlay clearance) and character identity locks.
+  - Generates both full production prompt with exact quoted headline (<= 4 words in ALL CAPS) and clean plate prompt for external graphic design (Canva/Photoshop).
+  - Integrated into all generation pipelines (`geminiClient.ts`, `groundedPipeline.ts`, `enhanceStoryArchitect.ts`, `scriptParser.ts`).
+  - Added dedicated `ThumbnailCard` in `src/components/ResultsView.tsx` situated between the final scene and the Complete Narrator Script, with top bar quick jump button.
+  - Added Suite 15 automated test cases; verified with 150 automated system tests passing (100%) and clean compilation.
+
 ## Next Steps / Active Tasks
 - [ ] Monitor user workflow for subsequent episode drafting across multi-episode projects.
