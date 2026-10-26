@@ -254,7 +254,7 @@ export default function BeatBottomSheet({
               estimatedSeconds: beat.estimatedSeconds || 5,
               beats: allBeatsInScene,
             };
-            const compiled = compileBeatPrompt(beat, fakeScene, styleProfile, targetModel, format, generationMode);
+            const compiled = compileBeatPrompt(beat, fakeScene, styleProfile, 'universal', format, generationMode);
             const promptToUse = compiled.promptText;
             const isCopiedNeg = copiedIndex === `neg-${beatKey}`;
 
@@ -275,11 +275,6 @@ export default function BeatBottomSheet({
                         </>
                       )}
                     </span>
-                    {targetModel !== 'universal' && (
-                      <span className="text-[8px] font-editorial-meta px-1.5 py-0.5 bg-white/10 text-white rounded">
-                        {targetModel.toUpperCase()}
-                      </span>
-                    )}
                   </div>
                   <button
                     type="button"

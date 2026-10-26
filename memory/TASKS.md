@@ -111,5 +111,11 @@
   - Added dedicated `ThumbnailCard` in `src/components/ResultsView.tsx` situated between the final scene and the Complete Narrator Script, with top bar quick jump button.
   - Added Suite 15 automated test cases; verified with 150 automated system tests passing (100%) and clean compilation.
 
+- [x] **Bugfix: Resolved ReferenceError for selectedTargetModel:**
+  - Removed lingering references to `selectedTargetModel` in `ResultsView.tsx` (in `handleCopyAllPrompts`, the batch copy tooltip, and the `BeatBottomSheet` invocation).
+  - Cleaned up obsolete target model selector dropdown and icon import in `ResultsView.tsx`.
+  - Updated `BeatBottomSheet.tsx` to compile directly with the universal model and removed obsolete external model badges.
+  - Verified clean TypeScript validation (`tsc --noEmit`) and successful applet compilation with zero errors.
+
 ## Next Steps / Active Tasks
 - [ ] Monitor user workflow for subsequent episode drafting across multi-episode projects.

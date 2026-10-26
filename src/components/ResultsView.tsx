@@ -33,7 +33,6 @@ import {
   Scissors,
   AlertTriangle,
   Info,
-  Sliders,
   CheckCheck,
   ExternalLink,
   Users,
@@ -303,13 +302,12 @@ export default function ResultsView({
           b,
           scene,
           result.styleProfile,
-          selectedTargetModel,
+          'universal',
           format,
           result.generationMode
         );
         const shotTag = b.shotType ? `[${b.shotType}] ` : '';
-        const modelLabel = selectedTargetModel !== 'universal' ? ` (${selectedTargetModel.toUpperCase()})` : '';
-        lines.push(`SCENE ${toRomanNumeral(scene.index)} - BEAT ${b.beatIndex} ${shotTag}${modelLabel}:\n${compiled.promptText}`);
+        lines.push(`SCENE ${toRomanNumeral(scene.index)} - BEAT ${b.beatIndex} ${shotTag}:\n${compiled.promptText}`);
       });
     });
     copyToClipboard(lines.join('\n\n'), 'all-prompts');
@@ -511,30 +509,13 @@ export default function ResultsView({
 
         {/* Compact Utility Actions Row */}
         <div className="flex items-center gap-1.5 self-start sm:self-auto flex-wrap">
-          {/* Target Model Selector Dropdown */}
-          <div className="flex items-center bg-[#161614] border border-white/15 rounded px-2 py-1 text-xs min-h-[28px]">
-            <Sliders size={11} className="mr-1.5 text-[#9C9C96]" />
-            <select
-              value={selectedTargetModel}
-              onChange={(e) => setSelectedTargetModel(e.target.value as TargetModel)}
-              className="bg-transparent text-white text-[11px] font-display focus:outline-none cursor-pointer pr-1"
-              title="Compile prompt syntax for target engine"
-            >
-              <option value="universal" className="bg-[#161614] text-white">Universal</option>
-              <option value="midjourney" className="bg-[#161614] text-white">Midjourney v6.1</option>
-              <option value="kling" className="bg-[#161614] text-white">Kling AI</option>
-              <option value="runway" className="bg-[#161614] text-white">Runway Gen-3</option>
-              <option value="luma" className="bg-[#161614] text-white">Luma Dream</option>
-            </select>
-          </div>
-
           {/* Batch Copy Prompts */}
           <button
             type="button"
             id="batch-copy-prompts-btn"
             onClick={handleCopyAllPrompts}
             className="inline-flex items-center px-2.5 py-1 bg-white text-black hover:bg-neutral-200 text-[11px] font-display font-medium transition-colors rounded shadow-sm min-h-[28px]"
-            title={selectedTargetModel !== 'universal' ? `Copy all prompts formatted for ${selectedTargetModel.toUpperCase()}` : 'Copy all beat prompts'}
+            title="Copy all beat prompts"
           >
             {copiedIndex === 'all-prompts' ? (
               <>
@@ -1174,7 +1155,6 @@ export default function ResultsView({
         copiedIndex={copiedIndex}
         onCopy={copyToClipboard}
         generationMode={result.generationMode || 'image'}
-        targetModel={selectedTargetModel}
         styleProfile={result.styleProfile}
         format={format}
       />
