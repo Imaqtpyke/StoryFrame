@@ -114,19 +114,20 @@
 - **Status:** Active
 
 ## Collapsible Mobile-First Thumbnail Blueprint
-- **Fact/Decision:** Transformed the Cover & Thumbnail Blueprint into a collapsible accordion card with an accessible header bar, compact hook preview badge when collapsed, and a direct "Copy Prompt" action available without needing to expand the card.
-- **Context:** Fixes vertical viewport crowding on mobile and tablet devices while retaining instant one-click access to the high-CTR cover prompt.
+- **Fact/Decision:** Transformed the Cover & Thumbnail Blueprint into a collapsible accordion card in `src/components/ResultsView.tsx` defaulting to collapsed state (`isThumbnailExpanded = false`). Features an accessible header bar, compact hook preview badge (`Hook: "..."`), and a direct "Copy Prompt" action available without needing to expand the card.
+- **Context:** Reclaims vertical viewport space on mobile and tablet devices upon storyboard load while retaining instant one-click access to the high-CTR cover prompt.
 - **Date:** 2026-10-26
 - **Status:** Active
 
 ## Story-Adaptive Call-to-Action Outro Visual Prompt Engine
-- **Fact/Decision:** Implemented a dedicated, collapsible Call-to-Action Outro engine in `src/services/promptCompiler.ts` and `src/components/ResultsView.tsx`:
+- **Fact/Decision:** Implemented a dedicated Call-to-Action Outro engine in `src/services/promptCompiler.ts` and `src/components/ResultsView.tsx`, defaulting to collapsed state (`isCtaExpanded = false`):
   1. Story-Adaptive Question Derivation: Infers an intriguing moral dilemma, cliffhanger inquiry, or open curiosity question directly from narrative themes (mystery, survival, betrayal, sci-fi, fantasy, drama) to maximize viewer comments and algorithmic distribution. Supports 1-click alternate questions and custom question editing.
   2. Multi-Platform Safe Zones: Custom presets for TikTok (18% right action stack & 22% bottom caption clearance), YouTube Shorts (20% bottom channel/subscribe clearance & 15% right rail), and General Platforms (universal 10% perimeter margin for Instagram Reels, X, and web embeds).
   3. Modality Adaptation: Dual generator targeting Text-to-Video 3-second kinetic loop (subtle dolly-in, atmospheric particles, fourth-wall breaking lingering stare) vs Text-to-Image closing freeze frame.
   4. Overlay vs Clean Plate: Full prompt with story-adapted typography and UI action badge vs text-free clean plate for creators assembling titles in CapCut or Premiere.
-  5. Export Integration: Included automatically in JSON payload and Markdown shot list exports.
-- **Context:** Resolves creator need for short-form retention outro assets that drive engagement, comments, and subscriber growth with full platform compliance.
+  5. Default Collapsed UI: Defaults to collapsed on load with an active question preview badge and quick-copy button on the header, expanding on click or via top jump navigation.
+  6. Export Integration: Included automatically in JSON payload and Markdown shot list exports.
+- **Context:** Minimizes screen crowding upon results generation while giving creators instant access to platform-compliant closing engagement assets.
 - **Date:** 2026-10-26
 - **Status:** Active
 

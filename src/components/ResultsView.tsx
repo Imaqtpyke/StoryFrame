@@ -262,12 +262,12 @@ export default function ResultsView({
   const characterEntries = Object.entries(result.characterSheet || {});
   const isVideoMode = result.generationMode === 'video';
 
-  // Thumbnail accordion state
-  const [isThumbnailExpanded, setIsThumbnailExpanded] = useState<boolean>(true);
+  // Thumbnail accordion state (defaults to collapsed)
+  const [isThumbnailExpanded, setIsThumbnailExpanded] = useState<boolean>(false);
   const [thumbnailPromptMode, setThumbnailPromptMode] = useState<'full' | 'clean'>('full');
 
-  // Story-Adaptive CTA Outro state
-  const [isCtaExpanded, setIsCtaExpanded] = useState<boolean>(true);
+  // Story-Adaptive CTA Outro state (defaults to collapsed)
+  const [isCtaExpanded, setIsCtaExpanded] = useState<boolean>(false);
   const [ctaPlatform, setCtaPlatform] = useState<CtaPlatform>(() => {
     if (platform.toLowerCase().includes('youtube')) return 'youtube_shorts';
     if (platform.toLowerCase().includes('tiktok')) return 'tiktok';
