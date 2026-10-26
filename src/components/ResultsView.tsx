@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { StoryGenerationResult, StoryFormat, Beat } from '../types';
+import { StoryGenerationResult, StoryFormat, Beat, CtaPlatform, CtaModality, CtaEngagementType } from '../types';
 import BeatBottomSheet from './BeatBottomSheet';
 import CharacterReferenceModal from './CharacterReferenceModal';
 import StyleAndCharactersSection from './StyleAndCharactersSection';
 import SeriesRoadmapModal from './SeriesRoadmapModal';
 import { enforceBeatCeilings, getPreviewText } from '../services/beatSplitting';
-import { compileBeatPrompt, lintStoryboard, LintIssue, compileThumbnailPrompt } from '../services/promptCompiler';
+import { compileBeatPrompt, lintStoryboard, LintIssue, compileThumbnailPrompt, compileCtaPrompt } from '../services/promptCompiler';
 import { generateCMX3600EDL, generateSRTSubtitles, calculatePacing } from '../services/timelineExport';
 import {
   Copy,
@@ -262,7 +262,22 @@ export default function ResultsView({
   const characterEntries = Object.entries(result.characterSheet || {});
   const isVideoMode = result.generationMode === 'video';
 
+  // Thumbnail accordion state
+  const [isThumbnailExpanded, setIsThumbnailExpanded] = useState<boolean>(true);
   const [thumbnailPromptMode, setThumbnailPromptMode] = useState<'full' | 'clean'>('full');
+
+  // Story-Adaptive CTA Outro state
+  const [isCtaExpanded, setIsCtaExpanded] = useState<boolean>(true);
+  const [ctaPlatform, setCtaPlatform] = useState<CtaPlatform>(() => {
+    if (platform.toLowerCase().includes('youtube')) return 'youtube_shorts';
+    if (platform.toLowerCase().includes('tiktok')) return 'tiktok';
+    return 'tiktok';
+  });
+  const [ctaModality, setCtaModality] = useState<CtaModality>(result.generationMode === 'video' ? 'video' : 'image');
+  const [ctaEngagementType, setCtaEngagementType] = useState<CtaEngagementType>('question');
+  const [ctaPromptMode, setCtaPromptMode] = useState<'full' | 'clean'>('full');
+  const [customCtaQuestion, setCustomCtaQuestion] = useState<string>('');
+  const [isEditingQuestion, setIsEditingQuestion] = useState<boolean>(false);
 
   const activeThumbnail = useMemo(() => {
     if (result.thumbnail) return result.thumbnail;
@@ -275,6 +290,19 @@ export default function ResultsView({
       platform,
     });
   }, [result.thumbnail, result.styleProfile, result.characterSheet, fullScript, format, platform]);
+
+  const activeCta = useMemo(() => {
+    return compileCtaPrompt({
+      storyPremise: fullScript || '',
+      styleProfile: result.styleProfile,
+      characterSheet: result.characterSheet,
+      format,
+      platform: ctaPlatform,
+      modality: ctaModality,
+      questionText: customCtaQuestion,
+      engagementType: ctaEngagementType,
+    });
+  }, [fullScript, result.styleProfile, result.characterSheet, format, ctaPlatform, ctaModality, customCtaQuestion, ctaEngagementType]);
 
   // Calculate timeline ranges
   let accumulatedSeconds = 0;
@@ -346,6 +374,8 @@ export default function ResultsView({
     const exportPayload = {
       ...result,
       scenes: normalizedScenes,
+      thumbnail: activeThumbnail,
+      ctaPrompt: activeCta,
     };
     const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(exportPayload, null, 2));
     const downloadAnchor = document.createElement('a');
@@ -467,6 +497,23 @@ export default function ResultsView({
       md += `\n`;
     });
 
+    // Append Cover Thumbnail Blueprint
+    md += `## Production Cover & Hero Thumbnail\n\n`;
+    md += `- **Aspect Ratio**: ${activeThumbnail.aspectRatio}\n`;
+    md += `- **Curiosity Hook**: "${activeThumbnail.hookText}"\n`;
+    md += `- **Typography Style**: ${activeThumbnail.fontStyle}\n\n`;
+    md += `### Production Thumbnail Prompt (With Typography)\n\`\`\`text\n${activeThumbnail.compiledPrompt}\n\`\`\`\n\n`;
+    md += `### Clean Plate Prompt (Background Only)\n\`\`\`text\n${activeThumbnail.cleanPlatePrompt}\n\`\`\`\n\n`;
+
+    // Append Call-to-Action Outro Visual Prompt
+    md += `## Story-Adaptive Call-to-Action Outro Prompt\n\n`;
+    md += `- **Platform**: ${activeCta.platform}\n`;
+    md += `- **Modality**: ${activeCta.modality === 'video' ? 'Text to Video Loop (~3s)' : 'Text to Image Freeze Frame'}\n`;
+    md += `- **Intrigue Question**: "${activeCta.questionText}"\n`;
+    md += `- **Engagement Focus**: ${activeCta.engagementType}\n\n`;
+    md += `### Production CTA Prompt (With Graphic Callout)\n\`\`\`text\n${activeCta.compiledPrompt}\n\`\`\`\n\n`;
+    md += `### Clean Plate CTA Prompt (Background Loop Only)\n\`\`\`text\n${activeCta.cleanPlatePrompt}\n\`\`\`\n\n`;
+
     const dataStr = 'data:text/markdown;charset=utf-8,' + encodeURIComponent(md);
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute('href', dataStr);
@@ -563,6 +610,7 @@ export default function ResultsView({
             type="button"
             id="jump-to-thumbnail-btn"
             onClick={() => {
+              setIsThumbnailExpanded(true);
               const el = document.getElementById('thumbnail-cover-panel');
               if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }}
@@ -570,7 +618,23 @@ export default function ResultsView({
             title="Jump to Cover & Thumbnail Blueprint"
           >
             <ImageIcon size={11} className="mr-1 text-amber-400" />
-            <span>Cover Thumbnail</span>
+            <span>Thumbnail</span>
+          </button>
+
+          {/* Jump to CTA Outro */}
+          <button
+            type="button"
+            id="jump-to-cta-btn"
+            onClick={() => {
+              setIsCtaExpanded(true);
+              const el = document.getElementById('cta-outro-panel');
+              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }}
+            className="inline-flex items-center px-2.5 py-1 bg-[#161614] hover:bg-[#20201e] text-[#D4D4D0] hover:text-white border border-white/15 text-[11px] font-display transition-colors rounded min-h-[28px]"
+            title="Jump to Call-to-Action Outro Visual Prompt"
+          >
+            <Zap size={11} className="mr-1 text-amber-400" />
+            <span>CTA Outro</span>
           </button>
 
           {/* Quick Expand/Collapse Scenes Toggle */}
@@ -843,13 +907,17 @@ export default function ResultsView({
         })}
       </div>
 
-      {/* Production Cover & Thumbnail Blueprint (Between final scene and Complete Narrator Script) */}
+      {/* Production Cover & Thumbnail Blueprint (Collapsible) */}
       <div
         id="thumbnail-cover-panel"
-        className="bg-[#121211] border border-white/10 p-3.5 sm:p-6 md:p-8 space-y-4 rounded-[2px] shadow-xl"
+        className="bg-[#121211] border border-white/10 rounded-[2px] shadow-xl overflow-hidden transition-all"
       >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 border-b border-white/10 pb-3 sm:pb-4">
-          <div className="min-w-0 flex-1 pr-0 sm:pr-4">
+        {/* Clickable Accordion Header */}
+        <div
+          onClick={() => setIsThumbnailExpanded(!isThumbnailExpanded)}
+          className="w-full flex items-center justify-between p-3.5 sm:p-5 bg-[#161614] hover:bg-[#1a1a18] cursor-pointer transition-colors border-b border-white/10 select-none flex-wrap gap-2.5"
+        >
+          <div className="min-w-0 flex-1 pr-2">
             <div className="flex items-center gap-2 mb-1 flex-wrap">
               <span className="stamp-chip bg-amber-950/70 text-amber-300 border-amber-800/80 text-[8px] sm:text-[9px] font-bold">
                 COVER &amp; THUMBNAIL BLUEPRINT
@@ -857,57 +925,35 @@ export default function ResultsView({
               <span className="font-editorial-meta text-[9px] sm:text-[10px] text-[#9C9C96]">
                 {activeThumbnail.aspectRatio} · {activeThumbnail.targetPlatform}
               </span>
+              {!isThumbnailExpanded && (
+                <span className="text-[9px] font-mono text-amber-300/90 truncate max-w-xs">
+                  Hook: &ldquo;{activeThumbnail.hookText}&rdquo;
+                </span>
+              )}
             </div>
-            <h3 className="text-base sm:text-xl font-normal font-display tracking-tight text-white">
-              Production Cover &amp; Hero Thumbnail
+            <h3 className="text-base sm:text-xl font-normal font-display tracking-tight text-white flex items-center gap-2">
+              <span>Production Cover &amp; Hero Thumbnail</span>
             </h3>
-            <p className="text-xs text-[#9C9C96] mt-0.5 sm:mt-1 font-narrative leading-relaxed">
+            <p className="text-xs text-[#9C9C96] mt-0.5 font-narrative leading-relaxed">
               High-CTR hero cover synthesized from the narrative conflict. Adapted to {activeThumbnail.targetPlatform} safe zones with locked character identity.
             </p>
           </div>
 
-          <div className="flex items-center gap-2 self-start sm:self-auto shrink-0 flex-wrap">
-            {/* Mode Toggle: Full vs Clean Plate */}
-            <div className="inline-flex p-0.5 bg-[#181816] border border-white/10 rounded-[2px]">
-              <button
-                type="button"
-                id="thumbnail-with-type-toggle"
-                onClick={() => setThumbnailPromptMode('full')}
-                className={`px-2.5 py-1 text-[9px] sm:text-[10px] font-editorial-meta rounded-[2px] transition-colors ${
-                  thumbnailPromptMode === 'full'
-                    ? 'bg-white text-black font-semibold shadow-xs'
-                    : 'text-[#8C8C86] hover:text-white'
-                }`}
-              >
-                With Typography
-              </button>
-              <button
-                type="button"
-                id="thumbnail-clean-plate-toggle"
-                onClick={() => setThumbnailPromptMode('clean')}
-                className={`px-2.5 py-1 text-[9px] sm:text-[10px] font-editorial-meta rounded-[2px] transition-colors ${
-                  thumbnailPromptMode === 'clean'
-                    ? 'bg-white text-black font-semibold shadow-xs'
-                    : 'text-[#8C8C86] hover:text-white'
-                }`}
-                title="Text-free background plate for Canva or Photoshop"
-              >
-                Clean Plate
-              </button>
-            </div>
-
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Quick Copy Button (always accessible) */}
             <button
               type="button"
-              id="copy-thumbnail-prompt-btn"
-              onClick={() =>
+              id="copy-thumbnail-prompt-header-btn"
+              onClick={(e) => {
+                e.stopPropagation();
                 copyToClipboard(
                   thumbnailPromptMode === 'full'
                     ? activeThumbnail.compiledPrompt
                     : activeThumbnail.cleanPlatePrompt,
                   `thumbnail-${thumbnailPromptMode}`
-                )
-              }
-              className="inline-flex items-center justify-center px-2.5 sm:px-3.5 py-1 sm:py-1.5 bg-white text-black hover:bg-neutral-200 active:bg-neutral-300 text-[9px] sm:text-[10px] font-editorial-meta font-semibold transition-colors whitespace-nowrap min-h-[28px] sm:min-h-[32px] rounded-[2px] shadow-sm cursor-pointer"
+                );
+              }}
+              className="inline-flex items-center justify-center px-2.5 sm:px-3 py-1 bg-white text-black hover:bg-neutral-200 active:bg-neutral-300 text-[9px] sm:text-[10px] font-editorial-meta font-semibold transition-colors whitespace-nowrap min-h-[28px] sm:min-h-[30px] rounded-[2px] shadow-sm cursor-pointer"
               title="Copy thumbnail prompt"
             >
               {copiedIndex === `thumbnail-${thumbnailPromptMode}` ? (
@@ -922,69 +968,493 @@ export default function ResultsView({
                 </>
               )}
             </button>
+
+            {/* Collapse/Expand toggle button */}
+            <button
+              type="button"
+              id="toggle-thumbnail-panel-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsThumbnailExpanded(!isThumbnailExpanded);
+              }}
+              className="inline-flex items-center px-2.5 py-1 bg-[#1f1f1d] hover:bg-[#2a2a27] text-[#D4D4D0] hover:text-white border border-white/15 text-[10px] font-display transition-colors rounded-[2px] min-h-[28px] sm:min-h-[30px]"
+              aria-expanded={isThumbnailExpanded}
+              title={isThumbnailExpanded ? 'Collapse Thumbnail Blueprint' : 'Expand Thumbnail Blueprint'}
+            >
+              {isThumbnailExpanded ? (
+                <>
+                  <ChevronUp size={12} className="mr-1 text-[#9C9C96]" />
+                  <span>Collapse</span>
+                </>
+              ) : (
+                <>
+                  <ChevronDown size={12} className="mr-1 text-[#9C9C96]" />
+                  <span>Expand</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
 
-        {/* Narrative Hook & Story-Adaptive Typography Card */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 sm:gap-3">
-          <div className="bg-[#0A0A09] p-3 border border-white/10 rounded-[2px] space-y-1 md:col-span-1">
-            <span className="font-editorial-meta text-[8px] sm:text-[9px] text-amber-300 uppercase tracking-widest block">
-              Curiosity Hook Text
-            </span>
-            <div className="text-sm sm:text-base font-display font-bold text-white tracking-wide">
-              &ldquo;{activeThumbnail.hookText}&rdquo;
-            </div>
-            {activeThumbnail.alternateHooks && activeThumbnail.alternateHooks.length > 0 && (
-              <div className="pt-1 flex flex-wrap gap-1">
-                {activeThumbnail.alternateHooks.map((alt, i) => (
-                  <span
-                    key={i}
-                    className="text-[8px] font-mono px-1 py-0.5 bg-white/5 border border-white/10 text-[#C4C4C0] rounded-[2px]"
-                  >
-                    Alt: &ldquo;{alt}&rdquo;
-                  </span>
-                ))}
+        {/* Collapsible Content */}
+        {isThumbnailExpanded && (
+          <div className="p-3.5 sm:p-6 md:p-8 space-y-4 bg-[#121211]">
+            {/* Mode Toggle Row */}
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <span className="font-editorial-meta text-[10px] text-[#8C8C86]">
+                Thumbnail Rendering Mode:
+              </span>
+              <div className="inline-flex p-0.5 bg-[#181816] border border-white/10 rounded-[2px]">
+                <button
+                  type="button"
+                  id="thumbnail-with-type-toggle"
+                  onClick={() => setThumbnailPromptMode('full')}
+                  className={`px-2.5 py-1 text-[9px] sm:text-[10px] font-editorial-meta rounded-[2px] transition-colors ${
+                    thumbnailPromptMode === 'full'
+                      ? 'bg-white text-black font-semibold shadow-xs'
+                      : 'text-[#8C8C86] hover:text-white'
+                  }`}
+                >
+                  With Typography
+                </button>
+                <button
+                  type="button"
+                  id="thumbnail-clean-plate-toggle"
+                  onClick={() => setThumbnailPromptMode('clean')}
+                  className={`px-2.5 py-1 text-[9px] sm:text-[10px] font-editorial-meta rounded-[2px] transition-colors ${
+                    thumbnailPromptMode === 'clean'
+                      ? 'bg-white text-black font-semibold shadow-xs'
+                      : 'text-[#8C8C86] hover:text-white'
+                  }`}
+                  title="Text-free background plate for Canva or Photoshop"
+                >
+                  Clean Plate
+                </button>
               </div>
-            )}
-          </div>
+            </div>
 
-          <div className="bg-[#0A0A09] p-3 border border-white/10 rounded-[2px] space-y-1 md:col-span-1">
-            <span className="font-editorial-meta text-[8px] sm:text-[9px] text-[#9C9C96] uppercase tracking-widest block">
-              Story-Adapted Typography
-            </span>
-            <p className="text-xs text-[#E8E8E2] font-narrative leading-relaxed capitalize">
-              {activeThumbnail.fontStyle}
+            {/* Narrative Hook & Story-Adaptive Typography Card */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 sm:gap-3">
+              <div className="bg-[#0A0A09] p-3 border border-white/10 rounded-[2px] space-y-1 md:col-span-1">
+                <span className="font-editorial-meta text-[8px] sm:text-[9px] text-amber-300 uppercase tracking-widest block">
+                  Curiosity Hook Text
+                </span>
+                <div className="text-sm sm:text-base font-display font-bold text-white tracking-wide">
+                  &ldquo;{activeThumbnail.hookText}&rdquo;
+                </div>
+                {activeThumbnail.alternateHooks && activeThumbnail.alternateHooks.length > 0 && (
+                  <div className="pt-1 flex flex-wrap gap-1">
+                    {activeThumbnail.alternateHooks.map((alt, i) => (
+                      <span
+                        key={i}
+                        className="text-[8px] font-mono px-1 py-0.5 bg-white/5 border border-white/10 text-[#C4C4C0] rounded-[2px]"
+                      >
+                        Alt: &ldquo;{alt}&rdquo;
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-[#0A0A09] p-3 border border-white/10 rounded-[2px] space-y-1 md:col-span-1">
+                <span className="font-editorial-meta text-[8px] sm:text-[9px] text-[#9C9C96] uppercase tracking-widest block">
+                  Story-Adapted Typography
+                </span>
+                <p className="text-xs text-[#E8E8E2] font-narrative leading-relaxed capitalize">
+                  {activeThumbnail.fontStyle}
+                </p>
+              </div>
+
+              <div className="bg-[#0A0A09] p-3 border border-white/10 rounded-[2px] space-y-1 md:col-span-1">
+                <span className="font-editorial-meta text-[8px] sm:text-[9px] text-emerald-400 uppercase tracking-widest block">
+                  Platform Safe Zone Clearance
+                </span>
+                <p className="text-[10px] sm:text-xs text-[#A8A8A2] font-editorial-meta leading-tight">
+                  {activeThumbnail.aspectRatio === '16:9'
+                    ? 'Bottom-right 15% kept clear for YouTube duration badge; lower 10% clear for scrub bar.'
+                    : 'Top 12% clear for profile/header; bottom 25% clear for captions; right side clear for engagement icons.'}
+                </p>
+              </div>
+            </div>
+
+            {/* Compiled Prompt Text Block */}
+            <div className="bg-[#0A0A09] p-3.5 sm:p-5 border border-white/10 rounded-[2px] space-y-2 relative group">
+              <div className="flex items-center justify-between text-[9px] sm:text-[10px] font-editorial-meta text-[#8C8C86]">
+                <span>
+                  {thumbnailPromptMode === 'full'
+                    ? 'Production Prompt with Typography Overlay'
+                    : 'Clean Plate Prompt (Text-Free Background Plate)'}
+                </span>
+                <span className="font-mono text-white/50">{activeThumbnail.aspectRatio}</span>
+              </div>
+              <p className="text-xs sm:text-sm text-[#F5F5F0] leading-relaxed font-mono whitespace-pre-wrap selection:bg-white selection:text-black">
+                {thumbnailPromptMode === 'full'
+                  ? activeThumbnail.compiledPrompt
+                  : activeThumbnail.cleanPlatePrompt}
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Story-Adaptive Call-to-Action Outro Visual Prompt (Collapsible) */}
+      <div
+        id="cta-outro-panel"
+        className="bg-[#121211] border border-white/10 rounded-[2px] shadow-xl overflow-hidden transition-all"
+      >
+        {/* Clickable Accordion Header */}
+        <div
+          onClick={() => setIsCtaExpanded(!isCtaExpanded)}
+          className="w-full flex items-center justify-between p-3.5 sm:p-5 bg-[#161614] hover:bg-[#1a1a18] cursor-pointer transition-colors border-b border-white/10 select-none flex-wrap gap-2.5"
+        >
+          <div className="min-w-0 flex-1 pr-2">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              <span className="stamp-chip bg-amber-950/70 text-amber-300 border-amber-800/80 text-[8px] sm:text-[9px] font-bold">
+                CALL-TO-ACTION OUTRO PROMPT
+              </span>
+              <span className="font-editorial-meta text-[9px] sm:text-[10px] text-[#9C9C96]">
+                {ctaPlatform === 'tiktok'
+                  ? 'TikTok 9:16'
+                  : ctaPlatform === 'youtube_shorts'
+                  ? 'YouTube Shorts 9:16'
+                  : 'General Platforms'} · {ctaModality === 'video' ? 'Video Loop (T2V)' : 'Static Image (T2I)'}
+              </span>
+              {!isCtaExpanded && (
+                <span className="text-[9px] font-mono text-emerald-300/90 truncate max-w-xs">
+                  &ldquo;{activeCta.questionText}&rdquo;
+                </span>
+              )}
+            </div>
+            <h3 className="text-base sm:text-xl font-normal font-display tracking-tight text-white flex items-center gap-2">
+              <span>Story-Adaptive Call-to-Action Outro</span>
+            </h3>
+            <p className="text-xs text-[#9C9C96] mt-0.5 font-narrative leading-relaxed">
+              High-retention closing beat engineered to ignite comments, debate, and follows. Adapted to platform UI safe zones.
             </p>
           </div>
 
-          <div className="bg-[#0A0A09] p-3 border border-white/10 rounded-[2px] space-y-1 md:col-span-1">
-            <span className="font-editorial-meta text-[8px] sm:text-[9px] text-emerald-400 uppercase tracking-widest block">
-              Platform Safe Zone Clearance
-            </span>
-            <p className="text-[10px] sm:text-xs text-[#A8A8A2] font-editorial-meta leading-tight">
-              {activeThumbnail.aspectRatio === '16:9'
-                ? 'Bottom-right 15% kept clear for YouTube duration badge; lower 10% clear for scrub bar.'
-                : 'Top 12% clear for profile/header; bottom 25% clear for captions; right side clear for engagement icons.'}
-            </p>
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Quick Copy Button */}
+            <button
+              type="button"
+              id="copy-cta-prompt-header-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                copyToClipboard(
+                  ctaPromptMode === 'full' ? activeCta.compiledPrompt : activeCta.cleanPlatePrompt,
+                  `cta-${ctaPromptMode}`
+                );
+              }}
+              className="inline-flex items-center justify-center px-2.5 sm:px-3 py-1 bg-white text-black hover:bg-neutral-200 active:bg-neutral-300 text-[9px] sm:text-[10px] font-editorial-meta font-semibold transition-colors whitespace-nowrap min-h-[28px] sm:min-h-[30px] rounded-[2px] shadow-sm cursor-pointer"
+              title="Copy CTA outro prompt"
+            >
+              {copiedIndex === `cta-${ctaPromptMode}` ? (
+                <>
+                  <Check size={10} className="mr-1 text-black shrink-0 sm:w-3 sm:h-3" />
+                  <span>Copied</span>
+                </>
+              ) : (
+                <>
+                  <Copy size={10} className="mr-1 text-black shrink-0 sm:w-3 sm:h-3" />
+                  <span>Copy CTA</span>
+                </>
+              )}
+            </button>
+
+            {/* Accordion Toggle */}
+            <button
+              type="button"
+              id="toggle-cta-panel-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsCtaExpanded(!isCtaExpanded);
+              }}
+              className="inline-flex items-center px-2.5 py-1 bg-[#1f1f1d] hover:bg-[#2a2a27] text-[#D4D4D0] hover:text-white border border-white/15 text-[10px] font-display transition-colors rounded-[2px] min-h-[28px] sm:min-h-[30px]"
+              aria-expanded={isCtaExpanded}
+              title={isCtaExpanded ? 'Collapse CTA Section' : 'Expand CTA Section'}
+            >
+              {isCtaExpanded ? (
+                <>
+                  <ChevronUp size={12} className="mr-1 text-[#9C9C96]" />
+                  <span>Collapse</span>
+                </>
+              ) : (
+                <>
+                  <ChevronDown size={12} className="mr-1 text-[#9C9C96]" />
+                  <span>Expand</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
 
-        {/* Compiled Prompt Text Block */}
-        <div className="bg-[#0A0A09] p-3.5 sm:p-5 border border-white/10 rounded-[2px] space-y-2 relative group">
-          <div className="flex items-center justify-between text-[9px] sm:text-[10px] font-editorial-meta text-[#8C8C86]">
-            <span>
-              {thumbnailPromptMode === 'full'
-                ? 'Production Prompt with Typography Overlay'
-                : 'Clean Plate Prompt (Text-Free Background Plate)'}
-            </span>
-            <span className="font-mono text-white/50">{activeThumbnail.aspectRatio}</span>
+        {/* Collapsible Content */}
+        {isCtaExpanded && (
+          <div className="p-3.5 sm:p-6 md:p-8 space-y-4 bg-[#121211]">
+            {/* Interactive Configuration Controls Bar */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3 p-3 bg-[#0E0E0D] border border-white/10 rounded-[2px]">
+              {/* Platform Selector */}
+              <div className="space-y-1">
+                <label className="font-editorial-meta text-[9px] uppercase tracking-wider text-[#9C9C96] block">
+                  Platform Target
+                </label>
+                <div className="inline-flex w-full p-0.5 bg-[#181816] border border-white/10 rounded-[2px]">
+                  <button
+                    type="button"
+                    onClick={() => setCtaPlatform('tiktok')}
+                    className={`flex-1 py-1 text-[9px] sm:text-[10px] font-editorial-meta rounded-[2px] transition-colors ${
+                      ctaPlatform === 'tiktok'
+                        ? 'bg-white text-black font-semibold shadow-xs'
+                        : 'text-[#8C8C86] hover:text-white'
+                    }`}
+                  >
+                    TikTok
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCtaPlatform('youtube_shorts')}
+                    className={`flex-1 py-1 text-[9px] sm:text-[10px] font-editorial-meta rounded-[2px] transition-colors ${
+                      ctaPlatform === 'youtube_shorts'
+                        ? 'bg-white text-black font-semibold shadow-xs'
+                        : 'text-[#8C8C86] hover:text-white'
+                    }`}
+                  >
+                    Shorts
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCtaPlatform('general')}
+                    className={`flex-1 py-1 text-[9px] sm:text-[10px] font-editorial-meta rounded-[2px] transition-colors ${
+                      ctaPlatform === 'general'
+                        ? 'bg-white text-black font-semibold shadow-xs'
+                        : 'text-[#8C8C86] hover:text-white'
+                    }`}
+                  >
+                    General
+                  </button>
+                </div>
+              </div>
+
+              {/* Modality Selector */}
+              <div className="space-y-1">
+                <label className="font-editorial-meta text-[9px] uppercase tracking-wider text-[#9C9C96] block">
+                  Outro Modality
+                </label>
+                <div className="inline-flex w-full p-0.5 bg-[#181816] border border-white/10 rounded-[2px]">
+                  <button
+                    type="button"
+                    onClick={() => setCtaModality('video')}
+                    className={`flex-1 py-1 text-[9px] sm:text-[10px] font-editorial-meta rounded-[2px] transition-colors ${
+                      ctaModality === 'video'
+                        ? 'bg-white text-black font-semibold shadow-xs'
+                        : 'text-[#8C8C86] hover:text-white'
+                    }`}
+                  >
+                    Video Loop (T2V)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCtaModality('image')}
+                    className={`flex-1 py-1 text-[9px] sm:text-[10px] font-editorial-meta rounded-[2px] transition-colors ${
+                      ctaModality === 'image'
+                        ? 'bg-white text-black font-semibold shadow-xs'
+                        : 'text-[#8C8C86] hover:text-white'
+                    }`}
+                  >
+                    Freeze Frame (T2I)
+                  </button>
+                </div>
+              </div>
+
+              {/* Engagement Goal Selector */}
+              <div className="space-y-1">
+                <label className="font-editorial-meta text-[9px] uppercase tracking-wider text-[#9C9C96] block">
+                  Action Focus
+                </label>
+                <div className="inline-flex w-full p-0.5 bg-[#181816] border border-white/10 rounded-[2px]">
+                  <button
+                    type="button"
+                    onClick={() => setCtaEngagementType('question')}
+                    className={`flex-1 py-1 text-[9px] sm:text-[10px] font-editorial-meta rounded-[2px] transition-colors ${
+                      ctaEngagementType === 'question'
+                        ? 'bg-white text-black font-semibold shadow-xs'
+                        : 'text-[#8C8C86] hover:text-white'
+                    }`}
+                  >
+                    Question
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCtaEngagementType('follow_subscribe')}
+                    className={`flex-1 py-1 text-[9px] sm:text-[10px] font-editorial-meta rounded-[2px] transition-colors ${
+                      ctaEngagementType === 'follow_subscribe'
+                        ? 'bg-white text-black font-semibold shadow-xs'
+                        : 'text-[#8C8C86] hover:text-white'
+                    }`}
+                  >
+                    Follow
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCtaEngagementType('dilemma')}
+                    className={`flex-1 py-1 text-[9px] sm:text-[10px] font-editorial-meta rounded-[2px] transition-colors ${
+                      ctaEngagementType === 'dilemma'
+                        ? 'bg-white text-black font-semibold shadow-xs'
+                        : 'text-[#8C8C86] hover:text-white'
+                    }`}
+                  >
+                    Dilemma
+                  </button>
+                </div>
+              </div>
+
+              {/* Typography vs Clean Plate Toggle */}
+              <div className="space-y-1">
+                <label className="font-editorial-meta text-[9px] uppercase tracking-wider text-[#9C9C96] block">
+                  Overlay Type
+                </label>
+                <div className="inline-flex w-full p-0.5 bg-[#181816] border border-white/10 rounded-[2px]">
+                  <button
+                    type="button"
+                    onClick={() => setCtaPromptMode('full')}
+                    className={`flex-1 py-1 text-[9px] sm:text-[10px] font-editorial-meta rounded-[2px] transition-colors ${
+                      ctaPromptMode === 'full'
+                        ? 'bg-white text-black font-semibold shadow-xs'
+                        : 'text-[#8C8C86] hover:text-white'
+                    }`}
+                  >
+                    With Text Overlay
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCtaPromptMode('clean')}
+                    className={`flex-1 py-1 text-[9px] sm:text-[10px] font-editorial-meta rounded-[2px] transition-colors ${
+                      ctaPromptMode === 'clean'
+                        ? 'bg-white text-black font-semibold shadow-xs'
+                        : 'text-[#8C8C86] hover:text-white'
+                    }`}
+                    title="Clean background plate for CapCut, Premiere, or native editor text"
+                  >
+                    Clean Plate
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Question Formulation and Alternates Card */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 sm:gap-3">
+              <div className="bg-[#0A0A09] p-3 border border-white/10 rounded-[2px] space-y-2 md:col-span-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-editorial-meta text-[8px] sm:text-[9px] text-amber-300 uppercase tracking-widest block">
+                    Story-Adapted Intrigue Question
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingQuestion(!isEditingQuestion)}
+                    className="text-[9px] font-editorial-meta text-[#9C9C96] hover:text-white underline cursor-pointer"
+                  >
+                    {isEditingQuestion ? 'Cancel Edit' : 'Edit Question'}
+                  </button>
+                </div>
+
+                {isEditingQuestion ? (
+                  <div className="space-y-2 pt-1">
+                    <input
+                      type="text"
+                      value={customCtaQuestion || activeCta.questionText}
+                      onChange={(e) => setCustomCtaQuestion(e.target.value)}
+                      placeholder="Type custom closing question..."
+                      className="w-full px-2.5 py-1.5 bg-[#161614] border border-white/20 rounded-[2px] text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-white/50"
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingQuestion(false)}
+                        className="px-2 py-0.5 bg-white text-black text-[9px] font-editorial-meta font-medium rounded-[2px]"
+                      >
+                        Apply Question
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomCtaQuestion('');
+                          setIsEditingQuestion(false);
+                        }}
+                        className="px-2 py-0.5 bg-[#181816] text-[#A0A09A] hover:text-white text-[9px] font-editorial-meta rounded-[2px] border border-white/10"
+                      >
+                        Reset to Story Default
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-sm sm:text-base font-display font-bold text-white tracking-wide">
+                    &ldquo;{activeCta.questionText}&rdquo;
+                  </div>
+                )}
+
+                {/* Alternates Quick Selection */}
+                {activeCta.alternateQuestions && activeCta.alternateQuestions.length > 0 && (
+                  <div className="pt-1.5 space-y-1">
+                    <span className="font-editorial-meta text-[8px] text-[#8C8C86] uppercase tracking-wider block">
+                      One-Click Narrative Alternates:
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {activeCta.alternateQuestions.map((alt, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => {
+                            setCustomCtaQuestion(alt);
+                            setIsEditingQuestion(false);
+                          }}
+                          className={`text-[9px] font-narrative px-2 py-1 border transition-colors rounded-[2px] text-left ${
+                            customCtaQuestion === alt
+                              ? 'bg-amber-950/60 border-amber-500/50 text-amber-200'
+                              : 'bg-white/5 border-white/10 text-[#C4C4C0] hover:bg-white/10 hover:text-white'
+                          }`}
+                        >
+                          &ldquo;{alt}&rdquo;
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Safe Zone Clearance Summary */}
+              <div className="bg-[#0A0A09] p-3 border border-white/10 rounded-[2px] space-y-2 md:col-span-1">
+                <span className="font-editorial-meta text-[8px] sm:text-[9px] text-emerald-400 uppercase tracking-widest block">
+                  Platform Safe Zone Clearance
+                </span>
+                <p className="text-[10px] sm:text-xs text-[#A8A8A2] font-editorial-meta leading-relaxed">
+                  {ctaPlatform === 'tiktok'
+                    ? 'Right 18% strictly clear for like, comment, bookmark, and share icon stack. Bottom 22% clear for caption marquee and sound disc. Center band (35%–65% height) safe.'
+                    : ctaPlatform === 'youtube_shorts'
+                    ? 'Bottom 20% strictly clear of text and faces for channel avatar and red Subscribe button. Right 15% clear of thumbs-up rail.'
+                    : 'Universal 10% perimeter clearance across all borders. Balanced composition compatible with Instagram Reels, X video, web embeds, and horizontal players.'}
+                </p>
+                <div className="pt-1 border-t border-white/5 font-editorial-meta text-[9px] text-[#8C8C86]">
+                  Action cue: {ctaEngagementType === 'question' ? 'Comments driver' : ctaEngagementType === 'follow_subscribe' ? 'Follow / Subscribe badge' : 'A/B dilemma poll'}
+                </div>
+              </div>
+            </div>
+
+            {/* Compiled Monospace CTA Prompt Block */}
+            <div className="bg-[#0A0A09] p-3.5 sm:p-5 border border-white/10 rounded-[2px] space-y-2 relative group">
+              <div className="flex items-center justify-between text-[9px] sm:text-[10px] font-editorial-meta text-[#8C8C86]">
+                <span>
+                  {ctaPromptMode === 'full'
+                    ? `Production CTA Outro Prompt (${ctaModality === 'video' ? 'T2V 3-Second Loop' : 'T2I Still Frame'})`
+                    : `Clean Plate Outro Prompt (${ctaModality === 'video' ? 'T2V 3-Second Loop' : 'T2I Still Frame'} Text-Free)`}
+                </span>
+                <span className="font-mono text-white/50">{activeCta.aspectRatio}</span>
+              </div>
+              <p className="text-xs sm:text-sm text-[#F5F5F0] leading-relaxed font-mono whitespace-pre-wrap selection:bg-white selection:text-black">
+                {ctaPromptMode === 'full' ? activeCta.compiledPrompt : activeCta.cleanPlatePrompt}
+              </p>
+            </div>
           </div>
-          <p className="text-xs sm:text-sm text-[#F5F5F0] leading-relaxed font-mono whitespace-pre-wrap selection:bg-white selection:text-black">
-            {thumbnailPromptMode === 'full'
-              ? activeThumbnail.compiledPrompt
-              : activeThumbnail.cleanPlatePrompt}
-          </p>
-        </div>
+        )}
       </div>
 
       {/* Full Script Summary Panel */}

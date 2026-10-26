@@ -99,6 +99,21 @@ export interface ThumbnailData {
   targetPlatform: string;
 }
 
+export type CtaPlatform = 'tiktok' | 'youtube_shorts' | 'general';
+export type CtaModality = 'image' | 'video';
+export type CtaEngagementType = 'question' | 'follow_subscribe' | 'dilemma';
+
+export interface CtaPromptData {
+  questionText: string;
+  alternateQuestions?: string[];
+  engagementType: CtaEngagementType;
+  platform: CtaPlatform;
+  modality: CtaModality;
+  aspectRatio: '16:9' | '9:16';
+  compiledPrompt: string;
+  cleanPlatePrompt: string;
+}
+
 export interface StoryGenerationResult {
   title?: string;
   totalDurationSeconds: number;
@@ -115,6 +130,7 @@ export interface StoryGenerationResult {
     hookRationale?: string;
   };
   thumbnail?: ThumbnailData;
+  ctaPrompt?: CtaPromptData;
   storyBible?: StoryBible;
   assumptions?: string[];
   authorNotes?: string;

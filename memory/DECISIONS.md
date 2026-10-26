@@ -113,9 +113,22 @@
 - **Date:** 2026-10-22
 - **Status:** Active
 
+## Collapsible Mobile-First Thumbnail Blueprint
+- **Fact/Decision:** Transformed the Cover & Thumbnail Blueprint into a collapsible accordion card with an accessible header bar, compact hook preview badge when collapsed, and a direct "Copy Prompt" action available without needing to expand the card.
+- **Context:** Fixes vertical viewport crowding on mobile and tablet devices while retaining instant one-click access to the high-CTR cover prompt.
+- **Date:** 2026-10-26
+- **Status:** Active
 
-
-
+## Story-Adaptive Call-to-Action Outro Visual Prompt Engine
+- **Fact/Decision:** Implemented a dedicated, collapsible Call-to-Action Outro engine in `src/services/promptCompiler.ts` and `src/components/ResultsView.tsx`:
+  1. Story-Adaptive Question Derivation: Infers an intriguing moral dilemma, cliffhanger inquiry, or open curiosity question directly from narrative themes (mystery, survival, betrayal, sci-fi, fantasy, drama) to maximize viewer comments and algorithmic distribution. Supports 1-click alternate questions and custom question editing.
+  2. Multi-Platform Safe Zones: Custom presets for TikTok (18% right action stack & 22% bottom caption clearance), YouTube Shorts (20% bottom channel/subscribe clearance & 15% right rail), and General Platforms (universal 10% perimeter margin for Instagram Reels, X, and web embeds).
+  3. Modality Adaptation: Dual generator targeting Text-to-Video 3-second kinetic loop (subtle dolly-in, atmospheric particles, fourth-wall breaking lingering stare) vs Text-to-Image closing freeze frame.
+  4. Overlay vs Clean Plate: Full prompt with story-adapted typography and UI action badge vs text-free clean plate for creators assembling titles in CapCut or Premiere.
+  5. Export Integration: Included automatically in JSON payload and Markdown shot list exports.
+- **Context:** Resolves creator need for short-form retention outro assets that drive engagement, comments, and subscriber growth with full platform compliance.
+- **Date:** 2026-10-26
+- **Status:** Active
 
 ## Modality Header, Kinetic Motion Sanitizer, Style Decoupling & Visual Information Budget
 - **Fact/Decision:** Resolved narrative misalignment, Gemini modality confusion (generating video instead of still images on active-verb prompts like Beat 3), and style-vs-casting contradictions:

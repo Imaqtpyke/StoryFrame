@@ -1,4 +1,4 @@
-import { Beat, Scene, StyleProfile, StoryFormat, GenerationMode, ThumbnailData } from '../types';
+import { Beat, Scene, StyleProfile, StoryFormat, GenerationMode, ThumbnailData, CtaPlatform, CtaModality, CtaEngagementType, CtaPromptData } from '../types';
 import { extractGeographicAnchor } from './beatSplitting';
 
 export type TargetModel = 'universal' | 'midjourney' | 'kling' | 'runway' | 'luma';
@@ -509,5 +509,273 @@ export function compileThumbnailPrompt(params: {
     cleanPlatePrompt,
     aspectRatio,
     targetPlatform,
+  };
+}
+
+/**
+ * Infers a high-engagement, story-adaptive CTA question designed to provoke comments
+ */
+export function inferStoryAdaptiveCtaQuestion(storyPremise?: string, characterName?: string): {
+  primaryQuestion: string;
+  alternateQuestions: string[];
+} {
+  const text = (storyPremise || '').toLowerCase();
+  const char = characterName ? characterName.trim() : 'the protagonist';
+
+  // Mystery / Detective / Secret
+  if (
+    text.includes('mystery') ||
+    text.includes('clue') ||
+    text.includes('secret') ||
+    text.includes('detective') ||
+    text.includes('murder') ||
+    text.includes('hidden') ||
+    text.includes('truth')
+  ) {
+    return {
+      primaryQuestion: 'Did you spot the single clue before the reveal, or were you blindsided?',
+      alternateQuestions: [
+        `What was ${char}'s fatal tactical mistake?`,
+        'Who do you believe was secretly behind everything?',
+        'Would you have figured out the secret in time?',
+        'Did the ending leave questions that still need answering?',
+      ],
+    };
+  }
+
+  // Horror / Suspense / Survival / Creature / Monster / Dark
+  if (
+    text.includes('horror') ||
+    text.includes('creature') ||
+    text.includes('monster') ||
+    text.includes('shadow') ||
+    text.includes('dark') ||
+    text.includes('fear') ||
+    text.includes('haunt') ||
+    text.includes('escape') ||
+    text.includes('trap')
+  ) {
+    return {
+      primaryQuestion: 'Would you have stayed behind, or fled the moment things went dark?',
+      alternateQuestions: [
+        'What would you have done differently to survive?',
+        'Would you open that door if your life depended on it?',
+        `Was ${char}'s survival luck or calculated strategy?`,
+        'Would you enter the darkness to save a companion?',
+      ],
+    };
+  }
+
+  // Betrayal / Revenge / Moral Dilemma / Sacrifice / Loyalty
+  if (
+    text.includes('betray') ||
+    text.includes('revenge') ||
+    text.includes('lie') ||
+    text.includes('trust') ||
+    text.includes('moral') ||
+    text.includes('sacrifice') ||
+    text.includes('justice') ||
+    text.includes('crime')
+  ) {
+    return {
+      primaryQuestion: 'Who was truly in the wrong here? Drop your verdict below.',
+      alternateQuestions: [
+        'Would you ever forgive what was done?',
+        'Did the punishment fit the crime, or go too far?',
+        `Would you have made the exact same sacrifice as ${char}?`,
+        'Was this justified revenge or pure cruelty?',
+      ],
+    };
+  }
+
+  // Sci-Fi / AI / Tech / Space / Future / Cyber
+  if (
+    text.includes('ai') ||
+    text.includes('robot') ||
+    text.includes('future') ||
+    text.includes('space') ||
+    text.includes('cyber') ||
+    text.includes('simulation') ||
+    text.includes('alien') ||
+    text.includes('tech')
+  ) {
+    return {
+      primaryQuestion: 'Would you accept this technology if it was offered to you today?',
+      alternateQuestions: [
+        'Is humanity heading toward this exact reality?',
+        'Would you upload your consciousness or remain behind?',
+        `Was ${char}'s discovery a miracle or a catastrophe?`,
+        'Could society ever recover from an outcome like this?',
+      ],
+    };
+  }
+
+  // Fantasy / Magic / Kingdom / Myth / Power
+  if (
+    text.includes('magic') ||
+    text.includes('dragon') ||
+    text.includes('spell') ||
+    text.includes('kingdom') ||
+    text.includes('king') ||
+    text.includes('queen') ||
+    text.includes('power') ||
+    text.includes('curse')
+  ) {
+    return {
+      primaryQuestion: 'If you possessed this power, how would you have used it?',
+      alternateQuestions: [
+        'Was the curse broken, or did it merely take a new form?',
+        `Did ${char} make the right pact in the end?`,
+        'Which realm or faction would you pledge loyalty to?',
+        'What price would you pay for that knowledge?',
+      ],
+    };
+  }
+
+  // General / Viral short-form engagement default
+  return {
+    primaryQuestion: `What would you have chosen in ${char}'s position? Tell us below.`,
+    alternateQuestions: [
+      'Did they make the right call at the end, or a huge mistake?',
+      'How would you have handled this turning point?',
+      'Do you believe there was another way out?',
+      'What do you predict happens in Episode 2?',
+    ],
+  };
+}
+
+/**
+ * Compiles a production-grade, safe-zone compliant CTA Outro prompt
+ * Adaptable across TikTok, YouTube Shorts, and General platforms,
+ * as well as Text-to-Image (T2I) and Text-to-Video (T2V) modalities.
+ */
+export function compileCtaPrompt(params: {
+  storyPremise?: string;
+  styleProfile?: StyleProfile;
+  characterSheet?: Record<string, string>;
+  format?: StoryFormat;
+  platform?: CtaPlatform;
+  modality?: CtaModality;
+  questionText?: string;
+  engagementType?: CtaEngagementType;
+}): CtaPromptData {
+  const platform = params.platform || 'tiktok';
+  const modality = params.modality || 'video';
+  const engagementType = params.engagementType || 'question';
+
+  const isWidescreen = params.format === 'long';
+  const aspectRatio: '16:9' | '9:16' = isWidescreen ? '16:9' : '9:16';
+
+  // Primary character extraction for identity lock
+  const characters = Object.entries(params.characterSheet || {});
+  let primaryCharName = 'the protagonist';
+  let primaryCharClause = 'The protagonist';
+  if (characters.length > 0) {
+    const [name, desc] = characters[0];
+    primaryCharName = name;
+    primaryCharClause = `${name} (locked visual identity: ${desc})`;
+  }
+
+  // Question resolution
+  const { primaryQuestion, alternateQuestions } = inferStoryAdaptiveCtaQuestion(params.storyPremise, primaryCharName);
+  const activeQuestion =
+    params.questionText && params.questionText.trim().length > 0
+      ? params.questionText.trim()
+      : primaryQuestion;
+
+  const artStyle = params.styleProfile?.artStyle || 'Cinematic realistic';
+  const colorPalette = params.styleProfile?.colorPalette || 'high-contrast dramatic lighting, rich atmospheric haze';
+  const lighting = params.styleProfile?.lighting || 'deep directional key light with saturated rim backlight';
+
+  // Platform specific safe zone rules & UI annotations
+  let platformLabel = 'TikTok';
+  let safeZoneGuidance = '';
+  let uiCalloutGuidance = '';
+  let cleanPlateGuidance = '';
+
+  if (platform === 'tiktok') {
+    platformLabel = 'TikTok 9:16 Vertical';
+    safeZoneGuidance =
+      'TikTok safe zone layout: Keep the right 18% completely empty to avoid overlap with vertical like, comment, bookmark, and share icon buttons. Keep the bottom 22% clear for account name, video caption lines, and audio disc. Keep top 12% clear for search and feed tabs.';
+
+    if (engagementType === 'question') {
+      uiCalloutGuidance = `UI Engagement Callout: Center safe-zone graphic card displaying the intriguing question "${activeQuestion}" in bold readable sans-serif, with a subtle dark backdrop bar. Below the question, an action tag: "Drop your verdict in the comments · Part 2 coming soon". Positioned safely in the center vertical band (y: 35% to 65%), strictly clear of the right icon column and bottom caption area.`;
+    } else if (engagementType === 'follow_subscribe') {
+      uiCalloutGuidance = `UI Engagement Callout: Center safe-zone graphic card displaying "${activeQuestion}" with a prominent follow badge: "[+] Follow for Episode 2" and comment cue "What would you do?", positioned in the safe center-left quadrant, strictly clear of the right action rail and bottom caption.`;
+    } else {
+      uiCalloutGuidance = `UI Engagement Callout: Center safe-zone graphic card displaying the moral dilemma "${activeQuestion}" with voting tags "[Option A] vs [Option B] · Comment your choice", positioned in the center vertical safe zone.`;
+    }
+
+    cleanPlateGuidance =
+      'Clean Plate & Negative Space: Center safe-zone (x: 10% to 80%, y: 30% to 70%) kept completely empty with clean atmospheric depth and dark vignette. No text, letters, question marks, logos, or UI buttons anywhere in frame, designed as a pristine background plate for editors to overlay questions and stickers in CapCut or Premiere.';
+  } else if (platform === 'youtube_shorts') {
+    platformLabel = 'YouTube Shorts 9:16 Vertical';
+    safeZoneGuidance =
+      'YouTube Shorts safe zone layout: Keep the bottom 20% strictly clear of text and focal faces for the channel avatar, channel name, and red subscribe button. Keep the right 15% clear for engagement icons (thumbs up, comments, share, remix). Keep top 10% clear.';
+
+    if (engagementType === 'question') {
+      uiCalloutGuidance = `UI Engagement Callout: Upper-middle safe zone graphic displaying "${activeQuestion}" in high-contrast clean typography with sharp drop shadow. Below it, a subtle prompt line: "Share your thoughts in the comments · Subscribe for more stories".`;
+    } else if (engagementType === 'follow_subscribe') {
+      uiCalloutGuidance = `UI Engagement Callout: Upper-middle safe zone displaying "${activeQuestion}" along with a graphical red "Subscribe" action indicator and bell reminder, placed safely above the lower 25% boundary.`;
+    } else {
+      uiCalloutGuidance = `UI Engagement Callout: Centered safe zone displaying "${activeQuestion}" with interactive prompt: "Drop your verdict below · Subscribe for the sequel".`;
+    }
+
+    cleanPlateGuidance =
+      'Clean Plate & Negative Space: Center and upper-center safe zone kept completely empty with atmospheric lighting. Zero text, no typography, no watermarks, no channel logos, engineered as a clean plate for native Shorts text and sticker tools.';
+  } else {
+    // General / Multi-platform
+    platformLabel = isWidescreen ? 'General Widescreen 16:9' : 'General Portrait 9:16';
+    safeZoneGuidance =
+      'Universal safe zone layout: Maintain 10% margin clearance on all four borders. Balanced cinematic composition compatible with Instagram Reels, X video, web embeds, and horizontal players.';
+
+    uiCalloutGuidance = `UI Engagement Callout: High-contrast centered outro title card displaying "${activeQuestion}" in crisp modern editorial typography, with a sleek interactive subline: "Comment your thoughts below · Follow for the next chapter". Positioned in the central safe zone with subtle dark backdrop backing for maximum cross-platform legibility.`;
+    cleanPlateGuidance =
+      'Clean Plate & Negative Space: Central viewing area left spacious and free of any printed text, typography, logos, or graphics, designed as a universal text-free background plate for cross-platform editors.';
+  }
+
+  // Modality specific instruction
+  let modalityHeader = '';
+  let visualActionClause = '';
+
+  if (modality === 'video') {
+    modalityHeader = `CINEMATIC 3-SECOND OUTRO VIDEO LOOP. ${platformLabel} moving video plate. Continuous seamless atmospheric loop. No jump cuts, no flashing strobes.`;
+    visualActionClause = `Camera motion: slow subtle cinematic dolly in pushing slowly toward ${primaryCharClause}. Atmospheric ambient dust particles drift through the ${lighting}. The subject holds a lingering, unresolved, emotionally resonant gaze directly into the camera lens, breaking the fourth wall in quiet suspense as the scene holds tension.`;
+  } else {
+    modalityHeader = `STATIC OUTRO FRAME ONLY. ${platformLabel} closing freeze frame. Single high-tension still image. Zero camera movement, no motion blur, no video, no multiple frames.`;
+    visualActionClause = `Composition: Freeze-frame closing portrait of ${primaryCharClause} locked in an intense climactic pause, eyes meeting the lens with deep emotional gravity. Shallow depth of field, sharp cinematic focus on facial expression, dramatic ${lighting} separating the hero from atmospheric background shadows.`;
+  }
+
+  // Full compiled prompt with typography
+  const compiledPrompt = [
+    modalityHeader,
+    `Framed in ${aspectRatio} aspect ratio for high-retention short-form outro engagement.`,
+    `Style continuity: ${artStyle}, ${colorPalette}.`,
+    visualActionClause,
+    safeZoneGuidance,
+    uiCalloutGuidance,
+    `--ar ${aspectRatio} --style raw --v 6.1`,
+  ].join(' ');
+
+  // Clean plate prompt (background only, text-free)
+  const cleanPlatePrompt = [
+    modalityHeader,
+    `Framed in ${aspectRatio} aspect ratio for high-retention short-form outro engagement.`,
+    `Style continuity: ${artStyle}, ${colorPalette}.`,
+    visualActionClause,
+    safeZoneGuidance,
+    cleanPlateGuidance,
+    `--ar ${aspectRatio} --style raw --v 6.1`,
+  ].join(' ');
+
+  return {
+    questionText: activeQuestion,
+    alternateQuestions,
+    engagementType,
+    platform,
+    modality,
+    aspectRatio,
+    compiledPrompt,
+    cleanPlatePrompt,
   };
 }

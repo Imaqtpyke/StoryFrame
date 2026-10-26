@@ -117,5 +117,16 @@
   - Updated `BeatBottomSheet.tsx` to compile directly with the universal model and removed obsolete external model badges.
   - Verified clean TypeScript validation (`tsc --noEmit`) and successful applet compilation with zero errors.
 
+- [x] **Collapsible Thumbnail & Story-Adaptive CTA Visual Prompt Engine:**
+  - Made Production Cover & Hero Thumbnail collapsible in `ResultsView.tsx` with a compact 1-line hook badge when collapsed and an always-accessible "Copy Prompt" button.
+  - Implemented story-adaptive Call-to-Action (CTA) Outro engine in `src/services/promptCompiler.ts` and `src/components/ResultsView.tsx`:
+    - Generates compelling dilemma and curiosity questions directly grounded in the narrative conflict to maximize comments and viral retention.
+    - Added 1-click alternate questions and custom question editing tools.
+    - Implemented multi-platform safe-zone presets (TikTok, YouTube Shorts, General Multi-Platform).
+    - Dual modality support: Text-to-Video (3-second kinetic ambient loop) and Text-to-Image (closing freeze frame).
+    - Dual overlay support: Full prompt with typography and action badges vs clean plate prompt for external editors in CapCut/Premiere.
+    - Integrated CTA and Thumbnail into JSON and Markdown production exports.
+    - Verified clean TypeScript compilation (`npm run build` and `tsc --noEmit`) with 0 errors.
+
 ## Next Steps / Active Tasks
-- [ ] Monitor user workflow for subsequent episode drafting across multi-episode projects.
+- Monitor user feedback on prompt generation pacing and model outputs.
