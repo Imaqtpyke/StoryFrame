@@ -181,3 +181,16 @@
 
 
 
+
+
+## AI Assistant Top Nav Integration, Beat & Asset Revision Engine, and 403 Forbidden Page
+- **Fact/Decision:** 
+  1. Relocated the AI Assistant trigger from the bottom-left floating star icon to a clean text button labeled "AI Assistant" in the top navigation bar beside "History" in `Header.tsx`, removing the floating button entirely.
+  2. Connected Assistant to live story state: when on home page with no story loaded, assistant operates as a general creative co-pilot; when a story is active or loaded from History, assistant automatically connects to that story with scene and beat continuity context.
+  3. Built the Beat, Thumbnail & CTA Prompt Revision Engine (Anti-Duplication Protocol): allows creators to ask the assistant to rewrite specific beats (e.g. S1 B2 to deduplicate against S1 B1), Cover Thumbnail, or CTA Outro while preserving locked character continuity, Kelvin lighting, optics, and biomechanics.
+  4. Structured Revision Tags with One-Click Apply and Undo: Assistant wraps revised prompts in structured tags (`[REVISE_BEAT scene=X beat=Y]`, `[REVISE_THUMBNAIL]`, `[REVISE_CTA]`), which `AssistantChatDrawer.tsx` renders as interactive cards with instant "Apply to Storyboard" and "Undo Change" actions that update both current state and local history.
+  5. Removed the detached legacy "Recommended Negative Prompt" box from `BeatBottomSheet.tsx` since negative quality controls are integrated directly into visual prompts.
+  6. Added a dedicated HTTP 403 Forbidden Error Page (`Forbidden403View.tsx`) with a self-service authorization checklist and direct routes back to settings when Google Generative Language API permissions or referrer restrictions fail.
+- **Context:** Empowers creators to refine duplicated visual beats effortlessly without leaving the storyboard workflow, cleans up UI navigation, and provides clear self-healing steps for Google API permission rejections.
+- **Date:** 2026-10-28
+- **Status:** Active

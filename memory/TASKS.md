@@ -130,3 +130,12 @@
 
 ## Next Steps / Active Tasks
 - Monitor user feedback on prompt generation pacing and model outputs.
+
+- [x] **AI Assistant Top Nav Integration, Beat/Thumbnail/CTA Prompt Revision Engine & 403 Forbidden Page:**
+  - Relocated floating assistant star icon into an "AI Assistant" text button in the top navigation bar beside "History" in `Header.tsx`, removing the floating button.
+  - Added live context connection: displays `Context: Connected: [Story Title]` with scene and beat count when a story is active or loaded from history, and `Context: General Creative Co-Pilot` on the home page.
+  - Implemented Rule 8 Beat, Thumbnail & CTA Prompt Revision Engine (Anti-Duplication Protocol) in `assistantChatService.ts` and `AssistantChatDrawer.tsx` supporting `[REVISE_BEAT scene=X beat=Y]`, `[REVISE_THUMBNAIL]`, and `[REVISE_CTA]` with interactive one-click "Apply to Storyboard", "Undo Change", and "Copy Prompt" actions.
+  - Added `updateHistoryResult` in `historyStorage.ts` ensuring live updates to storyboard prompts persist into local history.
+  - Removed detached "Recommended Negative Prompt" container from `BeatBottomSheet.tsx`.
+  - Created `Forbidden403View.tsx` with self-service authorization checklist for Google Generative Language API permissions and referrer restrictions, wired to `ActivePage === 'error-403'` and 403 error detection.
+  - Verified clean TypeScript compilation and production build.

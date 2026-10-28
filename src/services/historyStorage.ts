@@ -86,3 +86,28 @@ export function clearAllHistory(): HistoryItem[] {
   }
   return [];
 }
+
+/**
+ * Update the result of an existing history item by storyTitle or ID
+ */
+export function updateHistoryResult(updatedResult: StoryGenerationResult, storyTitle?: string): HistoryItem[] {
+  try {
+    const current = getHistoryItems();
+    if (current.length === 0) return [];
+    const targetTitle = storyTitle || updatedResult.title;
+    const updated = current.map((item) => {
+      if (item.result.title === targetTitle || (targetTitle && item.storyTitle.includes(targetTitle.substring(0, 20)))) {
+        return {
+          ...item,
+          result: updatedResult,
+        };
+      }
+      return item;
+    });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    return updated;
+  } catch (err) {
+    console.error('Failed to update story in history', err);
+    return getHistoryItems();
+  }
+}

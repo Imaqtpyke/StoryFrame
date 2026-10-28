@@ -192,4 +192,4 @@ export interface AssistantChatMessage {
   timestamp: number;
 }
 
-export type ActivePage = 'generator' | 'terms' | 'privacy' | 'guide' | 'byok-security';
+export type ActivePage = 'generator' | 'terms' | 'privacy' | 'guide' | 'byok-security' | 'error-403';

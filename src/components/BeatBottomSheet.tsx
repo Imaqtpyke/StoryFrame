@@ -256,7 +256,6 @@ export default function BeatBottomSheet({
             };
             const compiled = compileBeatPrompt(beat, fakeScene, styleProfile, 'universal', format, generationMode);
             const promptToUse = compiled.promptText;
-            const isCopiedNeg = copiedIndex === `neg-${beatKey}`;
 
             return (
               <div className="space-y-2">
@@ -304,26 +303,6 @@ export default function BeatBottomSheet({
                 }`}>
                   {promptToUse}
                 </div>
-
-                {compiled.negativePrompt && (
-                  <div className="p-2.5 bg-red-950/20 border border-red-900/30 rounded space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="font-editorial-meta text-[8.5px] text-red-300 uppercase tracking-wider">
-                        Recommended Negative Prompt
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => onCopy(compiled.negativePrompt || '', `neg-${beatKey}`)}
-                        className="text-[8.5px] font-editorial-meta text-[#9C9C96] hover:text-white"
-                      >
-                        {isCopiedNeg ? 'Copied' : 'Copy Negative'}
-                      </button>
-                    </div>
-                    <p className="font-mono text-[10px] text-red-200/90 leading-relaxed">
-                      {compiled.negativePrompt}
-                    </p>
-                  </div>
-                )}
               </div>
             );
           })()}

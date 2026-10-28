@@ -96,7 +96,39 @@ Your core identity, boundaries, and rules:
 - STRICTLY ZERO ASTERISKS: NEVER use the asterisk character (*) or double asterisks (**) anywhere in your response. Do not use asterisks for bolding, bullet points, italics, or emphasis. Use plain readable text, numbers, or dashes (-) for lists.
 - STRICTLY NO EM DASHES: Do not use em dashes. Use standard hyphens (-) or colons (:).
 - STRICTLY NO EMOJIS: Do not use any emoji characters.
-- ZERO CONVERSATIONAL FILLER: Never start with throat-clearing phrases like "Sure!", "Here is what you asked for:", or "Certainly!". Deliver the requested content directly to save tokens.`;
+- ZERO CONVERSATIONAL FILLER: Never start with throat-clearing phrases like "Sure!", "Here is what you asked for:", or "Certainly!". Deliver the requested content directly to save tokens.
+
+8. BEAT, THUMBNAIL & CTA PROMPT REVISION ENGINE (ANTI-DUPLICATION PROTOCOL):
+When the user asks to modify, rewrite, or replace a visual prompt for a specific beat (e.g. "in Scene 1 Beat 2" or "in S1 B2, change the prompt since it's slightly identical to S1 B1..."), or for the Cover Thumbnail, or for the CTA Outro:
+- Recognize the target:
+  - If a scene and beat (e.g. S1 B2, Scene 1 Beat 2, Scene 3 Beat 1): Extract the scene index and beat index.
+  - If thumbnail: Target the Cover Thumbnail.
+  - If CTA or outro: Target the Call-to-Action Outro.
+- Follow StoryFrame's Five Visual Pillars strictly:
+  1. Character Continuity: Preserve locked biometric traits, facial bone structure, age, and wardrobe from the active story.
+  2. Biomechanical Gestures and Weight: Describe precise physical action, posture tension, finger/hand arcs, and eye gaze vectors (e.g. politicians aggressively slamming hands on tax ledgers, leaning across tables, strained neck veins, clutching leather briefcases).
+  3. Atmospheric Micro-Environment: Rich tactile textures of the setting (e.g. mahogany desks, scattered fiscal papers, marble columns, smoke haze).
+  4. Directional Lighting: Cinematic Kelvin lighting (e.g. 3200K tungsten spotlight, harsh overhead fluorescent, dramatic chiaroscuro).
+  5. Optics and Aspect Ratio Flag: Specify lens (e.g. 35mm anamorphic prime lens, f/2.8) and aspect ratio flag matching the story (--ar 9:16 for vertical portrait, --ar 16:9 for widescreen).
+  6. Modality Rule: If image mode, specify static frozen frame with zero motion blur. If video mode, specify continuous video clip dynamics.
+- NEVER output a separate "Recommended Negative Prompt" box or separate negative prompt section. Incorporate all quality and negative parameters directly.
+- Wrap the final revised prompt in an action tag so the UI can provide an instant one-click apply button:
+  For beats:
+  [REVISE_BEAT scene=X beat=Y]
+  Full revised visual prompt text here...
+  [/REVISE_BEAT]
+
+  For thumbnail:
+  [REVISE_THUMBNAIL]
+  Full revised thumbnail prompt text here...
+  [/REVISE_THUMBNAIL]
+
+  For CTA Outro:
+  [REVISE_CTA]
+  Full revised CTA outro prompt text here...
+  [/REVISE_CTA]
+
+- Precede the action tag with a brief 1-sentence explanation of what changed to eliminate duplication while maintaining continuous style.`;
 
 import { AiProvider } from '../types';
 import { callGroqChatCompletion } from './groqClient';
@@ -107,7 +139,8 @@ export async function sendChatMessage(
   apiKey: string,
   modelQuality: 'standard' | 'high' = 'standard',
   provider: AiProvider = 'gemini',
-  groqModel?: string
+  groqModel?: string,
+  storyContext?: string
 ): Promise<string> {
   const trimmedKey = (apiKey || '').trim();
   if (!trimmedKey) {
@@ -118,13 +151,18 @@ export async function sendChatMessage(
     );
   }
 
+  // Build effective system instruction with active story context if present
+  const effectiveSystemInstruction = storyContext && storyContext.trim().length > 0
+    ? `${SYSTEM_INSTRUCTION}\n\n================================================================================\nACTIVE STORYBOARD CONTEXT (CURRENT STORY LOADED IN THE APP):\n================================================================================\n${storyContext.trim()}`
+    : SYSTEM_INSTRUCTION;
+
   // Format message history (keep last 6 messages to minimize token usage)
   const recentHistory = history.slice(-6);
 
   if (provider === 'groq') {
     const targetModel = groqModel || (modelQuality === 'high' ? 'openai/gpt-oss-120b' : 'qwen/qwen3.8-27b');
     const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-      { role: 'system', content: SYSTEM_INSTRUCTION },
+      { role: 'system', content: effectiveSystemInstruction },
       ...recentHistory.map((msg) => ({
         role: msg.role === 'user' ? ('user' as const) : ('assistant' as const),
         content: msg.content,
@@ -175,7 +213,7 @@ export async function sendChatMessage(
   const payload = {
     contents,
     systemInstruction: {
-      parts: [{ text: SYSTEM_INSTRUCTION }],
+      parts: [{ text: effectiveSystemInstruction }],
     },
     generationConfig: {
       temperature: 0.6,

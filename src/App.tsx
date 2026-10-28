@@ -6,6 +6,7 @@ import GeneratorForm from './components/GeneratorForm';
 import ResultsView from './components/ResultsView';
 import ResultsSkeleton from './components/ResultsSkeleton';
 import ResultsErrorView from './components/ResultsErrorView';
+import Forbidden403View from './components/Forbidden403View';
 import LegalView from './components/LegalViews';
 import ScrollToTopButton from './components/ScrollToTopButton';
 import HistoryModal from './components/HistoryModal';
@@ -13,9 +14,20 @@ import HelpGuideModal from './components/HelpGuideModal';
 import AssistantChatDrawer from './components/AssistantChatDrawer';
 import { ApiKeyProvider, useApiKey } from './context/ApiKeyContext';
 import { generateStoryDirectly } from './services/geminiClient';
-import { getHistoryItems, addHistoryItem, deleteHistoryItem, clearAllHistory } from './services/historyStorage';
+import { getHistoryItems, addHistoryItem, deleteHistoryItem, clearAllHistory, updateHistoryResult } from './services/historyStorage';
 import { ActivePage, GenerateStoryRequest, HistoryItem, StoryGenerationResult } from './types';
-import { Sparkles } from 'lucide-react';
+
+function isForbiddenError(msg: string | null): boolean {
+  if (!msg) return false;
+  const lower = msg.toLowerCase();
+  return (
+    lower.includes('403') ||
+    lower.includes('permission denied') ||
+    lower.includes('caller does not have permission') ||
+    lower.includes('generative language api') ||
+    lower.includes('forbidden')
+  );
+}
 
 function StoryFrameMain() {
   const { apiKey, aiProvider } = useApiKey();
@@ -126,6 +138,7 @@ function StoryFrameMain() {
     setIsLoading(false);
     setResult(null);
     setErrorMessage(null);
+    setActivePage('generator');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -134,6 +147,7 @@ function StoryFrameMain() {
     setResult(null);
     setLastRequest(null);
     setErrorMessage(null);
+    setActivePage('generator');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -175,6 +189,60 @@ function StoryFrameMain() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // Live prompt revision handlers for assistant and storyboard
+  const handleUpdateBeatPrompt = (sceneIndex: number, beatIndex: number, newPrompt: string) => {
+    if (!result) return;
+    const updatedScenes = result.scenes.map((scene) => {
+      if (scene.index === sceneIndex) {
+        const updatedBeats = scene.beats.map((beat) => {
+          if (beat.beatIndex === beatIndex) {
+            return { ...beat, imagePrompt: newPrompt };
+          }
+          return beat;
+        });
+        return { ...scene, beats: updatedBeats };
+      }
+      return scene;
+    });
+    const updatedResult: StoryGenerationResult = {
+      ...result,
+      scenes: updatedScenes,
+    };
+    setResult(updatedResult);
+    const updatedHistory = updateHistoryResult(updatedResult, result.title);
+    setHistoryItems(updatedHistory);
+  };
+
+  const handleUpdateThumbnailPrompt = (newPrompt: string) => {
+    if (!result || !result.thumbnail) return;
+    const updatedResult: StoryGenerationResult = {
+      ...result,
+      thumbnail: {
+        ...result.thumbnail,
+        compiledPrompt: newPrompt,
+      },
+    };
+    setResult(updatedResult);
+    const updatedHistory = updateHistoryResult(updatedResult, result.title);
+    setHistoryItems(updatedHistory);
+  };
+
+  const handleUpdateCtaPrompt = (newPrompt: string) => {
+    if (!result || !result.ctaPrompt) return;
+    const updatedResult: StoryGenerationResult = {
+      ...result,
+      ctaPrompt: {
+        ...result.ctaPrompt,
+        compiledPrompt: newPrompt,
+      },
+    };
+    setResult(updatedResult);
+    const updatedHistory = updateHistoryResult(updatedResult, result.title);
+    setHistoryItems(updatedHistory);
+  };
+
+  const isForbidden = activePage === 'error-403' || (activePage === 'generator' && errorMessage && isForbiddenError(errorMessage));
+
   return (
     <div className="min-h-screen flex flex-col bg-[#0C0C0B] text-[#F5F5F0] selection:bg-white selection:text-black relative font-narrative">
       {/* Subtle monochrome motion background layer */}
@@ -184,11 +252,21 @@ function StoryFrameMain() {
         activePage={activePage} 
         onNavigate={setActivePage} 
         onOpenHistory={() => setIsHistoryOpen(true)}
+        onOpenAssistant={() => setIsAssistantOpen(true)}
         historyCount={historyItems.length}
       />
 
       <main className="flex-1 w-full max-w-5xl mx-auto px-3 xs:px-4 sm:px-6 pt-6 sm:pt-14 pb-12 sm:pb-16 relative z-10">
-        {activePage === 'generator' ? (
+        {isForbidden ? (
+          <Forbidden403View
+            errorMessage={errorMessage || undefined}
+            onBackToEdit={handleBackToEdit}
+            onOpenModelOptions={() => {
+              handleBackToEdit();
+              setOpenModelOptionsTrigger((prev) => prev + 1);
+            }}
+          />
+        ) : activePage === 'generator' ? (
           isLoading ? (
             <ResultsSkeleton
               request={lastRequest}
@@ -262,6 +340,11 @@ function StoryFrameMain() {
       <AssistantChatDrawer
         isOpen={isAssistantOpen}
         onClose={() => setIsAssistantOpen(false)}
+        currentResult={result}
+        format={lastRequest?.format}
+        onUpdateBeatPrompt={handleUpdateBeatPrompt}
+        onUpdateThumbnailPrompt={handleUpdateThumbnailPrompt}
+        onUpdateCtaPrompt={handleUpdateCtaPrompt}
         onApplyStoryIdea={(idea) => {
           setIsAssistantOpen(false);
           setActivePage('generator');
@@ -289,18 +372,6 @@ function StoryFrameMain() {
         }}
       />
 
-      {/* Floating Assistant Trigger Button - Icon only, left edge */}
-      <button
-        type="button"
-        id="floating-assistant-btn"
-        onClick={() => setIsAssistantOpen(true)}
-        aria-label="Open StoryFrame Assistant"
-        className="fixed bottom-5 left-5 sm:bottom-6 sm:left-6 z-30 w-10 h-10 min-w-[40px] min-h-[40px] bg-[#141412]/95 hover:bg-[#1E1E1C] active:bg-[#282826] text-white border border-white/20 hover:border-white rounded-[2px] shadow-xl backdrop-blur-sm transition-all flex items-center justify-center group cursor-pointer focus:outline-none focus:ring-1 focus:ring-white"
-        title="Ask StoryFrame Assistant"
-      >
-        <Sparkles className="w-4 h-4 text-white shrink-0 transition-transform duration-200 group-hover:scale-110" />
-      </button>
-
       {/* Up button when scrolled down */}
       <ScrollToTopButton />
     </div>
@@ -314,4 +385,3 @@ export default function App() {
     </ApiKeyProvider>
   );
 }
-

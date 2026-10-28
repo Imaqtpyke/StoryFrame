@@ -5,6 +5,7 @@ interface HeaderProps {
   activePage: ActivePage;
   onNavigate: (page: ActivePage) => void;
   onOpenHistory: () => void;
+  onOpenAssistant: () => void;
   historyCount?: number;
 }
 
@@ -12,6 +13,7 @@ export default function Header({
   activePage,
   onNavigate,
   onOpenHistory,
+  onOpenAssistant,
   historyCount = 0,
 }: HeaderProps) {
   return (
@@ -31,12 +33,22 @@ export default function Header({
           </span>
         </button>
 
-        <nav className="flex items-center space-x-3 sm:space-x-6 text-[9px] sm:text-sm uppercase font-editorial-meta">
+        <nav className="flex items-center space-x-2 sm:space-x-5 text-[9px] sm:text-sm uppercase font-editorial-meta">
+          <button
+            type="button"
+            id="nav-assistant-btn"
+            onClick={onOpenAssistant}
+            className="min-h-[38px] sm:min-h-[44px] inline-flex items-center px-2 tracking-wider sm:tracking-widest text-[#B0B0A8] hover:text-white transition-colors focus:outline-none cursor-pointer"
+            title="Open AI Assistant"
+          >
+            <span>AI Assistant</span>
+          </button>
+
           <button
             type="button"
             id="nav-history-btn"
             onClick={onOpenHistory}
-            className="min-h-[38px] sm:min-h-[44px] inline-flex items-center gap-1.5 px-2 tracking-wider sm:tracking-widest text-[#B0B0A8] hover:text-white transition-colors focus:outline-none"
+            className="min-h-[38px] sm:min-h-[44px] inline-flex items-center gap-1.5 px-2 tracking-wider sm:tracking-widest text-[#B0B0A8] hover:text-white transition-colors focus:outline-none cursor-pointer"
             title="View Previous Story Breakdowns"
           >
             <HistoryIcon className="w-3 h-3 sm:w-4 sm:h-4 text-[#8C8C86]" />
