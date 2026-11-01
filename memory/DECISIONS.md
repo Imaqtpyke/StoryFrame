@@ -194,3 +194,17 @@
 - **Context:** Empowers creators to refine duplicated visual beats effortlessly without leaving the storyboard workflow, cleans up UI navigation, and provides clear self-healing steps for Google API permission rejections.
 - **Date:** 2026-10-28
 - **Status:** Active
+
+## Kinematic Beat Progression, True Deduplication & Character Sheet Purity
+- **Fact/Decision:**
+  1. Completely deleted the legacy variation-prefix table ("The altered environment.", "Emphasizing grounded scale.", "Focusing on tactile textures.") and rotating camera labels from `enforceBeatToBeatProgression`.
+  2. Implemented true semantic deduplication with 3-gram shingles and token overlap (`calculatePromptSimilarity`). If consecutive beats have >= 55% similarity:
+     - If combined duration <= 2.8s: Merges narration spans and durations into one single beat, eliminating duplicate images for short grammatical fragments.
+     - If combined duration > 2.8s: Dynamically pivots Beat N to an alternate contrasting perspective (interior POV, reverse reaction angle, or macro detail) without adding fake prefixes.
+  3. Raised `MAX_BEAT_WORDS` from 5 to 10 and `MAX_BEAT_SECONDS` to 2.4s in `beatSplitting.ts` so normal spoken sentences do not get aggressively chopped into empty visual clones.
+  4. Enforced Character Sheet Purity (`sanitizeCharacterIdentitySheet`): Strictly banned frozen physical poses, hand gestures, and specific props (e.g. clutching a Nokia phone, wrist angles, foot percentages) from global character descriptions so they do not contaminate unrelated scenes.
+  5. Centralized Prompt Assembly (`assembleCleanPrompt`): Eliminates duplicate `--ar` flags and orientation text, strips broken degenerate prompts (e.g. "Extreme."), and guarantees exactly one clean orientation prefix and one `--ar` parameter.
+  6. Synchronized scene duration math: `scene.estimatedSeconds` strictly equals the sum of its beat durations in both the application state and Markdown export tables.
+- **Context:** Resolves the critical visual beat duplication issue identified across Tagalog and English stories, ensuring genuine sequential action progression across every storyboard beat.
+- **Date:** 2026-10-31
+- **Status:** Active

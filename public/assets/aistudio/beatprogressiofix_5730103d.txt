@@ -1,0 +1,1266 @@
+perplexity's verdict
+Your system is treating narration fragments as independent “visual events,” then using a cosmetic prefix to hide the fact that no new event exists. The fix is to make **beat = a state transition**, not “a chunk of spoken text,” and to run a semantic/structural deduplication pass **before** prompt rendering. The attached file confirms the failure pattern: Scene II repeats the identical door-knock prompt across Beats 1–3, Scene III repeats the mother’s ringing-phone prompt across Beats 3–6, Scene V repeats the “DEAD” screen prompt across Beats 2–4, and Scene VII repeats the hallway-presence prompt across Beats 1–4. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/6140192/24895829-cbc6-4e61-afed-eaa27a6cdcb3/storyboard-shotlist-tiktok-1.md?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Checksum-Mode=ENABLED&X-Amz-Credential=ASIA2F3EMEYEVCWUASI7%2F20261031%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261031T235631Z&X-Amz-Expires=2473&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEJD%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJIMEYCIQDU%2BMLYVeztbsLTa1S3KkjYT4DSN%2B7GRHC5Oq%2BWy%2BNv1wIhAKsKXyD%2BEp3JUVDb3YvXAR9fEfSQ290Bet6%2BHdMasiBtKoAFCFgQARoMNjk5NzUzMzA5NzA1Igx%2FM1Vdfm%2FcHRqaIL0q3QRx9S3gkL%2Fq%2FPsNg80VFqCuymzG5b3TbAk6jfcf58MeBcR7Vo4cmJdZ%2FElcgXWp%2BSDLh%2Fok1yCfzItUVw%2FZ0fsHQ0Ui6JxA2VY%2BsEyCnXH5ssW%2BXgRT77d9N2Zrw4nMiwVhVR3xiK7wbu7aTUNiQ4wX8zRd9eyxCBxNL%2BxSzKQjW61U3ADGCWcr4ZjggXFplbCBIPXSfjAy6RkSmjXh1yX9VxYYyOiVA3ZKHYvLhyYM8UVX109h7Q1eJBgFE%2FS7bwQOI0lPasOO5Yt6T34jmXHhi0c91giHCK%2By1ndv2zeE2xW7gEXSFEqTaZhLTRMXVuJoMwwPHMn%2FfEF%2BpcAZD8abvoM8fhPTQr7kCVuYkPeU5RHVdH%2FtbHIk9J8Xhr9gDlc2n%2FeBc3i38M5xaIe1H%2FjRVIIhclJ%2BLayAB8LIgsIb3lguKcwQMCzI5cc6DOddzWTKZTzMFYxq3%2FBVJkHgBTQkMDNG2Cchx82lpXUbz1iBYX7lX1UaP8kJqoALabtwi%2FKOIAE2sKwjx%2BVWScywVUpH9d6t%2BQNyEpWpdV5vVENkP8SU9itc3aRsvZDfP02BhXJ%2BtaPkMiKLka7S1%2BRK02sf%2Fj%2B8Gjx9SjaL6stZPmVKwO88cIGKCdMin6BvNvddJrFpbf5AelW%2BNLtkEzF94SGKzIS9bVwjne9A0vrmLCFsDNsctUH%2FurRilvBjVxhQRgGfhYw3oYraSW6EuU7HC2b6ocgTP5FZt6S53pw45lRScWFKAldlttLHz3WF9gDkoAFEjhJL9gW9222hYKmp4pH933Gu%2F%2B%2FFLLlBp%2Fl0MjCF%2BJnXBjqXAegnfhykoN0pwEnQ2fAvzwZuZSWMr%2FN%2FwjJz7yOiGfiwigCskYRcogQTOvf0RK0mUosR0PzB%2BrzZ5QzDN%2BrihtbjG6vN8Cvn9CJxP3BMpe8Jbd0IE3s%2BYDfLslEMO%2Bf3hBeBZjLA%2FLTuZGEtqBXlhNg%2BWewgNxkHbza5Bm50Zsfc5OajxoLn%2B5wenYz4qhfQPj1t7PkHZAM%3D&X-Amz-SignedHeaders=host&x-id=GetObject&X-Amz-Signature=1c70bb73ca39753320921c157e7177471cdd9fefa248eef8fc3bd45745b99fb6)
+
+## Root cause
+
+There are three coupled defects:
+
+1. **Fragment-first beat splitting.** Short clauses such as “Pinakita niya sa,” “akin ang phone,” “niya na ring,” and “nang ring” become four beats even though they describe one continuous action. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/6140192/24895829-cbc6-4e61-afed-eaa27a6cdcb3/storyboard-shotlist-tiktok-1.md?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Checksum-Mode=ENABLED&X-Amz-Credential=ASIA2F3EMEYEVCWUASI7%2F20261031%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261031T235631Z&X-Amz-Expires=2473&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEJD%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJIMEYCIQDU%2BMLYVeztbsLTa1S3KkjYT4DSN%2B7GRHC5Oq%2BWy%2BNv1wIhAKsKXyD%2BEp3JUVDb3YvXAR9fEfSQ290Bet6%2BHdMasiBtKoAFCFgQARoMNjk5NzUzMzA5NzA1Igx%2FM1Vdfm%2FcHRqaIL0q3QRx9S3gkL%2Fq%2FPsNg80VFqCuymzG5b3TbAk6jfcf58MeBcR7Vo4cmJdZ%2FElcgXWp%2BSDLh%2Fok1yCfzItUVw%2FZ0fsHQ0Ui6JxA2VY%2BsEyCnXH5ssW%2BXgRT77d9N2Zrw4nMiwVhVR3xiK7wbu7aTUNiQ4wX8zRd9eyxCBxNL%2BxSzKQjW61U3ADGCWcr4ZjggXFplbCBIPXSfjAy6RkSmjXh1yX9VxYYyOiVA3ZKHYvLhyYM8UVX109h7Q1eJBgFE%2FS7bwQOI0lPasOO5Yt6T34jmXHhi0c91giHCK%2By1ndv2zeE2xW7gEXSFEqTaZhLTRMXVuJoMwwPHMn%2FfEF%2BpcAZD8abvoM8fhPTQr7kCVuYkPeU5RHVdH%2FtbHIk9J8Xhr9gDlc2n%2FeBc3i38M5xaIe1H%2FjRVIIhclJ%2BLayAB8LIgsIb3lguKcwQMCzI5cc6DOddzWTKZTzMFYxq3%2FBVJkHgBTQkMDNG2Cchx82lpXUbz1iBYX7lX1UaP8kJqoALabtwi%2FKOIAE2sKwjx%2BVWScywVUpH9d6t%2BQNyEpWpdV5vVENkP8SU9itc3aRsvZDfP02BhXJ%2BtaPkMiKLka7S1%2BRK02sf%2Fj%2B8Gjx9SjaL6stZPmVKwO88cIGKCdMin6BvNvddJrFpbf5AelW%2BNLtkEzF94SGKzIS9bVwjne9A0vrmLCFsDNsctUH%2FurRilvBjVxhQRgGfhYw3oYraSW6EuU7HC2b6ocgTP5FZt6S53pw45lRScWFKAldlttLHz3WF9gDkoAFEjhJL9gW9222hYKmp4pH933Gu%2F%2B%2FFLLlBp%2Fl0MjCF%2BJnXBjqXAegnfhykoN0pwEnQ2fAvzwZuZSWMr%2FN%2FwjJz7yOiGfiwigCskYRcogQTOvf0RK0mUosR0PzB%2BrzZ5QzDN%2BrihtbjG6vN8Cvn9CJxP3BMpe8Jbd0IE3s%2BYDfLslEMO%2Bf3hBeBZjLA%2FLTuZGEtqBXlhNg%2BWewgNxkHbza5Bm50Zsfc5OajxoLn%2B5wenYz4qhfQPj1t7PkHZAM%3D&X-Amz-SignedHeaders=host&x-id=GetObject&X-Amz-Signature=1c70bb73ca39753320921c157e7177471cdd9fefa248eef8fc3bd45745b99fb6)
+2. **No scene-local world state.** The model does not know that the door must move from closed → hand on knob → cracked open, or that the phone must move from mother-held → extended → son-held. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/6140192/24895829-cbc6-4e61-afed-eaa27a6cdcb3/storyboard-shotlist-tiktok-1.md?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Checksum-Mode=ENABLED&X-Amz-Credential=ASIA2F3EMEYEVCWUASI7%2F20261031%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261031T235631Z&X-Amz-Expires=2473&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEJD%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJIMEYCIQDU%2BMLYVeztbsLTa1S3KkjYT4DSN%2B7GRHC5Oq%2BWy%2BNv1wIhAKsKXyD%2BEp3JUVDb3YvXAR9fEfSQ290Bet6%2BHdMasiBtKoAFCFgQARoMNjk5NzUzMzA5NzA1Igx%2FM1Vdfm%2FcHRqaIL0q3QRx9S3gkL%2Fq%2FPsNg80VFqCuymzG5b3TbAk6jfcf58MeBcR7Vo4cmJdZ%2FElcgXWp%2BSDLh%2Fok1yCfzItUVw%2FZ0fsHQ0Ui6JxA2VY%2BsEyCnXH5ssW%2BXgRT77d9N2Zrw4nMiwVhVR3xiK7wbu7aTUNiQ4wX8zRd9eyxCBxNL%2BxSzKQjW61U3ADGCWcr4ZjggXFplbCBIPXSfjAy6RkSmjXh1yX9VxYYyOiVA3ZKHYvLhyYM8UVX109h7Q1eJBgFE%2FS7bwQOI0lPasOO5Yt6T34jmXHhi0c91giHCK%2By1ndv2zeE2xW7gEXSFEqTaZhLTRMXVuJoMwwPHMn%2FfEF%2BpcAZD8abvoM8fhPTQr7kCVuYkPeU5RHVdH%2FtbHIk9J8Xhr9gDlc2n%2FeBc3i38M5xaIe1H%2FjRVIIhclJ%2BLayAB8LIgsIb3lguKcwQMCzI5cc6DOddzWTKZTzMFYxq3%2FBVJkHgBTQkMDNG2Cchx82lpXUbz1iBYX7lX1UaP8kJqoALabtwi%2FKOIAE2sKwjx%2BVWScywVUpH9d6t%2BQNyEpWpdV5vVENkP8SU9itc3aRsvZDfP02BhXJ%2BtaPkMiKLka7S1%2BRK02sf%2Fj%2B8Gjx9SjaL6stZPmVKwO88cIGKCdMin6BvNvddJrFpbf5AelW%2BNLtkEzF94SGKzIS9bVwjne9A0vrmLCFsDNsctUH%2FurRilvBjVxhQRgGfhYw3oYraSW6EuU7HC2b6ocgTP5FZt6S53pw45lRScWFKAldlttLHz3WF9gDkoAFEjhJL9gW9222hYKmp4pH933Gu%2F%2B%2FFLLlBp%2Fl0MjCF%2BJnXBjqXAegnfhykoN0pwEnQ2fAvzwZuZSWMr%2FN%2FwjJz7yOiGfiwigCskYRcogQTOvf0RK0mUosR0PzB%2BrzZ5QzDN%2BrihtbjG6vN8Cvn9CJxP3BMpe8Jbd0IE3s%2BYDfLslEMO%2Bf3hBeBZjLA%2FLTuZGEtqBXlhNg%2BWewgNxkHbza5Bm50Zsfc5OajxoLn%2B5wenYz4qhfQPj1t7PkHZAM%3D&X-Amz-SignedHeaders=host&x-id=GetObject&X-Amz-Signature=1c70bb73ca39753320921c157e7177471cdd9fefa248eef8fc3bd45745b99fb6)
+3. **Deduplication is prompt-level, not event-level.** The pipeline detects near-identical prompt text and prepends phrases such as “The altered environment,” “Emphasizing grounded scale,” and “Focusing on tactile textures,” while retaining the same physical description. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/6140192/24895829-cbc6-4e61-afed-eaa27a6cdcb3/storyboard-shotlist-tiktok-1.md?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Checksum-Mode=ENABLED&X-Amz-Credential=ASIA2F3EMEYEVCWUASI7%2F20261031%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261031T235631Z&X-Amz-Expires=2473&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEJD%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJIMEYCIQDU%2BMLYVeztbsLTa1S3KkjYT4DSN%2B7GRHC5Oq%2BWy%2BNv1wIhAKsKXyD%2BEp3JUVDb3YvXAR9fEfSQ290Bet6%2BHdMasiBtKoAFCFgQARoMNjk5NzUzMzA5NzA1Igx%2FM1Vdfm%2FcHRqaIL0q3QRx9S3gkL%2Fq%2FPsNg80VFqCuymzG5b3TbAk6jfcf58MeBcR7Vo4cmJdZ%2FElcgXWp%2BSDLh%2Fok1yCfzItUVw%2FZ0fsHQ0Ui6JxA2VY%2BsEyCnXH5ssW%2BXgRT77d9N2Zrw4nMiwVhVR3xiK7wbu7aTUNiQ4wX8zRd9eyxCBxNL%2BxSzKQjW61U3ADGCWcr4ZjggXFplbCBIPXSfjAy6RkSmjXh1yX9VxYYyOiVA3ZKHYvLhyYM8UVX109h7Q1eJBgFE%2FS7bwQOI0lPasOO5Yt6T34jmXHhi0c91giHCK%2By1ndv2zeE2xW7gEXSFEqTaZhLTRMXVuJoMwwPHMn%2FfEF%2BpcAZD8abvoM8fhPTQr7kCVuYkPeU5RHVdH%2FtbHIk9J8Xhr9gDlc2n%2FeBc3i38M5xaIe1H%2FjRVIIhclJ%2BLayAB8LIgsIb3lguKcwQMCzI5cc6DOddzWTKZTzMFYxq3%2FBVJkHgBTQkMDNG2Cchx82lpXUbz1iBYX7lX1UaP8kJqoALabtwi%2FKOIAE2sKwjx%2BVWScywVUpH9d6t%2BQNyEpWpdV5vVENkP8SU9itc3aRsvZDfP02BhXJ%2BtaPkMiKLka7S1%2BRK02sf%2Fj%2B8Gjx9SjaL6stZPmVKwO88cIGKCdMin6BvNvddJrFpbf5AelW%2BNLtkEzF94SGKzIS9bVwjne9A0vrmLCFsDNsctUH%2FurRilvBjVxhQRgGfhYw3oYraSW6EuU7HC2b6ocgTP5FZt6S53pw45lRScWFKAldlttLHz3WF9gDkoAFEjhJL9gW9222hYKmp4pH933Gu%2F%2B%2FFLLlBp%2Fl0MjCF%2BJnXBjqXAegnfhykoN0pwEnQ2fAvzwZuZSWMr%2FN%2FwjJz7yOiGfiwigCskYRcogQTOvf0RK0mUosR0PzB%2BrzZ5QzDN%2BrihtbjG6vN8Cvn9CJxP3BMpe8Jbd0IE3s%2BYDfLslEMO%2Bf3hBeBZjLA%2FLTuZGEtqBXlhNg%2BWewgNxkHbza5Bm50Zsfc5OajxoLn%2B5wenYz4qhfQPj1t7PkHZAM%3D&X-Amz-SignedHeaders=host&x-id=GetObject&X-Amz-Signature=1c70bb73ca39753320921c157e7177471cdd9fefa248eef8fc3bd45745b99fb6)
+
+The correct invariant is:
+
+> **Every visual beat must change at least one of: physical state, spatial relationship, camera perspective, focal subject, or narrative information.**
+
+If it changes none of those, it must be merged with the previous beat.
+
+## 1. Kinematic progression prompting
+
+Replace “write a prompt for this narration fragment” with a two-stage generation contract:
+
+1. **Scene plan:** define the causal action chain and the state machine for each important entity.
+2. **Beat render:** select the next legal state transition and render only that transition.
+
+Add this to the master system prompt:
+
+```text
+You are a storyboard director generating a sequence of distinct visual beats.
+
+A VISUAL BEAT IS NOT A NARRATION FRAGMENT.
+A VISUAL BEAT IS ONE PHYSICAL MOMENT IN A CONTINUOUS ACTION.
+
+For every beat, you must advance the scene by changing at least one of:
+1. PHYSICAL STATE: door closed -> hand on knob -> door cracked open -> door wide.
+2. POSSESSION OR CONTACT: phone in mother's hands -> phone extended -> phone in student's hand.
+3. SCREEN OR OBJECT STATE: screen off -> incoming call -> caller ID visible -> static.
+4. CHARACTER ACTION: reaching -> gripping -> lifting -> reacting.
+5. CAMERA PERSPECTIVE: wide establishing -> over-the-shoulder -> POV -> insert/macro -> reaction.
+6. NARRATIVE REVELATION: a new visible fact enters the frame.
+
+STRICT RULES:
+- Never repeat the same physical action in consecutive beats.
+- Never repeat the same primary subject and same camera framing in consecutive beats.
+- Never describe a static scene as a new beat unless it reveals new visible information.
+- If the narration fragment does not introduce a new visual event, merge it into the previous beat.
+- Each beat must begin with a TRANSITION verb or state change, such as:
+  reaches, turns, opens, reveals, extends, takes, grips, lights up, displays, trembles, shifts.
+- Do not use generic variation prefixes such as "The altered environment",
+  "Emphasizing grounded scale", or "Focusing on tactile textures" to disguise repetition.
+- Maintain a scene-local continuity ledger for every recurring character and prop.
+- The final image prompt must describe only the exact state reached in that beat.
+```
+
+Also require each beat to emit a machine-checkable **beat contract** before the prose prompt:
+
+```json
+{
+  "beat_id": 3,
+  "narration_fragment": "Pinakita niya sa akin ang phone",
+  "primary_subject": "mother",
+  "action": "extends phone toward student",
+  "camera": "over-the-shoulder from behind student",
+  "state_changes": [
+    "phone.possession: mother_holding -> mother_offering",
+    "student.hand: at_side -> reaching_toward_phone"
+  ],
+  "new_information": "The phone is visibly being offered.",
+  "previous_beat_difference": "The phone moves from the mother's hands toward the student; camera shifts to OTS."
+}
+```
+
+Reject any beat where `state_changes` is empty and `previous_beat_difference` does not identify a concrete visual delta.
+
+## 2. Physical state-tracking schema
+
+Use a **scene-scoped continuity ledger** plus a **per-beat transition record**. The ledger is the source of truth; the prompt is generated from the ledger, not freely invented.
+
+```ts
+type EntityId = string;
+
+type StateValue = string;
+
+interface EntityState {
+  entityId: EntityId;
+  entityType: "character" | "prop" | "environment" | "screen";
+  state: Record<string, StateValue>;
+}
+
+interface StateTransition {
+  entityId: EntityId;
+  field: string;
+  from: StateValue;
+  to: StateValue;
+  trigger: string;
+}
+
+interface VisualBeat {
+  beatId: number;
+  sceneId: string;
+  narrationSpan: string;
+  startMs: number;
+  endMs: number;
+
+  subject: EntityId;
+  action: string;
+  camera: {
+    shotSize: "ECU" | "CU" | "MCU" | "MS" | "WS" | "EWS";
+    angle: "eye" | "high" | "low" | "OTS" | "POV" | "macro";
+    movement: "static" | "push-in" | "pull-out" | "pan" | "tilt" | "handheld";
+  };
+
+  stateBefore: EntityState[];
+  stateAfter: EntityState[];
+  transitions: StateTransition[];
+
+  visualDelta: string;
+  narrativeReveal?: string;
+
+  imagePrompt: string;
+  videoPrompt?: string;
+}
+
+interface ScenePlan {
+  sceneId: string;
+  goal: string;
+  entities: EntityState[];
+  requiredBeats: VisualBeat[];
+}
+```
+
+For your Scene III example, define the phone explicitly:
+
+```json
+{
+  "entityId": "nokia_phone",
+  "entityType": "prop",
+  "state": {
+    "possession": "mother_holding",
+    "position": "in_mother_hands",
+    "screen": "off",
+    "callStatus": "idle",
+    "orientation": "screen_toward_mother"
+  }
+}
+```
+
+Then force legal transitions:
+
+```json
+[
+  {
+    "entityId": "nokia_phone",
+    "field": "possession",
+    "from": "mother_holding",
+    "to": "mother_offering",
+    "trigger": "mother extends phone toward student"
+  },
+  {
+    "entityId": "nokia_phone",
+    "field": "possession",
+    "from": "mother_offering",
+    "to": "student_holding",
+    "trigger": "student takes phone"
+  },
+  {
+    "entityId": "nokia_phone",
+    "field": "screen",
+    "from": "off",
+    "to": "incoming_call",
+    "trigger": "screen illuminates"
+  },
+  {
+    "entityId": "nokia_phone",
+    "field": "screen",
+    "from": "incoming_call",
+    "to": "caller_id_visible",
+    "trigger": "unknown number becomes readable"
+  }
+]
+```
+
+For the door:
+
+```json
+{
+  "entityId": "bedroom_door",
+  "entityType": "prop",
+  "state": {
+    "position": "closed",
+    "handContact": "none",
+    "openingAngle": "0_degrees"
+  }
+}
+```
+
+Legal progression:
+
+```text
+closed -> hand_on_knob -> cracked_open_15_degrees -> swung_wide
+```
+
+Add validation rules:
+
+- A transition’s `from` must equal the previous beat’s `to` for the same entity/field.
+- No entity may return to a prior state without a narratively justified reversal.
+- Every beat must contain at least one transition, **or** be marked `sustain: true` and merged.
+- `camera` may repeat only if the physical state changes substantially; `state` may repeat only if the camera perspective changes substantially.
+- If neither changes, merge.
+
+## 3. Beat aggregation versus micro-splitting
+
+Do **not** create one image beat per token, word, or sub-clause. Create beats from **visual event boundaries**.
+
+Use this decision procedure for each narration span:
+
+| Condition | Decision |
+|---|---|
+| Fragment continues the same action, subject, and state | Merge into current beat |
+| New verb introduces a physical action | New beat |
+| Object changes holder, location, orientation, or condition | New beat |
+| Screen/content reveals new information | New beat |
+| Camera must change to communicate a new spatial relationship | New beat |
+| Fragment is under ~0.6–0.8s and has no state change | Merge |
+| Combined beat would exceed ~2.2–2.5s | Split at the next natural action boundary |
+| Fragment is a connective such as “pero,” “na,” “sa,” “niya,” “nang” | Never create its own beat |
+
+For your Scene III narration:
+
+```text
+Pagbukas ko, putla ang mama ko.
+Pinakita niya sa akin ang phone niya na ring nang ring.
+```
+
+A good six-beat plan is:
+
+1. **Door opens:** student’s hand turns knob; door cracks open.  
+2. **POV reveal:** through the opening, pale mother stands in the dark hallway.  
+3. **Offer:** mother extends the Nokia toward the student; screen still dark.  
+4. **Transfer:** student’s hand takes and grips the phone.  
+5. **Call activates:** screen lights amber; incoming call from unknown number.  
+6. **Macro insert:** speaker grille pulses; casing vibrates with visible sound-wave distortion.
+
+This matches the causal chain in the narration instead of freezing on the mother’s face and then repeating the ringing-phone close-up four times, as the current export does. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/6140192/24895829-cbc6-4e61-afed-eaa27a6cdcb3/storyboard-shotlist-tiktok-1.md?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Checksum-Mode=ENABLED&X-Amz-Credential=ASIA2F3EMEYEVCWUASI7%2F20261031%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261031T235631Z&X-Amz-Expires=2473&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEJD%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJIMEYCIQDU%2BMLYVeztbsLTa1S3KkjYT4DSN%2B7GRHC5Oq%2BWy%2BNv1wIhAKsKXyD%2BEp3JUVDb3YvXAR9fEfSQ290Bet6%2BHdMasiBtKoAFCFgQARoMNjk5NzUzMzA5NzA1Igx%2FM1Vdfm%2FcHRqaIL0q3QRx9S3gkL%2Fq%2FPsNg80VFqCuymzG5b3TbAk6jfcf58MeBcR7Vo4cmJdZ%2FElcgXWp%2BSDLh%2Fok1yCfzItUVw%2FZ0fsHQ0Ui6JxA2VY%2BsEyCnXH5ssW%2BXgRT77d9N2Zrw4nMiwVhVR3xiK7wbu7aTUNiQ4wX8zRd9eyxCBxNL%2BxSzKQjW61U3ADGCWcr4ZjggXFplbCBIPXSfjAy6RkSmjXh1yX9VxYYyOiVA3ZKHYvLhyYM8UVX109h7Q1eJBgFE%2FS7bwQOI0lPasOO5Yt6T34jmXHhi0c91giHCK%2By1ndv2zeE2xW7gEXSFEqTaZhLTRMXVuJoMwwPHMn%2FfEF%2BpcAZD8abvoM8fhPTQr7kCVuYkPeU5RHVdH%2FtbHIk9J8Xhr9gDlc2n%2FeBc3i38M5xaIe1H%2FjRVIIhclJ%2BLayAB8LIgsIb3lguKcwQMCzI5cc6DOddzWTKZTzMFYxq3%2FBVJkHgBTQkMDNG2Cchx82lpXUbz1iBYX7lX1UaP8kJqoALabtwi%2FKOIAE2sKwjx%2BVWScywVUpH9d6t%2BQNyEpWpdV5vVENkP8SU9itc3aRsvZDfP02BhXJ%2BtaPkMiKLka7S1%2BRK02sf%2Fj%2B8Gjx9SjaL6stZPmVKwO88cIGKCdMin6BvNvddJrFpbf5AelW%2BNLtkEzF94SGKzIS9bVwjne9A0vrmLCFsDNsctUH%2FurRilvBjVxhQRgGfhYw3oYraSW6EuU7HC2b6ocgTP5FZt6S53pw45lRScWFKAldlttLHz3WF9gDkoAFEjhJL9gW9222hYKmp4pH933Gu%2F%2B%2FFLLlBp%2Fl0MjCF%2BJnXBjqXAegnfhykoN0pwEnQ2fAvzwZuZSWMr%2FN%2FwjJz7yOiGfiwigCskYRcogQTOvf0RK0mUosR0PzB%2BrzZ5QzDN%2BrihtbjG6vN8Cvn9CJxP3BMpe8Jbd0IE3s%2BYDfLslEMO%2Bf3hBeBZjLA%2FLTuZGEtqBXlhNg%2BWewgNxkHbza5Bm50Zsfc5OajxoLn%2B5wenYz4qhfQPj1t7PkHZAM%3D&X-Amz-SignedHeaders=host&x-id=GetObject&X-Amz-Signature=1c70bb73ca39753320921c157e7177471cdd9fefa248eef8fc3bd45745b99fb6)
+
+Recommended minimum beat duration: **0.8s**. Recommended target: **1.0–1.8s**. If a proposed beat is below 0.8s and has no state change, merge it forward or backward.
+
+## 4. True semantic deduplication
+
+Your current deduplicator compares final prompt strings. That is too late and too shallow: prefixes such as “The altered environment” reduce textual similarity without changing meaning. The export shows exactly this failure: the same door, hand, knock, vibration, fog, and CRT description survives under different prefixes. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/6140192/24895829-cbc6-4e61-afed-eaa27a6cdcb3/storyboard-shotlist-tiktok-1.md?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Checksum-Mode=ENABLED&X-Amz-Credential=ASIA2F3EMEYEVCWUASI7%2F20261031%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261031T235631Z&X-Amz-Expires=2473&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEJD%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJIMEYCIQDU%2BMLYVeztbsLTa1S3KkjYT4DSN%2B7GRHC5Oq%2BWy%2BNv1wIhAKsKXyD%2BEp3JUVDb3YvXAR9fEfSQ290Bet6%2BHdMasiBtKoAFCFgQARoMNjk5NzUzMzA5NzA1Igx%2FM1Vdfm%2FcHRqaIL0q3QRx9S3gkL%2Fq%2FPsNg80VFqCuymzG5b3TbAk6jfcf58MeBcR7Vo4cmJdZ%2FElcgXWp%2BSDLh%2Fok1yCfzItUVw%2FZ0fsHQ0Ui6JxA2VY%2BsEyCnXH5ssW%2BXgRT77d9N2Zrw4nMiwVhVR3xiK7wbu7aTUNiQ4wX8zRd9eyxCBxNL%2BxSzKQjW61U3ADGCWcr4ZjggXFplbCBIPXSfjAy6RkSmjXh1yX9VxYYyOiVA3ZKHYvLhyYM8UVX109h7Q1eJBgFE%2FS7bwQOI0lPasOO5Yt6T34jmXHhi0c91giHCK%2By1ndv2zeE2xW7gEXSFEqTaZhLTRMXVuJoMwwPHMn%2FfEF%2BpcAZD8abvoM8fhPTQr7kCVuYkPeU5RHVdH%2FtbHIk9J8Xhr9gDlc2n%2FeBc3i38M5xaIe1H%2FjRVIIhclJ%2BLayAB8LIgsIb3lguKcwQMCzI5cc6DOddzWTKZTzMFYxq3%2FBVJkHgBTQkMDNG2Cchx82lpXUbz1iBYX7lX1UaP8kJqoALabtwi%2FKOIAE2sKwjx%2BVWScywVUpH9d6t%2BQNyEpWpdV5vVENkP8SU9itc3aRsvZDfP02BhXJ%2BtaPkMiKLka7S1%2BRK02sf%2Fj%2B8Gjx9SjaL6stZPmVKwO88cIGKCdMin6BvNvddJrFpbf5AelW%2BNLtkEzF94SGKzIS9bVwjne9A0vrmLCFsDNsctUH%2FurRilvBjVxhQRgGfhYw3oYraSW6EuU7HC2b6ocgTP5FZt6S53pw45lRScWFKAldlttLHz3WF9gDkoAFEjhJL9gW9222hYKmp4pH933Gu%2F%2B%2FFLLlBp%2Fl0MjCF%2BJnXBjqXAegnfhykoN0pwEnQ2fAvzwZuZSWMr%2FN%2FwjJz7yOiGfiwigCskYRcogQTOvf0RK0mUosR0PzB%2BrzZ5QzDN%2BrihtbjG6vN8Cvn9CJxP3BMpe8Jbd0IE3s%2BYDfLslEMO%2Bf3hBeBZjLA%2FLTuZGEtqBXlhNg%2BWewgNxkHbza5Bm50Zsfc5OajxoLn%2B5wenYz4qhfQPj1t7PkHZAM%3D&X-Amz-SignedHeaders=host&x-id=GetObject&X-Amz-Signature=1c70bb73ca39753320921c157e7177471cdd9fefa248eef8fc3bd45745b99fb6)
+
+Use a layered detector:
+
+### Layer A: exact/near-duplicate prompt
+
+Normalize whitespace, punctuation, casing, and known filler prefixes; compute cosine similarity on embeddings or token Jaccard.
+
+```ts
+const similarity = cosineSimilarity(embedding(beatA.prompt), embedding(beatB.prompt));
+
+if (similarity > 0.90) return "DUPLICATE";
+if (similarity > 0.78) return "LIKELY_DUPLICATE";
+```
+
+### Layer B: structural event signature
+
+Compare the structured fields, not prose:
+
+```ts
+const signature = [
+  beat.subject,
+  beat.action,
+  beat.camera.shotSize,
+  beat.camera.angle,
+  beat.stateAfter.map(state => `${state.entityId}:${JSON.stringify(state.state)}`).sort().join("|")
+].join("::");
+```
+
+If two consecutive beats share the same `subject`, `action`, and `stateAfter`, they are duplicates even if their prose differs.
+
+### Layer C: transition validation
+
+A beat is valid only if:
+
+```ts
+beat.transitions.length > 0 ||
+beat.camera.angle !== previous.camera.angle ||
+beat.camera.shotSize !== previous.camera.shotSize ||
+beat.narrativeReveal !== previous.narrativeReveal
+```
+
+### Repair policy
+
+| Detection | Action |
+|---|---|
+| `DUPLICATE` and combined duration ≤ 2.5s | Merge narration spans and prompts |
+| `DUPLICATE` and combined duration > 2.5s | Re-plan into distinct action beats |
+| `LIKELY_DUPLICATE` | Ask the LLM to rewrite Beat N using the state ledger and a mandatory visual delta |
+| Valid state change but identical prose | Regenerate prompt from structured transition |
+| No legal next state | Change camera perspective or introduce a reaction/insert shot, but only if it adds information |
+
+Never “fix” duplication by prefixing camera language. Either **merge** or **change the underlying event**.
+
+## 5. Implementation roadmap
+
+### Stage 1: Beat planner
+
+Input: aligned narration segments with timestamps.
+
+Output: **event beats**, not text-chunk beats.
+
+```ts
+interface NarrationSegment {
+  text: string;
+  startMs: number;
+  endMs: number;
+}
+
+interface EventBeatPlan {
+  narrationSpans: NarrationSegment[];
+  action: string;
+  subject: EntityId;
+  camera: VisualBeat["camera"];
+  transitions: StateTransition[];
+  visualDelta: string;
+}
+```
+
+Rule: a planner may consume one or more narration segments, but may not emit a beat without a `visualDelta`.
+
+### Stage 2: State-machine validator
+
+Validate each planned beat against the previous beat.
+
+```ts
+function validateBeat(prev: VisualBeat | null, next: VisualBeat): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+
+  if (prev && next.subject === prev.subject && next.action === prev.action) {
+    issues.push({
+      code: "DUPLICATE_ACTION",
+      message: "Consecutive beats repeat the same subject and action."
+    });
+  }
+
+  if (prev && next.transitions.length === 0) {
+    const cameraChanged =
+      next.camera.angle !== prev.camera.angle ||
+      next.camera.shotSize !== prev.camera.shotSize;
+
+    if (!cameraChanged && !next.narrativeReveal) {
+      issues.push({
+        code: "NO_VISUAL_PROGRESS",
+        message: "Beat has no state change, camera change, or narrative reveal."
+      });
+    }
+  }
+
+  for (const transition of next.transitions) {
+    const prior = prev?.stateAfter.find(
+      s => s.entityId === transition.entityId
+    );
+
+    if (prior && prior.state[transition.field] !== transition.from) {
+      issues.push({
+        code: "INVALID_STATE_TRANSITION",
+        message: `Expected ${transition.entityId}.${transition.field} to be "${transition.from}", but previous state was "${prior.state[transition.field]}".`
+      });
+    }
+  }
+
+  return issues;
+}
+```
+
+### Stage 3: Deduplication and repair
+
+```ts
+type RepairAction = "KEEP" | "MERGE_WITH_PREVIOUS" | "REGENERATE" | "REPLAN_SCENE";
+
+async function repairBeat(
+  previous: VisualBeat | null,
+  current: VisualBeat,
+  scene: ScenePlan
+): Promise<RepairAction> {
+  if (!previous) return "KEEP";
+
+  const issues = validateBeat(previous, current);
+
+  if (issues.some(i => i.code === "DUPLICATE_ACTION")) {
+    const combinedDuration = current.endMs - previous.startMs;
+
+    if (combinedDuration <= 2500) {
+      return "MERGE_WITH_PREVIOUS";
+    }
+
+    return "REPLAN_SCENE";
+  }
+
+  if (
+    issues.some(
+      i =>
+        i.code === "NO_VISUAL_PROGRESS" ||
+        i.code === "INVALID_STATE_TRANSITION"
+    )
+  ) {
+    return "REGENERATE";
+  }
+
+  const promptSimilarity = await comparePromptSimilarity(
+    previous.imagePrompt,
+    current.imagePrompt
+  );
+
+  if (promptSimilarity > 0.90) {
+    const combinedDuration = current.endMs - previous.startMs;
+    return combinedDuration <= 2500 ? "MERGE_WITH_PREVIOUS" : "REGENERATE";
+  }
+
+  return "KEEP";
+}
+```
+
+### Stage 4: Regeneration prompt
+
+When repairing, do **not** send the old duplicated prompt back as the main reference. Send the ledger, previous beat, and a hard constraint.
+
+```text
+Rewrite Beat N.
+
+DO NOT repeat the previous beat's visual event.
+
+PREVIOUS BEAT:
+Subject: mother
+Action: holds Nokia phone with screen glowing amber and RING pulsing
+Camera: close-up, eye-level
+Phone state: mother_holding, screen_incoming_call
+
+CURRENT NARRATION SPAN:
+"akin ang phone"
+
+REQUIRED NEXT VISUAL EVENT:
+Choose the next chronological state from the scene ledger.
+
+ALLOWED NEXT STATES:
+- phone.possession: mother_offering
+- phone.possession: student_holding
+- phone.screen: caller_id_visible
+- phone.screen: static
+
+MANDATORY OUTPUT:
+- At least one physical state transition.
+- A different camera perspective from the previous beat.
+- A concrete visual delta.
+- No reuse of the previous image prompt.
+
+Return JSON only.
+```
+
+## 6. Few-shot demonstration
+
+Give the model this exact example inside the master prompt.
+
+### Bad output
+
+```text
+Beat 3: Close-up of mother's hands holding an old Nokia 3310, screen glowing amber with RING pulsing.
+
+Beat 4: Emphasizing tactile textures. Close-up of mother's hands holding an old Nokia 3310, screen glowing amber with RING pulsing.
+
+Beat 5: Vantage perspective looking down. Close-up of mother's hands holding an old Nokia 3310, screen glowing amber with RING pulsing.
+
+Beat 6: Reaction angle focusing on physical interaction. Close-up of mother's hands holding an old Nokia 3310, screen glowing amber with RING pulsing.
+```
+
+This is invalid because all four beats contain the same physical event; the prefixes are cosmetic. 
+
+### Correct output
+
+```text
+Beat 3 — Offer:
+Over-the-shoulder from behind the student. The pale mother extends the old Nokia 3310 toward him with both hands. Its screen is still dark. The student’s right hand reaches forward, fingers opening to receive it.
+
+State changes:
+- phone.possession: mother_holding -> mother_offering
+- student.hand: lowered -> reaching
+
+Beat 4 — Transfer:
+Extreme close-up on both sets of hands. The student’s fingers close around the Nokia as the mother’s fingers release it. The phone is now fully in the student’s grip.
+
+State changes:
+- phone.possession: mother_offering -> student_holding
+
+Beat 5 — Incoming call:
+Macro insert on the Nokia screen. The dark display suddenly illuminates amber. A pixelated incoming-call alert appears from an unknown number.
+
+State changes:
+- phone.screen: off -> incoming_call
+
+Beat 6 — Physical vibration:
+Extreme macro on the phone’s speaker grille and plastic casing. The speaker pulses visibly; dust particles and faint air distortion ripple outward from the device.
+
+State changes:
+- phone.callStatus: incoming_call -> actively_ringing
+- phone.surface: still -> vibrating
+```
+
+## 7. TypeScript pipeline sketch
+
+```ts
+interface BeatCandidate {
+  narrationSpans: NarrationSegment[];
+  subject: EntityId;
+  action: string;
+  camera: VisualBeat["camera"];
+  transitions: StateTransition[];
+  narrativeReveal?: string;
+}
+
+export async function buildSequentialBeats(
+  scene: ScenePlan,
+  candidates: BeatCandidate[],
+  renderPrompt: (beat: VisualBeat) => Promise<string>
+): Promise<VisualBeat[]> {
+  const output: VisualBeat[] = [];
+  let previous: VisualBeat | null = null;
+  let beatId = 1;
+
+  for (const candidate of candidates) {
+    const startMs = candidate.narrationSpans[0].startMs;
+    const endMs = candidate.narrationSpans.at(-1)!.endMs;
+
+    let beat: VisualBeat = {
+      beatId: beatId++,
+      sceneId: scene.sceneId,
+      narrationSpan: candidate.narrationSpans.map(s => s.text).join(" "),
+      startMs,
+      endMs,
+      subject: candidate.subject,
+      action: candidate.action,
+      camera: candidate.camera,
+      stateBefore: previous?.stateAfter ?? scene.entities,
+      stateAfter: applyTransitions(
+        previous?.stateAfter ?? scene.entities,
+        candidate.transitions
+      ),
+      transitions: candidate.transitions,
+      visualDelta: describeDelta(candidate),
+      narrativeReveal: candidate.narrativeReveal,
+      imagePrompt: ""
+    };
+
+    const decision = await repairBeat(previous, beat, scene);
+
+    if (decision === "MERGE_WITH_PREVIOUS" && previous) {
+      previous.narrationSpan += " " + beat.narrationSpan;
+      previous.endMs = beat.endMs;
+      continue;
+    }
+
+    if (decision === "REGENERATE" || decision === "REPLAN_SCENE") {
+      beat = await regenerateBeatWithProgression({
+        scene,
+        previous,
+        candidate,
+        beatId: beatId - 1
+      });
+    }
+
+    beat.imagePrompt = await renderPrompt(beat);
+    output.push(beat);
+    previous = beat;
+  }
+
+  return output;
+}
+
+function applyTransitions(
+  states: EntityState[],
+  transitions: StateTransition[]
+): EntityState[] {
+  const next = structuredClone(states);
+
+  for (const transition of transitions) {
+    const entity = next.find(e => e.entityId === transition.entityId);
+
+    if (!entity) {
+      throw new Error(`Unknown entity: ${transition.entityId}`);
+    }
+
+    if (entity.state[transition.field] !== transition.from) {
+      throw new Error(
+        `Invalid transition for ${transition.entityId}.${transition.field}: ` +
+        `expected "${transition.from}", found "${entity.state[transition.field]}"`
+      );
+    }
+
+    entity.state[transition.field] = transition.to;
+  }
+
+  return next;
+}
+
+function describeDelta(candidate: BeatCandidate): string {
+  if (candidate.transitions.length === 0) {
+    return candidate.narrativeReveal ?? "";
+  }
+
+  return candidate.transitions
+    .map(t => `${t.entityId}.${t.field}: ${t.from} -> ${t.to}`)
+    .join("; ");
+}
+```
+
+## 8. Concrete quality gates
+
+Add these as hard pipeline assertions:
+
+- No two consecutive beats may have identical normalized `subject + action + stateAfter`.
+- No beat may have empty `transitions` unless it has a distinct `camera.angle`, `camera.shotSize`, or `narrativeReveal`.
+- No generic prefix may be added after deduplication.
+- Every recurring prop must have a state machine.
+- Every scene must begin with an establishing or spatial-orientation beat and end with a beat that advances the next scene’s premise.
+- Every generated prompt must be traceable to its structured `transitions`.
+- Reject any output where normalized prompt similarity to the previous beat exceeds 0.90.
+
+In practice, your Scene II should collapse from three nearly identical door prompts into two or three real beats: **hand strikes door**, **door vibrates / knock intensifies**, and **door cracks open**. Scene III should become a six-step handoff-and-call sequence rather than two repeated face shots followed by four repeated phone shots. Scene VII should progress from **disturbance appears** → **silhouette becomes clearer** → **camera reacts / student looks toward it** → **presence presses closer**, rather than four copies of the same hallway distortion.
+
+The central architectural change is simple: **stop generating prompts from narration fragments; generate a validated state-transition timeline first, then render prompts from that timeline.**
+
+claude verdict: I've finished the write-up and am handing the file over now.
+
+The duplication comes from your code, not from the model. Your exported file shows the same camera-label rotation on every duplicate run (Medium/high-angle, then Close-Up Detail/low-angle, then OTS/birds-eye, then worms-eye). A variation table also prepends filler like "The altered environment." to the previous beat's prose, so the labels end up contradicting the text. For example, Scene II Beat 2 says "Medium Shot" but its prose says "Close-up of a weathered wooden door."
+
+I put everything in `storyframe-beat-progression-fix.md`, ready to paste:
+
+- **Two-pass pipeline:** a Scene Director pass plans the beats as JSON, then a Beat Writer pass writes each image prompt from only its own moment. Giving the writer the whole scene premise is why it keeps re-describing it.
+- **State ladders:** each scene lists its entities (door, phone, screen, mother) with ordered states, and every beat records which state each one is in. Code rejects any beat that regresses a state or repeats the previous beat's state and focus.
+- **Beat aggregation:** beats that add no new visual information become `REUSE_PREVIOUS` with a punch-in or slow push instead of a new image. That keeps your phrase-level pacing without paying for duplicate images.
+- **Deduplication:** compare the structured fields first, then 3-gram overlap, then optional embeddings. If a beat is a duplicate, regenerate it up to twice with a contrast brief, then reuse or merge. The file also has a rewritten Scene III with your six-beat sequence.
+- **Prompt assembly:** camera words and the style suffix are added once in `composePrompt`, never by the model.
+
+I also found a few other bugs in the export:
+- The Character Continuity Sheet freezes a "Nokia-clutching" pose, and it gets pasted into every prompt with the Student, even the notebook shot.
+- Scene VII Beat 5 is just "Extreme." with no spoken words.
+- `ar 9:16` is appended twice on several prompts.
+- Scene header durations don't match their beat sums (Scene III says ~3s but its beats total 6s).
+
+The file's roadmap starts with deleting the variation-prefix table, since that alone removes the label/prose contradictions.
+with an included file, storyframe-beat-progression-fix.md
+
+chatgpt verdict: # StoryFrame: eliminating duplicated visual beats
+
+The attached storyboard confirms that this is a generation-pipeline problem, not simply a weak image-prompting problem.
+
+Your system already assigns different shot sizes, camera angles, and movements to consecutive beats. But the visual descriptions frequently remain unchanged. The camera metadata is changing while the underlying physical event is frozen.
+
+The fundamental fix is to make StoryFrame generate a sequence of physical events, not a sequence of prompts.
+
+I recommend a state-driven pipeline with five stages:
+
+1. Interpret the narration and identify its physical events.
+2. Group narration into visually meaningful beats.
+3. Plan the chronological actions and camera coverage.
+4. Generate prompts from the planned actions and their resulting states.
+5. Validate the sequence and repair or merge invalid beats before exporting.
+
+This architecture preserves the fast pacing of your short-form videos without requiring a new image prompt for every spoken fragment.
+
+## 1. What the attached storyboard actually reveals
+
+The seven-scene export contains 30 visual beats over approximately 31.5 seconds. Its most serious failures occur when the narration is divided into small fragments.
+
+| Scene | Observed failure                                                   | Required correction                                                                        |
+| ----- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| II    | Beats 1–3 repeat the knocking door                                 | Progress from the first knock to repeated impact, then the door handle reacting            |
+| III   | Beats 1–2 repeat Mother's face; Beats 3–6 repeat her ringing phone | Show the door opening, Mother's appearance, phone handoff, and incoming call               |
+| V     | Beats 2–4 repeat the DEAD caller-ID screen                         | Progress from the phone display to the student's reaction and the revelation of the coffin |
+| VI    | Beats 1–2 repeat the phone handoff                                 | Show the handoff, the student's attempt to answer, and the unanswered call                 |
+| VII   | Beats 1–4 repeat the unseen presence                               | Build from subtle interference to a physical disturbance and the student's reaction        |
+
+These are not merely hypothetical problems. The export contains the repeated descriptions and the generic prefixes you identified.&#x20;
+
+storyboard-shotlist-tiktok (1).md
+
+
+
+There are also two additional issues worth addressing:
+
+- Scene III's first two beats show Mother before the door-opening action has been visually established. The scene therefore skips a physical event that the narration implies.
+- Scene VII has a fifth beat with no spoken words and an incomplete visual prompt. This suggests that the current pipeline can produce an empty beat rather than rejecting it or merging it into a valid one.&#x20;
+
+  storyboard-shotlist-tiktok (1).md
+
+
+
+The current output also repeats extensive character and style information in every prompt. That makes the prompts longer without adding new visual information.
+
+## 2. Re-engineer the master system prompt
+
+The most important change is to separate the responsibilities of the planner and the prompt writer.
+
+The planner decides what physically happens next. The prompt writer describes how to visualize that event.
+
+Do not ask the same generation step to simultaneously interpret narration, invent actions, select camera coverage, and write a production-ready prompt for every fragment.
+
+### Recommended master system prompt
+
+Use the following as a new system-level instruction for your visual beat planning stage.
+
+# StoryFrame — Sequential Kinematic Beat Planner
+
+## Role
+
+You are a cinematic action planner for a short-form AI storyboard generator.
+
+Your task is to transform a narrative script into a chronological sequence of visually distinct, physically plausible moments.
+
+You are not generating a collection of independent illustrations. You are planning a continuous sequence of events that can be filmed as a series of images or video shots.
+
+## Primary objective
+
+Every generated beat must advance the visual storytelling.
+
+A beat must contain at least one of the following:
+
+1. A new physical action or meaningful action phase.
+2. A change in an object's or character's physical state.
+3. A new, narratively necessary visual revelation.
+4. A distinct character reaction caused by the preceding event.
+5. A deliberately sustained shot that communicates an important ongoing event.
+
+A change in camera angle, lens, lighting, shot size, or descriptive wording alone does not establish a new beat.
+
+## Chronological state progression
+
+Maintain a persistent state ledger for every scene.
+
+Before planning a beat, inspect the preceding beat's resulting state.
+
+The new beat must begin from that state and describe a physically plausible next event.
+
+Never reset a character, object, location, or interaction to its original condition unless an explicit action causes that reset.
+
+Examples:
+
+- A closed door cannot become open without an opening action.
+- A phone cannot transfer from Mother to Student without a handoff.
+- A phone cannot display a new caller ID without a screen transition.
+- A character cannot react to a revelation before that revelation occurs.
+- An object cannot appear in two characters' hands simultaneously unless the physical interaction supports it.
+
+## Physical action representation
+
+Every beat must specify:
+
+- The primary subject.
+- The observable physical action.
+- The action's starting state.
+- The resulting state.
+- The narrative purpose of the visual moment.
+
+Prefer specific physical verbs over vague descriptions.
+
+Examples of specific actions:
+
+- reaches, grips, turns, pushes, opens, extends, transfers, receives, presses, lifts, recoils, freezes, looks, lowers.
+
+Avoid generic descriptions that do not establish a physical event:
+
+- the atmosphere changes
+- the environment feels different
+- the camera emphasizes the subject
+- the scene becomes more intense
+
+Atmospheric changes may supplement a physical event but cannot replace it.
+
+## Beat uniqueness
+
+Compare each proposed beat against all preceding beats in its scene.
+
+If the subject, physical action, object state, narrative purpose, and visual information are substantially unchanged, do not generate another independent beat.
+
+Instead:
+
+- Extend the existing beat's duration if the action is continuous.
+- Merge the narration fragments into one beat if they describe the same event.
+- Create a new beat only when a new physical moment, meaningful state change, or necessary reaction occurs.
+
+A new camera perspective is permitted when it reveals meaningful information that was not previously visible.
+
+## Narration alignment
+
+Preserve the exact source narration and its chronological order.
+
+Do not omit, rewrite, or invent spoken words.
+
+Narration fragments are timing and alignment information, not mandatory visual beat boundaries.
+
+Multiple narration fragments may belong to one visual beat.
+
+One narration fragment may contain multiple visual beats when its duration and physical events justify the division.
+
+Never invent physical actions solely to fill a requested number of beats.
+
+## Visual prompt generation
+
+Generate prompts only after the physical action sequence has been established.
+
+Each prompt must describe the actual moment assigned to that beat.
+
+Include the relevant character identity, physical action, object state, composition, camera perspective, and visual style.
+
+Character and location continuity must be preserved.
+
+Do not add generic prefixes or camera terminology to disguise a repeated visual description.
+
+Do not duplicate the complete scene premise in every beat.
+
+## Final validation
+
+Before returning the storyboard:
+
+1. Verify chronological physical continuity.
+2. Verify that every beat has a meaningful visual purpose.
+3. Detect repeated physical events and unchanged states.
+4. Merge unnecessary micro-beats.
+5. Confirm that all source narration is preserved.
+6. Reject empty or incomplete visual prompts.
+7. Return only the validated storyboard in the requested schema.
+
+If the narration does not support enough distinct physical events, return fewer beats rather than inventing repetitive action.
+
+This instruction is intentionally strict about physical progression but allows sustained shots. That distinction matters: not every beat needs a new action, but every new beat must have a reason to exist.
+
+## 3. Physical state tracking schema
+
+The state ledger should be independent of the generated image prompt.
+
+Do not attempt to recover physical continuity by comparing the final prompt text. The prompt is a description of the state, not the authoritative source of truth.
+
+### Suggested TypeScript schema
+
+```
+
+type CharacterId = string;
+type ObjectId = string;
+type StateValue = string | number | boolean | null;
+
+interface PhysicalState {
+  characterStates: Record<CharacterId, {
+    position: string;
+    orientation: string;
+    pose: string;
+    gaze: string;
+    expression: string;
+    heldObjects: ObjectId[];
+  }>;
+
+  objectStates: Record<ObjectId, {
+    location: string;
+    holder: CharacterId | null;
+    condition: string;
+    attributes: Record<string, StateValue>;
+  }>;
+
+  environmentStates: Record<string, StateValue>;
+}
+
+interface StateTransition {
+  entityId: string;
+  property: string;
+  from: StateValue;
+  to: StateValue;
+  cause: string;
+}
+
+interface KinematicBeat {
+  beatId: string;
+  sceneId: string;
+
+  narration: string[];
+  durationSeconds: number;
+
+  action: {
+    subject: string;
+    verb: string;
+    target?: string;
+    startingState: string;
+    endingState: string;
+    causalReason: string;
+  };
+
+  stateBefore: PhysicalState;
+  stateAfter: PhysicalState;
+
+  transitions: StateTransition[];
+
+  visualPurpose: string;
+  camera: {
+    shotSize: string;
+    angle: string;
+    movement: string;
+    composition: string;
+  };
+
+  visualPrompt: string;
+  previousBeatId?: string;
+  validation: {
+    stateContinuity: boolean;
+    actionProgression: boolean;
+    visualNovelty: boolean;
+    narrationCoverage: boolean;
+  };
+}
+
+```
+
+The schema separates three concepts:
+
+- Physical state: What is true at this moment?
+- State transition: What changed and why?
+- Visual prompt: How should the moment be represented visually?
+
+The planner should generate the first two before generating the third.
+
+### Example: door and phone state machines
+
+```
+
+type DoorState =
+  | "closed"
+  | "hand_on_knob"
+  | "cracked_open"
+  | "swung_wide";
+
+type PhoneState =
+  | "held_by_mother"
+  | "extended_toward_student"
+  | "transferring"
+  | "held_by_student";
+
+type ScreenState =
+  | "off"
+  | "backlit"
+  | "incoming_call"
+  | "caller_id_revealed"
+  | "static"
+  | "unanswered_call";
+
+```
+
+For the actual StoryFrame implementation, I recommend storing the states as strings with explicit transition rules, rather than relying exclusively on TypeScript union types. The unions are useful for known state machines, but a production application may need to support arbitrary user-created objects and events.
+
+The state ledger should also support multiple objects of the same type. Mother and Student have separate phones, and the storyboard contains a coffin phone as well. Treating every phone as one global object would create continuity errors.
+
+## 4. Intelligent beat aggregation vs. micro-splitting
+
+The narration should determine what the viewer hears, while the physical action sequence determines what the viewer sees.
+
+A phrase does not deserve a new visual prompt simply because the speech-to-text or timing system split it into a new chunk.
+
+### Recommended decision rules
+
+| Situation                                                   | Decision                                                 |
+| ----------------------------------------------------------- | -------------------------------------------------------- |
+| Multiple narration fragments describe one continuous action | Merge into one visual beat                               |
+| Same action continues with no meaningful state change       | Sustain the shot                                         |
+| A new action changes the physical state                     | Create a new beat                                        |
+| A reaction follows a revelation                             | Create a new beat if the reaction is visually meaningful |
+| A new camera angle reveals new information                  | Create a new beat if the revelation matters              |
+| A short narration fragment contains no new visual event     | Attach it to an existing beat                            |
+| A narration fragment has no possible visual representation  | Preserve the narration without inventing a visual event  |
+
+The correct output may therefore contain fewer beats than the number of narration chunks.
+
+For example, the line “Pinakita niya sa akin ang phone niya na ring nang ring” does not require four independent images. It describes one presentation of a phone and an ongoing ringing event.
+
+A more useful visual sequence would be:
+
+1. Mother extends the phone.
+2. Student receives it.
+3. The phone lights up with an incoming call.
+4. The student reacts to the caller information.
+
+The narration can remain attached to the appropriate beats without being rewritten.
+
+### Duration-aware aggregation
+
+Use duration as a constraint, not as the primary beat-generation rule.
+
+A 3-second phrase may support one continuous visual event, while a single short sentence may contain several distinct actions.
+
+For text-to-image mode, a sustained shot can be represented by one still image with a longer display duration. For text-to-video mode, the same shot may contain a continuous action with multiple observable phases.
+
+The important distinction is that a beat is a visual event, not a fixed number of words or seconds.
+
+## 5. True algorithmic deduplication and re-prompting
+
+Your current deduplicator is operating at the wrong level.
+
+Adding camera language to an identical description does not produce a distinct visual moment. It only changes the wording.
+
+The solution is to compare the physical action and state transitions before comparing the final prompt text.
+
+### Recommended validation pipeline
+
+```
+
+interface BeatValidationResult {
+  duplicate: boolean;
+  reason: string;
+}
+
+function validateBeatProgression(
+  previous: KinematicBeat,
+  current: KinematicBeat
+): BeatValidationResult {
+
+  const previousAction = previous.action;
+  const currentAction = current.action;
+
+  const sameAction =
+    previousAction.subject === currentAction.subject &&
+    previousAction.verb === currentAction.verb &&
+    previousAction.target === currentAction.target;
+
+  const sameState =
+    JSON.stringify(previous.stateAfter) ===
+    JSON.stringify(current.stateAfter);
+
+  const samePurpose =
+    previous.visualPurpose === current.visualPurpose;
+
+  const hasStateTransition =
+    current.transitions.length > 0;
+
+  const hasNewVisualPurpose =
+    current.visualPurpose !== previous.visualPurpose;
+
+  const sameCamera =
+    previous.camera.shotSize === current.camera.shotSize &&
+    previous.camera.angle === current.camera.angle &&
+    previous.camera.movement === current.camera.movement;
+
+  if (
+    sameAction &&
+    sameState &&
+    samePurpose &&
+    !hasStateTransition &&
+    !hasNewVisualPurpose
+  ) {
+    return {
+      duplicate: true,
+      reason: "No meaningful physical or narrative progression."
+    };
+  }
+
+  if (
+    sameState &&
+    samePurpose &&
+    !hasStateTransition &&
+    sameCamera
+  ) {
+    return {
+      duplicate: true,
+      reason: "Repeated visual information without a new event."
+    };
+  }
+
+  return {
+    duplicate: false,
+    reason: "Distinct physical or narrative moment."
+  };
+}
+
+```
+
+This is a baseline validation function. It is not a complete semantic deduplicator, but it demonstrates the correct validation target.
+
+For a production implementation, I would use three independent checks:
+
+1. Exact and normalized text similarity to catch obvious copies.
+2. Semantic similarity between the action, state transitions, and visual purpose.
+3. Chronological state validation to reject impossible or redundant events.
+
+The first check is inexpensive and deterministic. The second catches paraphrased duplicates. The third catches physical continuity errors even when the descriptions are completely different.
+
+### Semantic duplication scoring
+
+Use an LLM or embedding model to compare structured beat representations, not only the raw prompts.
+
+The comparison should answer:
+
+- Is this the same physical event?
+- Does the new beat reveal new information?
+- Does an object or character change state?
+- Is the new shot necessary to understand the story?
+- Could both beats be represented by one continuous shot?
+
+A duplicate score should be based on these semantic properties, rather than a single similarity threshold on the final prompt text.
+
+A prompt can have low textual similarity and still depict the same event. Conversely, two similar prompts may represent different moments if the physical state has changed.
+
+### Repair strategy
+
+When a beat fails validation:
+
+1. Re-plan the action from the previous beat's resulting state.
+2. If no new event is supported by the narration, merge it with the previous beat.
+3. If a new event is supported, generate a new action and state transition.
+4. Regenerate the visual prompt from the repaired action.
+5. Revalidate the repaired sequence.
+
+Do not automatically append a different camera angle or descriptive phrase.
+
+Also, do not retry indefinitely. If the model cannot produce a valid new event after a limited number of attempts, merge the beat or return a validation failure.
+
+## 6. Few-shot demonstrations
+
+The following examples are particularly important because they teach the model what counts as a genuine visual change.
+
+### Example A — Correct door progression
+
+```
+
+{
+  "scene": "The student hears knocking",
+  "beats": [
+    {
+      "action": "A shadowed hand strikes the closed wooden door",
+      "stateAfter": {
+        "door": "closed",
+        "hand": "striking_door"
+      },
+      "visualPurpose": "Establish the unexpected knocking"
+    },
+    {
+      "action": "The student's hand reaches the door handle",
+      "stateAfter": {
+        "door": "closed",
+        "hand": "gripping_handle"
+      },
+      "visualPurpose": "Show the student's decision to investigate"
+    },
+    {
+      "action": "The student turns the handle and cracks the door open",
+      "stateAfter": {
+        "door": "cracked_open",
+        "hand": "holding_handle"
+      },
+      "visualPurpose": "Reveal the opening doorway"
+    },
+    {
+      "action": "The student sees his pale mother standing in the hallway",
+      "stateAfter": {
+        "door": "cracked_open",
+        "mother": "standing_in_hallway"
+      },
+      "visualPurpose": "Reveal the unexpected visitor"
+    }
+  ]
+}
+
+```
+
+The narration can be continuous across these beats. The visual sequence advances because the physical event advances.
+
+### Example B — Incorrect and correct phone progression
+
+Incorrect:
+
+- Mother holds the ringing phone.
+- Mother holds the ringing phone from another angle.
+- Mother holds the ringing phone in a closer shot.
+
+Correct:
+
+- Mother extends the phone toward the student.
+- Student reaches out to receive it.
+- The phone changes hands.
+- The screen lights up with an incoming call.
+- The student sees the caller information.
+
+The correct sequence introduces physical transitions and new information, not merely new camera perspectives.
+
+### Example C — Sustaining an ongoing shot
+
+Suppose the narration says:
+
+“Ramdam ko na parang may nasa kabila nga.”
+
+The shot can sustain the student's phone and the dark hallway while the narration continues.
+
+A new beat becomes justified when the disturbance changes:
+
+- The screen begins to distort.
+- The student notices the disturbance.
+- The hallway light flickers in response.
+- The unseen presence becomes physically perceptible.
+
+These are separate visual events. Repeating the same vague silhouette four times is not.
+
+## 7. Step-by-step implementation roadmap
+
+### Phase 1 — Introduce structured planning
+
+Replace direct narration-to-prompt generation with narration-to-action-plan generation.
+
+The action planner should return the physical event sequence, the state ledger, and the visual purpose of each beat.
+
+Keep the current continuity sheets, but move their role from prompt text into structured reference data.
+
+### Phase 2 — Add beat aggregation
+
+Group narration fragments before generating image prompts.
+
+The aggregation stage should identify which fragments belong to the same physical event and which ones represent new events.
+
+This stage should be allowed to reduce the number of beats.
+
+### Phase 3 — Generate prompts from state transitions
+
+Generate the image prompt from:
+
+- The starting state.
+- The physical action.
+- The resulting state.
+- The visual purpose.
+- The camera and composition.
+- The relevant character and location continuity.
+
+The prompt should describe only the necessary physical details for the current moment.
+
+### Phase 4 — Add validation and repair
+
+Run the state continuity and semantic duplication checks before exporting the storyboard.
+
+Repair invalid beats by re-planning or merging them.
+
+Never disguise a duplicate by adding generic camera terminology.
+
+### Phase 5 — Add production tests
+
+Create regression tests using the exact scenes in the attached export.
+
+At minimum, test:
+
+- Door opening and mother reveal.
+- Phone handoff and incoming call.
+- Caller ID revelation.
+- Unanswered call.
+- Unseen presence escalation.
+
+The tests should verify the sequence of state transitions, not merely the presence of different words in the generated prompts.
+
+## 8. Final architectural recommendation
+
+The strongest design for StoryFrame is a state-driven cinematic planner with a separate prompt compiler and a deterministic validation layer.
+
+The LLM should be responsible for interpreting the story and proposing plausible physical events. The application should be responsible for enforcing chronological continuity, validating state transitions, and rejecting redundant beats.
+
+That separation is what makes the system reliable.
+
+A well-written prompt alone will not permanently eliminate duplication. The system needs an explicit representation of what has already happened, what changes next, and why the next visual moment deserves to exist.
+
+For StoryFrame, I would prioritize the state ledger and beat aggregation before attempting more sophisticated semantic deduplication. Once the model is generating structured physical events, the deduplication problem becomes much easier to solve and the resulting storyboard will be more coherent, more cinematic, and more useful for both text-to-image and text-to-video production.

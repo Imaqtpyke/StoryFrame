@@ -15,7 +15,7 @@ import {
   populateSceneTransitionHints,
 } from './beatSplitting';
 import { updateVideoPromptDuration } from './videoSuitability';
-import { cleanAndDeduplicatePrompt, enforceBeatToBeatProgression } from './geminiClient';
+import { cleanAndDeduplicatePrompt, enforceBeatToBeatProgression, assembleCleanPrompt, sanitizeCharacterIdentitySheet } from './geminiClient';
 import { fetchWithExponentialBackoff } from '../utils/retryFetch';
 import { executeGroundedPipeline } from './groundedPipeline';
 import { executeJsonLlmCall } from './unifiedAiService';
@@ -543,7 +543,7 @@ ${durationInstruction}`;
   if (parsedData.characterSheet && typeof parsedData.characterSheet === 'object') {
     for (const [key, val] of Object.entries(parsedData.characterSheet)) {
       if (typeof val === 'string' && val.trim().length > 0) {
-        sanitizedCharacterSheet[key.trim()] = removeEmDashes(val.trim());
+        sanitizedCharacterSheet[key.trim()] = sanitizeCharacterIdentitySheet(removeEmDashes(val.trim()));
       }
     }
   }
@@ -627,7 +627,7 @@ ${durationInstruction}`;
         transitionHint: beat.transitionHint ? removeEmDashes(beat.transitionHint) : undefined,
         soundCue,
         optics,
-        imagePrompt: imagePrompt.trim(),
+        imagePrompt: assembleCleanPrompt(imagePrompt.trim(), format === 'long'),
         estimatedSeconds: typeof beat.estimatedSeconds === 'number' && beat.estimatedSeconds > 0
           ? beat.estimatedSeconds
           : 2,

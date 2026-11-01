@@ -1,7 +1,7 @@
 import { Beat, Scene, StyleProfile } from '../types';
 
-export const MAX_BEAT_SECONDS = 1.8;
-export const MAX_BEAT_WORDS = 5;
+export const MAX_BEAT_SECONDS = 2.4;
+export const MAX_BEAT_WORDS = 10;
 
 /**
  * Detects whether a beat's text span or spoken phrase contains a date, year, century, decade, or elapsed time anchor.
@@ -418,21 +418,32 @@ export function mergeRedundantNearDuplicateBeats(
     const combinedWords = getWordCount(current.textSpan + ' ' + next.textSpan);
     const combinedSeconds = (current.estimatedSeconds || 1.5) + (next.estimatedSeconds || 1.5);
 
-    // Normalize prompts for comparison
-    const normPrompt1 = (current.imagePrompt || '').replace(/\[.*?\]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
-    const normPrompt2 = (next.imagePrompt || '').replace(/\[.*?\]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+    // Normalize prompts for comparison (strip punctuation and bracketed framing)
+    const cleanP1 = (current.imagePrompt || '').replace(/\[.*?\]/g, '').replace(/[^a-z0-9\s]/gi, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+    const cleanP2 = (next.imagePrompt || '').replace(/\[.*?\]/g, '').replace(/[^a-z0-9\s]/gi, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
 
-    // Check if prompts are near-identical or share identical subject & action descriptions
-    const isIdenticalPrompt = normPrompt1 === normPrompt2 || (normPrompt1.length > 20 && normPrompt2.length > 20 && (normPrompt1.includes(normPrompt2) || normPrompt2.includes(normPrompt1)));
-    const fitsWithinCeiling = combinedWords <= maxBeatWords && combinedSeconds <= maxBeatSeconds;
+    // Check token overlap
+    const words1 = cleanP1.split(' ').filter((w) => w.length > 3);
+    const words2 = cleanP2.split(' ').filter((w) => w.length > 3);
+    const set1 = new Set(words1);
+    let overlapCount = 0;
+    for (const w of words2) {
+      if (set1.has(w)) overlapCount++;
+    }
+    const tokenOverlap = (words1.length > 0 && words2.length > 0)
+      ? overlapCount / Math.max(words1.length, words2.length)
+      : 0;
 
-    if (fitsWithinCeiling && isIdenticalPrompt) {
+    const isIdenticalPrompt = cleanP1 === cleanP2 || tokenOverlap > 0.65;
+    // Allow merging near-duplicates up to 3.2 seconds or 16 words to prevent duplicate frozen frames
+    const fitsWithinCeiling = combinedSeconds <= 3.2 && combinedWords <= 16;
+
+    if (isIdenticalPrompt && fitsWithinCeiling) {
       // Merge next into current
       current = {
         ...current,
         textSpan: `${current.textSpan.trim()} ${next.textSpan.trim()}`,
         estimatedSeconds: Math.round(combinedSeconds * 10) / 10,
-        // Keep current's prompt or pick longer
         imagePrompt: current.imagePrompt.length >= next.imagePrompt.length ? current.imagePrompt : next.imagePrompt
       };
     } else {
@@ -600,10 +611,12 @@ export function enforceBeatCeilings(
       ? originalBeat.estimatedSeconds
       : Math.max(1.0, Math.min(maxBeatSeconds, Math.round(wordCount * 0.35 * 10) / 10));
 
-    // Check if beat needs subdivision:
-    // 1. Exceeds maxBeatWords or maxBeatSeconds
-    // 2. In video mode, if this is the ONLY beat in the scene and has 5 or more words
-    const shouldSplit = wordCount > maxBeatWords || seconds > maxBeatSeconds || (isVideoMode && deduplicatedInputBeats.length === 1 && wordCount >= 5);
+    // Do NOT artificially subdivide a beat if it already has a rich visual prompt from the AI generator,
+    // unless it is an extraordinarily long run-on sentence exceeding 14 words or 3.5 seconds.
+    const hasRichPrompt = Boolean(originalBeat.imagePrompt && originalBeat.imagePrompt.trim().length > 30);
+    const shouldSplit = hasRichPrompt
+      ? (wordCount > 14 || seconds > 3.5)
+      : (wordCount > maxBeatWords || seconds > maxBeatSeconds || (isVideoMode && deduplicatedInputBeats.length === 1 && wordCount >= 5));
 
     if (shouldSplit) {
       const targetChunkWords = isVideoMode

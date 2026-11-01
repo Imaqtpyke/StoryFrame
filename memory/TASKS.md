@@ -139,3 +139,11 @@
   - Removed detached "Recommended Negative Prompt" container from `BeatBottomSheet.tsx`.
   - Created `Forbidden403View.tsx` with self-service authorization checklist for Google Generative Language API permissions and referrer restrictions, wired to `ActivePage === 'error-403'` and 403 error detection.
   - Verified clean TypeScript compilation and production build.
+- [x] **Kinematic Beat Progression, True Deduplication & Character Sheet Purity:**
+  - Deleted legacy variation-prefix table ("The altered environment.", "Emphasizing grounded scale.", etc.) and blind camera label rotation from `enforceBeatToBeatProgression`.
+  - Implemented true semantic deduplication in `geminiClient.ts` (`calculatePromptSimilarity`): consecutive beats >= 55% similarity merge if combined duration <= 2.8s; if > 2.8s, the second beat dynamically pivots to an interior POV, reverse reaction, or macro detail without fake prefixes.
+  - Raised `MAX_BEAT_WORDS` from 5 to 10 and `MAX_BEAT_SECONDS` to 2.4s in `beatSplitting.ts`, and prevented subdivision of beats that already have rich AI prompts.
+  - Added `sanitizeCharacterIdentitySheet` to strip frozen poses and props-in-hand from global character sheets so they do not contaminate unrelated scenes.
+  - Added `assembleCleanPrompt` to guarantee clean orientation and exactly one `--ar` parameter, and guarded against degenerate prompts (e.g. "Extreme.").
+  - Synchronized scene duration math to equal the sum of beat durations in state and Markdown export tables.
+  - Verified clean compilation with `tsc --noEmit` and production build with `compile_applet`.

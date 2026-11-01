@@ -478,7 +478,9 @@ export default function ResultsView({
 
     md += `## Director Shot List Breakdown\n\n`;
     normalizedScenes.forEach((scene) => {
-      md += `### SCENE ${toRomanNumeral(scene.index)} (~${scene.estimatedSeconds}s)\n`;
+      const sceneBeatSum = (scene.beats || []).reduce((acc, b) => acc + (b.estimatedSeconds || 0), 0);
+      const effectiveSec = sceneBeatSum > 0 ? Math.round(sceneBeatSum * 10) / 10 : scene.estimatedSeconds;
+      md += `### SCENE ${toRomanNumeral(scene.index)} (~${effectiveSec}s)\n`;
       md += `**Narrator Line**:\n"${scene.narratorLine}"\n\n`;
 
       if (scene.videoPrompt) {
@@ -492,7 +494,12 @@ export default function ResultsView({
       md += `| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n`;
       (scene.beats || []).forEach((b) => {
         const transNote = b.transitionHint ? b.transitionHint.replace(/\|/g, '-') : '-';
-        md += `| Beat ${b.beatIndex} | ~${b.estimatedSeconds}s | ${b.shotType || 'Medium Shot'} | ${b.cameraAngle || 'Eye-level'} | ${b.cameraMovement || 'Static'} | ${transNote} | "${b.textSpan.replace(/\|/g, '-')}" | ${b.imagePrompt.replace(/\|/g, '-')} |\n`;
+        let cleanPrompt = (b.imagePrompt || '').replace(/\|/g, '-');
+        cleanPrompt = cleanPrompt.replace(/\s*--ar\s+[0-9:]+/gi, '').replace(/,\s*ar\s+[0-9:]+[.,]?/gi, '').replace(/\bar\s+[0-9:]+[.,]?/gi, '').trim();
+        cleanPrompt = cleanPrompt.replace(/\s+([,.;!?])/g, '$1').replace(/\s{2,}/g, ' ').trim();
+        if (cleanPrompt && !/[.!?]$/.test(cleanPrompt)) cleanPrompt += '.';
+        const promptWithAr = cleanPrompt ? `${cleanPrompt} --ar ${format === 'long' ? '16:9' : '9:16'}` : '';
+        md += `| Beat ${b.beatIndex} | ~${b.estimatedSeconds}s | ${b.shotType || 'Medium Shot'} | ${b.cameraAngle || 'Eye-level'} | ${b.cameraMovement || 'Static'} | ${transNote} | "${b.textSpan.replace(/\|/g, '-')}" | ${promptWithAr} |\n`;
       });
       md += `\n`;
     });

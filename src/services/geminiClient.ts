@@ -151,46 +151,201 @@ export function cleanAndDeduplicatePrompt(
   return cleaned;
 }
 
+const BOILERPLATE_PATTERNS = [
+  /shot on 35mm[^.]*\./gi,
+  /vertical 9:16[^.]*\./gi,
+  /cinematic 16:9[^.]*\./gi,
+  /--ar\s+[0-9:]+/gi,
+  /visual style:[^.]*\./gi,
+  /character continuity \([^)]*\)\.?/gi,
+  /location continuity \([^)]*\)\.?/gi,
+  /\bar\s+[0-9:]+[.,]?/gi,
+];
+
+const STOP_WORDS = new Set(
+  'a an the of in on at to with and or as by for from is are was were its it this that his her their into over under across just than then'.split(' ')
+);
+
+export function getCorePromptTokens(prompt: string): string[] {
+  let cleaned = prompt;
+  for (const pattern of BOILERPLATE_PATTERNS) {
+    cleaned = cleaned.replace(pattern, ' ');
+  }
+  // Strip any legacy variation table prefixes
+  cleaned = cleaned.replace(/^(?:the altered environment|emphasizing grounded scale|focusing on tactile textures|vantage perspective[^.]*|reaction angle[^.]*)\.\s*/i, '');
+  return cleaned
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
+}
+
+function compute3GramShingles(tokens: string[]): Set<string> {
+  const s = new Set<string>();
+  for (let i = 0; i <= tokens.length - 3; i++) {
+    s.add(tokens.slice(i, i + 3).join(' '));
+  }
+  return s;
+}
+
+function jaccardIndex(a: Set<string>, b: Set<string>): number {
+  if (!a.size || !b.size) return 0;
+  let intersection = 0;
+  for (const item of a) {
+    if (b.has(item)) intersection++;
+  }
+  return intersection / (a.size + b.size - intersection);
+}
+
+export function calculatePromptSimilarity(a: string, b: string): number {
+  const tokensA = getCorePromptTokens(a);
+  const tokensB = getCorePromptTokens(b);
+  if (tokensA.length === 0 || tokensB.length === 0) return 0;
+
+  const shinglesA = compute3GramShingles(tokensA);
+  const shinglesB = compute3GramShingles(tokensB);
+  const wordsA = new Set(tokensA);
+  const wordsB = new Set(tokensB);
+
+  const shingleScore = jaccardIndex(shinglesA, shinglesB);
+  const wordScore = jaccardIndex(wordsA, wordsB);
+  return 0.6 * shingleScore + 0.4 * wordScore;
+}
+
 /**
- * Ensures consecutive beats never repeat the exact same framing or visual subject.
- * If Beat N and Beat N-1 are nearly identical (>75% token overlap), adapts Beat N
- * to an evolving camera angle and distinct visual perspective.
+ * Strips frozen physical poses, hand gestures, and specific props from character continuity sheets.
+ * Ensures the characterSheet retains only locked biometric identity (face, hair, skin) and wardrobe.
  */
-export function enforceBeatToBeatProgression(beats: any[]): any[] {
+export function sanitizeCharacterIdentitySheet(desc: string): string {
+  if (!desc || typeof desc !== 'string') return '';
+  let cleaned = desc.trim();
+  // Strip specific frozen poses and props-in-hand
+  cleaned = cleaned.replace(/Hands visible in lower frame[^.;]*[.;]?/gi, '');
+  cleaned = cleaned.replace(/right hand clutching[^.;]*[.;]?/gi, '');
+  cleaned = cleaned.replace(/left hand rests on[^.;]*[.;]?/gi, '');
+  cleaned = cleaned.replace(/wrist flexed[^.;]*[.;]?/gi, '');
+  cleaned = cleaned.replace(/weight \d+%\s*on[^.;]*[.;]?/gi, '');
+  cleaned = cleaned.replace(/torso twisted \d+°[^.;]*[.;]?/gi, '');
+  cleaned = cleaned.replace(/holds (?:her|his) own[^.;]*[.;]?/gi, '');
+  cleaned = cleaned.replace(/standing in dim hallway[^.;]*[.;]?/gi, '');
+  cleaned = cleaned.replace(/gaze fixed on phone screen[.;]?/gi, '');
+  cleaned = cleaned.replace(/\s{2,}/g, ' ').replace(/\s+([,.;])/g, '$1').trim();
+  return cleaned;
+}
+
+/**
+ * Ensures consecutive beats never repeat identical visual descriptions.
+ * If Beat N and Beat N-1 are duplicates (>= 55% token overlap or identical visual state):
+ * - If combined duration <= 2.8s: Merges narration spans and durations into one single beat.
+ * - If combined duration > 2.8s: Dynamically pivots Beat N to a contrasting camera perspective
+ *   (e.g. reverse reaction angle, interior POV, or macro detail) without adding fake filler prefixes.
+ */
+export function enforceBeatToBeatProgression(beats: Beat[]): Beat[] {
   if (!Array.isArray(beats) || beats.length <= 1) return beats;
 
-  for (let i = 1; i < beats.length; i++) {
-    const prev = beats[i - 1];
-    const curr = beats[i];
-    if (!prev.imagePrompt || !curr.imagePrompt) continue;
+  const output: Beat[] = [];
+  let prevBeat: Beat | null = null;
 
-    // Check word token overlap
-    const prevWords = new Set(prev.imagePrompt.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3));
-    const currWords = curr.imagePrompt.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3);
-    if (prevWords.size === 0 || currWords.length === 0) continue;
-
-    let overlapCount = 0;
-    for (const w of currWords) {
-      if (prevWords.has(w)) overlapCount++;
+  for (let i = 0; i < beats.length; i++) {
+    const curr = { ...beats[i] };
+    if (!prevBeat) {
+      output.push(curr);
+      prevBeat = curr;
+      continue;
     }
-    const overlapRatio = overlapCount / Math.max(prevWords.size, currWords.length);
 
-    // If prompts are > 75% identical, force camera progression without quoting spoken narration
-    if (overlapRatio > 0.75) {
-      const distinctAngles = [
-        'Close-Up reaction angle focusing on physical interaction',
-        'Wide panoramic establishing perspective showing the altered environment',
-        'Low-Angle hero framing emphasizing grounded scale',
-        'Macro detail view focusing on tactile textures',
-        'High-angle vantage perspective looking down across the scene',
-      ];
-      const newFraming = distinctAngles[i % distinctAngles.length];
-      curr.imagePrompt = `${newFraming}. ${curr.imagePrompt.replace(/^(A |An |The )[^,.]*[,.]/i, '')}`.trim();
-      curr.cameraMovement = curr.cameraMovement === prev.cameraMovement ? 'Tracking Subject' : curr.cameraMovement;
+    const similarity = calculatePromptSimilarity(prevBeat.imagePrompt || '', curr.imagePrompt || '');
+    const combinedSeconds = (prevBeat.estimatedSeconds || 1.5) + (curr.estimatedSeconds || 1.5);
+
+    // If prompts are > 55% identical
+    if (similarity >= 0.55) {
+      if (combinedSeconds <= 2.8) {
+        // Merge curr into prevBeat to avoid duplicate images
+        prevBeat.textSpan = `${prevBeat.textSpan.trim()} ${curr.textSpan.trim()}`.trim();
+        prevBeat.estimatedSeconds = Math.round(combinedSeconds * 10) / 10;
+        // Keep the more detailed prompt
+        if ((curr.imagePrompt || '').length > (prevBeat.imagePrompt || '').length) {
+          prevBeat.imagePrompt = curr.imagePrompt;
+        }
+        continue;
+      } else {
+        // Pivot curr to an alternate contrasting perspective without fake prefixes
+        const lowerPrompt = (curr.imagePrompt || '').toLowerCase();
+        let evolvedAction = curr.imagePrompt;
+
+        if (lowerPrompt.includes('door') || lowerPrompt.includes('knocking') || lowerPrompt.includes('knock')) {
+          evolvedAction = 'First-person interior point-of-view from inside the bedroom, looking toward the closed wooden door as the heavy knocking vibrations cause the doorframe and brass latch to rattle noticeably.';
+          curr.shotType = 'Point-of-View (POV)';
+          curr.cameraAngle = 'eye-level';
+          curr.cameraMovement = 'Slow Push-In';
+        } else if (lowerPrompt.includes('phone') || lowerPrompt.includes('screen') || lowerPrompt.includes('ringing')) {
+          evolvedAction = 'Macro insert shot focused on the vibrating casing and glowing monochrome screen of the Nokia phone, fine dust particles trembling on the plastic surface as the incoming call continues to pulse.';
+          curr.shotType = 'Macro Detail Shot';
+          curr.cameraAngle = 'high-angle';
+          curr.cameraMovement = 'Static Frame';
+        } else if (lowerPrompt.includes('face') || lowerPrompt.includes('mother') || lowerPrompt.includes('eyes')) {
+          evolvedAction = 'Over-the-shoulder shot from behind the student, framing the mother standing motionless in the dark hallway, cold fluorescent rim light tracing her slumped shoulders and trembling hands.';
+          curr.shotType = 'Over-the-Shoulder (OTS)';
+          curr.cameraAngle = 'eye-level';
+          curr.cameraMovement = 'Subtle Handheld Drift';
+        } else {
+          evolvedAction = `Alternative reaction perspective showing the character's tense physical response to the unfolding situation, shoulders taut, posture grounded with sharp attention directed toward the focal point.`;
+          curr.shotType = 'Close-Up';
+          curr.cameraAngle = 'low-angle';
+          curr.cameraMovement = 'Tracking Subject';
+        }
+
+        curr.imagePrompt = evolvedAction;
+      }
     }
+
+    output.push(curr);
+    prevBeat = curr;
   }
 
-  return beats;
+  // Re-index beat numbering
+  return output.map((b, idx) => ({
+    ...b,
+    beatIndex: idx + 1,
+  }));
+}
+
+/**
+ * Assembles a clean, pristine visual prompt:
+ * Strips legacy variation prefixes, eliminates duplicate --ar and orientation tags,
+ * filters degenerate prompts, and guarantees exactly one orientation text and one --ar flag.
+ */
+export function assembleCleanPrompt(
+  prompt: string,
+  isLongForm: boolean
+): string {
+  if (!prompt || typeof prompt !== 'string') return '';
+  let cleaned = prompt.trim();
+
+  // Strip legacy variation prefixes
+  cleaned = cleaned.replace(/^(?:the altered environment|emphasizing grounded scale|focusing on tactile textures|vantage perspective looking down across the scene|reaction angle focusing on physical interaction)\.\s*/gi, '');
+
+  // Strip redundant aspect ratio tags and orientation strings anywhere in text
+  cleaned = cleaned.replace(/\s*--ar\s+[0-9:]+/gi, '');
+  cleaned = cleaned.replace(/,\s*ar\s+[0-9:]+[.,]?/gi, '');
+  cleaned = cleaned.replace(/\bar\s+[0-9:]+[.,]?/gi, '');
+  cleaned = cleaned.replace(/^(?:Cinematic 16:9 widescreen composition|Vertical 9:16 portrait composition)\.\s*/gi, '');
+
+  // Strip degenerate/empty prompts like "Extreme." or "Wide."
+  if (/^(?:Extreme|Wide|Medium|Close-up|Macro|Point-of-View|Over-the-Shoulder)\.?\s*$/i.test(cleaned)) {
+    return '';
+  }
+
+  // Ensure clean trailing punctuation
+  cleaned = cleaned.replace(/\s+([,.;!?])/g, '$1').replace(/\s{2,}/g, ' ').trim();
+  if (cleaned.length > 0 && !/[.!?]$/.test(cleaned)) {
+    cleaned += '.';
+  }
+
+  const orientationText = isLongForm ? 'Cinematic 16:9 widescreen composition' : 'Vertical 9:16 portrait composition';
+  const arFlag = isLongForm ? '--ar 16:9' : '--ar 9:16';
+
+  return `${orientationText}. ${cleaned} ${arFlag}`.trim();
 }
 
 // ============================================================================
@@ -426,11 +581,21 @@ Your task is to take a story and generate a production-ready, nested scene-and-b
 
 CLAUSE & MICRO-ACTION BEAT SEGMENTATION RULES (CRITICAL):
 1. Do NOT make a boring 1-sentence = 1-image breakdown! A long sentence with multiple items, actions, or psychological turns MUST be broken into granular, rhythmic visual beats.
-2. Commas, Clauses & Item Lists MUST Form Distinct Beats:
-   - When a sentence lists distinct items, transactions, or actions (e.g. "after spending ₱150 on lunch, ₱100 on coffee, ₱80 on transportation, and a few other small purchases"), EACH distinct item or action clause MUST be its own distinct visual beat!
-   - SPATIAL & INTRODUCTORY CLOTHES FORM BEAT 1: Introductory prepositional phrases or setting qualifiers followed by a comma (e.g. "Above ground,", "In the quiet forest,", "Inside the laboratory,") MUST NEVER be merged with the subsequent subject clause! They establish the spatial frame or vantage point and MUST form their own standalone establishing beat.
-   - SHORT-FORM RETENTION PACE (3 TO 5 WORDS / 1.2S TO 1.8S PER BEAT): In short-form vertical video (9:16), viewers swipe away if a static frame lingers for more than 2 seconds. Break sentences so each image prompt represents only 3 to 5 spoken words (~1.2 to 1.8 seconds). Coordinating conjunctions ("and", "but", "while") and participial descriptors ("standing tall", "seemingly alone") MUST trigger distinct visual beats.
-   - Contrasting conjunctions and pivots ("when you first receive it", "but somehow disappears", "thinking you can buy food", "save some", "and maybe even treat yourself", "your money suddenly starts looking dangerously low", "The strange part is", "none of those expenses felt expensive", "when you paid for them", "That's because your brain notices", "big purchases more easily than small ones", "even though several small purchases", "can quietly drain your wallet", "So next time you have ₱1,000", "don't just ask what you can buy with it", "ask what you want that ₱1,000 to become") MUST trigger separate visual beats!
+2. VISUAL EVENT INVARIANT & KINEMATIC ACTION PROGRESSION (CRITICAL):
+   A VISUAL BEAT IS NOT MERELY A TEXT FRAGMENT. A VISUAL BEAT IS ONE PHYSICAL MOMENT IN A CONTINUOUS ACTION CHAIN.
+   - Do NOT generate separate image prompts for sub-clauses that describe the exact same physical event! For example, "Pinakita niya sa akin ang phone na ring nang ring" should NOT produce 4 identical phone prompts. It should advance through a sequence of distinct actions or state transitions:
+     * Beat A: Hand reaching and opening the door
+     * Beat B: POV through door crack revealing the pale mother in the hallway
+     * Beat C: Mother extending the phone forward (screen dark)
+     * Beat D: Student hands taking and gripping the phone
+     * Beat E: Phone screen illuminating amber with incoming call alert
+     * Beat F: Macro insert of phone casing and speaker vibrating with visible physical distortion
+   - Every beat in a scene MUST change at least one of:
+     1) PHYSICAL STATE of an object or environment (e.g. door closed -> cracked -> open; screen dark -> backlit -> caller ID).
+     2) POSSESSION / CONTACT (e.g. phone in mother's hands -> extended -> taken by student).
+     3) CAMERA PERSPECTIVE (e.g. wide establishing -> over-the-shoulder -> POV -> macro insert -> reaction close-up).
+     4) CHARACTER ACTION (e.g. reaching -> turning -> extending -> receiving -> reacting).
+   - STRICT BAN ON REPETITIVE PROMPTS: Never describe the same frozen action across consecutive beats! If a spoken fragment merely finishes a sentence without introducing a new physical event, sustain the shot or combine the sub-words into a single coherent visual beat.
 3. Pacing and Variety (STRICT BAN ON REPETITIVE MEDIUM SHOTS):
    - You are STRICTLY FORBIDDEN from generating repetitive "medium shot, eye-level" frames.
    - Break scenes so each scene has 2 to 4 distinct, engaging visual beats with varied shot types:
@@ -456,11 +621,11 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
 
 2. Continuity Sheets & Locked Wardrobe Token (MANDATORY RESOLUTION):
    Generate the full breakdown in one model call that has the entire story in view.
-   - "characterSheet": Create a top-level object mapping each recurring character name to ONE fixed, highly detailed visual description resolving all 5 visual detail pillars:
+   - "characterSheet": Create a top-level object mapping each recurring character name to ONE fixed, highly detailed visual description resolving biometric identity and locked outfit:
      * FIXED BIOMETRIC IDENTITY: Facial bone structure (e.g. high cheekbones, angular jawline), skin undertones, and hair volume/texture/parting.
      * TACTILE MATERIALS & TEXTURES: Real-world surface textures (visible skin pores, weathered leather, brushed cotton, brass patina).
      * LAYERED OUTFIT ARCHITECTURE: Specific outerwear, underlayer, wear/tear condition, footwear, and accessories (e.g. "wearing a plain crewneck white cotton t-shirt with ribbed collar, dark indigo raw denim shorts with copper rivets, and worn blue rubber slippers").
-     * EMOTIONAL POSTURE & GESTURE LANGUAGE: Default stance, posture balance, and characteristic eye gaze.
+     * STRICT PURITY RULE (NO FROZEN POSES OR PROPS IN HAND): The characterSheet description MUST ONLY describe permanent physical features and clothing! It is STRICTLY FORBIDDEN from putting a held prop (such as holding a phone, weapon, or book), an arm angle, a specific wrist flex, or a temporary physical pose into the characterSheet! Poses and held objects belong exclusively to individual beats.
    - "locationSheet": Create a top-level object mapping any specific place returned to more than once to ONE fixed, highly detailed visual description.
    CRITICAL CONTINUITY RULE (STRICT BAN ON SHORTCUTS):
    - Downstream image diffusion models have NO memory between frames.
@@ -628,7 +793,7 @@ ${durationInstruction}${customBeatsPrompt}`;
   if (parsedData.characterSheet && typeof parsedData.characterSheet === 'object') {
     for (const [key, val] of Object.entries(parsedData.characterSheet)) {
       if (typeof val === 'string' && val.trim().length > 0) {
-        sanitizedCharacterSheet[key.trim()] = removeEmDashes(val.trim());
+        sanitizedCharacterSheet[key.trim()] = sanitizeCharacterIdentitySheet(removeEmDashes(val.trim()));
       }
     }
   }
@@ -805,16 +970,15 @@ ${durationInstruction}${customBeatsPrompt}`;
       // Clean redundant duplications and enforce strict mode isolation (no audio in image mode)
       finalImagePrompt = cleanAndDeduplicatePrompt(finalImagePrompt, isVideoMode);
 
-      // Guaranteed Aspect Ratio & Orientation injection
-      const targetRatio = isLongForm ? '16:9' : '9:16';
-      const arFlag = `--ar ${targetRatio}`;
-      const orientationText = isLongForm ? 'Cinematic 16:9 widescreen composition' : 'Vertical 9:16 portrait composition';
+      // Clean assembly: eliminates duplicate --ar, stray orientation, and filler prefixes
+      finalImagePrompt = assembleCleanPrompt(finalImagePrompt, isLongForm);
 
-      if (!finalImagePrompt.toLowerCase().includes('9:16') && !finalImagePrompt.toLowerCase().includes('16:9')) {
-        finalImagePrompt = `${orientationText}. ${finalImagePrompt.trim()}`;
-      }
-      if (!finalImagePrompt.includes('--ar')) {
-        finalImagePrompt = `${finalImagePrompt.trim()} ${arFlag}`;
+      // Fallback if prompt was degenerate or empty (e.g. "Extreme.")
+      if (!finalImagePrompt || finalImagePrompt.length < 35) {
+        finalImagePrompt = assembleCleanPrompt(
+          `${shotType} capturing ${textSpan || narratorLine}. Rendered with atmospheric lighting and textures matching ${sanitizedStyleProfile.artStyle}.`,
+          isLongForm
+        );
       }
 
       let soundCue: string | undefined = undefined;
@@ -979,18 +1143,22 @@ ${durationInstruction}${customBeatsPrompt}`;
 
     const progressedBeats = enforceBeatToBeatProgression(rawBeats);
 
+    const sceneBeatSum = progressedBeats.reduce((sum: number, b: any) => sum + (b.estimatedSeconds || 0), 0);
+    const sceneSeconds = isVideoMode
+      ? targetVideoDuration
+      : (sceneBeatSum > 0 ? Math.round(sceneBeatSum * 10) / 10 : (scene.estimatedSeconds || 3));
+
     return {
       ...scene,
+      estimatedSeconds: sceneSeconds,
       beats: progressedBeats,
     };
   });
 
   const scenesWithTransitionHints = populateSceneTransitionHints(finalScenes, sanitizedStyleProfile);
 
-  const calculatedTotalSeconds = scenesWithTransitionHints.reduce((sum: number, s: any) => sum + s.estimatedSeconds, 0);
-  const totalSeconds = typeof parsedData.totalDurationSeconds === 'number' && parsedData.totalDurationSeconds > 0
-    ? parsedData.totalDurationSeconds
-    : calculatedTotalSeconds;
+  const calculatedTotalSeconds = Math.round(scenesWithTransitionHints.reduce((sum: number, s: any) => sum + (s.estimatedSeconds || 0), 0) * 10) / 10;
+  const totalSeconds = calculatedTotalSeconds > 0 ? calculatedTotalSeconds : (parsedData.totalDurationSeconds || 30);
 
   const thumbnail = compileThumbnailPrompt({
     rawThumbnail: parsedData.thumbnail,
