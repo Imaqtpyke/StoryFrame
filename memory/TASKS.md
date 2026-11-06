@@ -147,3 +147,12 @@
   - Added `assembleCleanPrompt` to guarantee clean orientation and exactly one `--ar` parameter, and guarded against degenerate prompts (e.g. "Extreme.").
   - Synchronized scene duration math to equal the sum of beat durations in state and Markdown export tables.
   - Verified clean compilation with `tsc --noEmit` and production build with `compile_applet`.
+- [x] **Visual-Event Beat Pacing (Option A), 100% Narration Coverage, Clone Prevention & Metadata Synchronization:**
+  - Created `src/services/beatProgressionEngine.ts` implementing Option A Visual-Event Pacing (~1.5s-3.0s per visual event), merging short connective filler fragments instead of generating duplicate stub beats.
+  - Added `verifyAndRepairSceneNarrationCoverage` guaranteeing 100% word-for-word coverage of `scene.narratorLine` across `scene.beats[].textSpan` and recovering truncated trailing clauses.
+  - Implemented scene-wide intra-scene clone detection (`deduplicateAndProgressSceneBeats`), eliminating adjacent and non-adjacent A-B-A-B clones as well as legacy placeholder templates.
+  - Implemented Option A compact locked character identity injection (`injectCompactCharacterLocks`) across all character-present and pronoun beats while keeping character-free cartographic beats untouched.
+  - Implemented `synchronizeBeatMetadataWithPrompt`, `formatFinalBeatPrompt`, and enhanced `assembleCleanPrompt` so orientation prefixes never double up regardless of punctuation and `shotType`/`cameraAngle` metadata match the prompt opening 1-for-1.
+  - Added `sanitizeFakePrecisionMath` (removing robotic weight percentages and joint degree angles) and `sanitizeEraBleedAcrossScenes` (preventing modern/futuristic scenery from leaking into historical scenes).
+  - Updated `ResultsView.tsx` to use `normalizeStoryboardForDisplay` instead of re-chopping merged beats into clones, and added Linter rules L10, L11, and L12 in `promptCompiler.ts`.
+  - Expanded automated system test suite to 156 tests in `src/tests/systemTestSuite.ts` (all 156 passing).

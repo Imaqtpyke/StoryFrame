@@ -20,7 +20,15 @@ import {
 import {
   extractStoryTitle,
 } from '../services/historyStorage';
-import { cleanAndDeduplicatePrompt } from '../services/geminiClient';
+import { cleanAndDeduplicatePrompt, assembleCleanPrompt } from '../services/geminiClient';
+import {
+  deduplicateAndProgressSceneBeats,
+  verifyAndRepairSceneNarrationCoverage,
+  sanitizeFakePrecisionMath,
+  injectCompactCharacterLocks,
+  sanitizeEraBleedAcrossScenes,
+  normalizeStoryboardForDisplay,
+} from '../services/beatProgressionEngine';
 import { sanitizeGroqErrorMessage, extractCleanJson, GROQ_API_BASE_URL, sanitizePromptText, tryRepairTruncatedJson } from '../services/groqClient';
 import { robustJsonParse } from '../services/unifiedAiService';
 import {
@@ -1238,6 +1246,251 @@ assert(
   sampleResultWithThumbnail.scenes.reduce((sum, s) => sum + s.beats.length, 0) === 2,
   'Thumbnail Export Isolation',
   'Thumbnail prompt does not corrupt scene count or beat counts'
+);
+
+// ============================================================================
+// 18. VISUAL-EVENT PACING, NARRATION COVERAGE, CLONE PREVENTION & ALIGNMENT
+// ============================================================================
+console.log('\n--- Running Test Suite 18: Visual-Event Pacing, Coverage & Deduplication ---');
+
+// 18.1 Double orientation prefix & comma/period cleanup
+const dirtyDoublePrefix =
+  'Vertical 9:16 portrait composition, extreme-wide, high-angle framing shows Kael standing on stone battlements. Vertical 9:16 portrait composition. --ar 9:16 --ar 9:16';
+const cleanedPrefixPrompt = assembleCleanPrompt(dirtyDoublePrefix, false);
+const verticalPrefixCount = (cleanedPrefixPrompt.match(/Vertical 9:16 portrait composition/gi) || []).length;
+const arCount = (cleanedPrefixPrompt.match(/--ar 9:16/gi) || []).length;
+assert(
+  verticalPrefixCount === 1 && arCount === 1 && !cleanedPrefixPrompt.includes('—'),
+  'Orientation & Flag Deduplication',
+  'Strips comma/period double orientation prefixes and duplicate --ar flags cleanly'
+);
+
+// 18.2 Fake precision biomechanical math sanitizer
+const mathPrompt =
+  'Kael gripping his rifle firmly with body weight anchored 70% onto his left boot and torso twisted 15 degrees to the right, wrist flexed at 25 degrees.';
+const naturalPrompt = sanitizeFakePrecisionMath(mathPrompt);
+assert(
+  !/70%/.test(naturalPrompt) &&
+    !/15\s*degrees/i.test(naturalPrompt) &&
+    !/25\s*degrees/i.test(naturalPrompt) &&
+    naturalPrompt.toLowerCase().includes('weight planted firmly'),
+  'Natural Biomechanics Sanitizer',
+  'Replaces robotic weight percentages and degree angles with natural posture language'
+);
+
+// 18.3 Intra-scene A-B-A-B clone resolution & short connector merge
+const ababBeats: Beat[] = [
+  {
+    beatIndex: 1,
+    textSpan: 'But he has one problem:',
+    shotType: 'Medium Shot',
+    cameraAngle: 'eye-level',
+    cameraMovement: 'Static',
+    imagePrompt:
+      'Vertical 9:16 portrait composition, Medium Shot, eye-level of Kael standing near stone crenellations checking his rifle magazine at dusk, warm amber torchlight, 50mm f/2.0 lens. --ar 9:16',
+    estimatedSeconds: 1.2,
+  },
+  {
+    beatIndex: 2,
+    textSpan: 'his ammunition is strictly limited to one magazine.',
+    shotType: 'Extreme Close-Up',
+    cameraAngle: 'high-angle',
+    cameraMovement: 'Slow Push-In',
+    imagePrompt:
+      'Vertical 9:16 portrait composition, Extreme Close-Up, high-angle on Kael holding an open translucent rifle magazine revealing only a few brass bullets left inside, dramatic rim light, 85mm f/1.8 lens. --ar 9:16',
+    estimatedSeconds: 1.8,
+  },
+  {
+    beatIndex: 3,
+    textSpan: 'Every shot he fires could be his last.',
+    shotType: 'Medium Shot',
+    cameraAngle: 'eye-level',
+    cameraMovement: 'Static',
+    imagePrompt:
+      'Vertical 9:16 portrait composition, Medium Shot, eye-level of Kael standing near stone crenellations checking his rifle magazine at dusk, warm amber torchlight, 50mm f/2.0 lens. --ar 9:16',
+    estimatedSeconds: 2.4,
+  },
+];
+const progressedAbab = deduplicateAndProgressSceneBeats(ababBeats, {
+  styleProfile: testStyleProfile,
+  characterSheet: { Kael: '22-year-old modern Filipino soldier in tactical olive jacket and combat boots' },
+  locationSheet: { Ramparts: 'weathered medieval stone castle battlements under smoky twilight sky' },
+  isLongForm: false,
+  isVideoMode: false,
+});
+assert(
+  progressedAbab.length === 2 &&
+    progressedAbab[0].textSpan.includes('But he has one problem:') &&
+    progressedAbab[0].textSpan.includes('limited to one magazine') &&
+    progressedAbab[0].imagePrompt !== progressedAbab[1].imagePrompt &&
+    !progressedAbab[1].imagePrompt.includes('Alternative reaction perspective'),
+  'Connector Merge & A-B-A-B Clone Elimination',
+  'Merges short connector fragment into action beat and evolves non-adjacent clone without legacy templates'
+);
+
+// 18.4 Display normalizer preserves 2.5s / 12-word visual-event beats & shot metadata alignment
+const displayInputScenes: Scene[] = [
+  {
+    index: 1,
+    narratorLine: 'Above ground, armored knights march across the torchlit courtyard beneath gathering storm clouds.',
+    estimatedSeconds: 5.2,
+    beats: [
+      {
+        beatIndex: 1,
+        textSpan: 'Above ground, armored knights march across the torchlit courtyard',
+        shotType: 'Extreme Wide Shot',
+        cameraAngle: 'low-angle',
+        cameraMovement: 'Slow Pan',
+        imagePrompt:
+          'Vertical 9:16 portrait composition, Extreme Wide Shot, low-angle of rows of steel-armored medieval knights marching in formation across a stone courtyard lit by flickering torches, storm clouds overhead, 24mm f/4 lens. --ar 9:16',
+        estimatedSeconds: 2.6,
+      },
+      {
+        beatIndex: 2,
+        textSpan: 'beneath gathering storm clouds as war horns sound.',
+        shotType: 'Close-Up',
+        cameraAngle: 'high-angle',
+        cameraMovement: 'Slow Push-In',
+        imagePrompt:
+          'Vertical 9:16 portrait composition, Close-Up, high-angle focusing on an iron war horn raised against dark storm clouds with rain streaks catching amber torchlight, 85mm f/2.0 lens. --ar 9:16',
+        estimatedSeconds: 2.6,
+      },
+    ],
+  },
+];
+const normalizedDisplay = normalizeStoryboardForDisplay(displayInputScenes, {
+  isVideoMode: false,
+  isLongForm: false,
+  styleProfile: testStyleProfile,
+});
+assert(
+  normalizedDisplay[0].beats.length === 2 &&
+    normalizedDisplay[0].beats[0].shotType === 'Extreme Wide Shot' &&
+    normalizedDisplay[0].beats[0].cameraAngle === 'low-angle' &&
+    normalizedDisplay[0].beats[1].shotType === 'Close-Up' &&
+    normalizedDisplay[0].beats[1].cameraAngle === 'high-angle',
+  'Display Normalizer Pacing & Metadata Preservation',
+  'Preserves visual-event pacing without re-chopping into clones or overriding shot metadata'
+);
+
+// 18.5 100% spoken narration coverage recovery
+const truncatedScene: Scene = {
+  index: 7,
+  narratorLine:
+    'Every rival king wants him dead, yet nobody on the battlefield knows his ammunition is almost gone.',
+  estimatedSeconds: 3.0,
+  beats: [
+    {
+      beatIndex: 1,
+      textSpan: 'Every rival king wants him dead,',
+      shotType: 'Close-Up',
+      cameraAngle: 'eye-level',
+      cameraMovement: 'Slow Push-In',
+      imagePrompt:
+        'Vertical 9:16 portrait composition, Close-Up, eye-level of rival kings glaring across a war map table lit by tallow candles, 50mm f/2.0 lens. --ar 9:16',
+      estimatedSeconds: 2.2,
+    },
+  ],
+};
+const recoveredScenes = verifyAndRepairSceneNarrationCoverage(
+  [truncatedScene],
+  testStyleProfile,
+  { Kael: '22-year-old soldier in olive tactical jacket' },
+  { Battlefield: 'muddy medieval battlefield surrounded by stone watchtowers' },
+  { isLongForm: false, isVideoMode: false }
+);
+const recoveredSpoken = recoveredScenes[0].beats.map((b) => b.textSpan).join(' ').toLowerCase();
+assert(
+  recoveredScenes[0].beats.length >= 2 &&
+    recoveredSpoken.includes('nobody') &&
+    recoveredSpoken.includes('ammunition') &&
+    recoveredSpoken.includes('almost gone'),
+  '100% Spoken Narration Coverage Recovery',
+  'Recovers missing trailing narration clauses into distinct visual beats'
+);
+
+// 18.6 Option A compact character identity lock on pronoun beats
+const pronounBeatPrompt =
+  'Vertical 9:16 portrait composition, Medium Shot, eye-level showing him raising his rifle behind a stone pillar. --ar 9:16';
+const lockedPronounPrompt = injectCompactCharacterLocks(
+  pronounBeatPrompt,
+  'as he raises his rifle',
+  'Kael spots the approaching cavalry and he raises his rifle.',
+  { Kael: '22-year-old modern Filipino soldier with tanned skin, olive tactical jacket, dark cargo pants, and combat boots' }
+);
+assert(
+  lockedPronounPrompt.includes('Kael') &&
+    lockedPronounPrompt.toLowerCase().includes('olive tactical jacket'),
+  'Option A Compact Character Lock',
+  'Embeds compact character visual identity into pronoun beats while preserving prompt flow'
+);
+
+// 18.7 Chronological era-bleed scrubbing
+const eraBleedScenes: Scene[] = [
+  {
+    index: 3,
+    narratorLine: 'Suddenly a temporal vortex hurls Kael 800 years into the past into a medieval kingdom.',
+    estimatedSeconds: 4.0,
+    beats: [
+      {
+        beatIndex: 1,
+        textSpan: 'Suddenly a temporal vortex hurls Kael 800 years into the past,',
+        shotType: 'Medium Shot',
+        cameraAngle: 'low-angle',
+        cameraMovement: 'Whip-Pan',
+        imagePrompt:
+          'Vertical 9:16 portrait composition, Medium Shot, low-angle of Kael braced against swirling energy, metallic armory racks glowing with neon cyan panels in the background. --ar 9:16',
+        estimatedSeconds: 4.0,
+      },
+    ],
+  },
+];
+const eraFixedScenes = sanitizeEraBleedAcrossScenes(eraBleedScenes, testStyleProfile, {
+  Ramparts: 'medieval stone castle courtyard',
+});
+assert(
+  !/metallic armory racks/i.test(eraFixedScenes[0].beats[0].imagePrompt) &&
+    eraFixedScenes[0].beats[0].imagePrompt.includes('Ramparts'),
+  'Chronological Era-Bleed Scrubber',
+  'Removes modern/futuristic armory bleed after historical time-travel transitions'
+);
+
+// 18.8 Linter L10 / L11 / L12 detection
+const lintDefectScenes: Scene[] = [
+  {
+    index: 1,
+    narratorLine: 'He draws his blade and faces the charging horsemen in the rain.',
+    estimatedSeconds: 4.0,
+    beats: [
+      {
+        beatIndex: 1,
+        textSpan: 'He draws his blade',
+        shotType: 'Close-Up',
+        cameraAngle: 'eye-level',
+        cameraMovement: 'Static',
+        imagePrompt:
+          'Vertical 9:16 portrait composition, Extreme Wide Shot, birds-eye view of an empty mountain valley at dawn with mist rolling over pine trees. --ar 9:16',
+        estimatedSeconds: 2.0,
+      },
+      {
+        beatIndex: 2,
+        textSpan: 'and faces the',
+        shotType: 'Close-Up',
+        cameraAngle: 'eye-level',
+        cameraMovement: 'Static',
+        imagePrompt:
+          'Vertical 9:16 portrait composition, Extreme Wide Shot, birds-eye view of an empty mountain valley at dawn with mist rolling over pine trees. --ar 9:16',
+        estimatedSeconds: 2.0,
+      },
+    ],
+  },
+];
+const detectedLint = lintStoryboard(lintDefectScenes);
+const codes = new Set(detectedLint.map((i) => i.id.split('-')[0]));
+assert(
+  codes.has('L10') && codes.has('L11') && codes.has('L12'),
+  'Storyboard Linter Rules L10/L11/L12',
+  'Flags intra-scene beat clones (L10), missing spoken narration words (L11), and metadata contradiction (L12)'
 );
 
 console.log('\n====================================================================');

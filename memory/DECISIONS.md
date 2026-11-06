@@ -4,13 +4,13 @@
 - **Fact/Decision:** Lowered the short-form visual ceiling from 8 words / 2.0s down to 5 words / 1.8s, and made introductory spatial phrases (e.g., "Above ground,") strictly form their own standalone establishing beat (Beat 1).
 - **Context:** In short-form vertical video (TikTok, Reels, Shorts), holding a single static image for 3.5 to 5.0 seconds causes viewer swipe-aways. Quick pattern interrupts every 1.2 to 1.8 seconds sustain retention.
 - **Date:** 2026-10-06
-- **Status:** Active
+- **Status:** Outdated (Superseded by Visual-Event Beat Pacing Option A on 2026-11-06)
 
 ## Biomechanical Anatomy & Accurate Gestures Engine
-- **Fact/Decision:** Prompts across Image and Video modes must explicitly specify limb proportions, grounded weight distribution (preventing floating feet), contrapposto torso/hip twist (preventing wooden mannequin poses), hand/wrist arcs with tendon tension (preventing distorted digits), and head/neck gaze vectors.
+- **Fact/Decision:** Prompts across Image and Video modes must explicitly specify limb proportions, grounded weight distribution (preventing floating feet), contrapposto torso/hip twist (preventing wooden mannequin poses), hand/wrist arcs with tendon tension (preventing distorted digits), and head/neck gaze vectors using natural descriptive language (numeric weight percentages and degree angles removed on 2026-11-06).
 - **Context:** Generative diffusion models (Flux, Midjourney, Kling, Sora) default to stiff, wooden poses or malformed hands without explicit kinetic and anatomical constraints.
 - **Date:** 2026-10-06
-- **Status:** Active
+- **Status:** Active (Revised)
 
 ## Atmospheric Micro-Environment & Tactile Physics
 - **Fact/Decision:** Prompts must incorporate physical weather and environmental interactions, such as powdery snow accumulating in fabric seams, frost on wood grain, breath vapor condensation, and damp needles compressed underfoot.
@@ -207,4 +207,16 @@
   6. Synchronized scene duration math: `scene.estimatedSeconds` strictly equals the sum of its beat durations in both the application state and Markdown export tables.
 - **Context:** Resolves the critical visual beat duplication issue identified across Tagalog and English stories, ensuring genuine sequential action progression across every storyboard beat.
 - **Date:** 2026-10-31
+- **Status:** Active
+
+## Visual-Event Beat Pacing (Option A), Compact Character Locks (Option A) & Metadata Alignment
+- **Fact/Decision:**
+  1. Visual-Event Pacing (Option A, ~1.5s-3.0s per visual event): Cut to a new beat only when a genuine physical action, object state change, perspective shift, reaction, or narrative reveal occurs. Merge short connective filler fragments (e.g. "But he has one problem:", "target for kings", "him live.") into adjacent action beats instead of generating cloned stub beats.
+  2. 100% Spoken Narration Coverage (`verifyAndRepairSceneNarrationCoverage`): Every spoken word in `scene.narratorLine` must appear sequentially across `scene.beats[].textSpan`. Any dropped or truncated trailing clauses are recovered into distinct continuation beats.
+  3. Two-Phase Progression & Intra-Scene Clone Resolution (`beatProgressionEngine.ts`): Check all beat pairs `(i, j)` within each scene to eliminate adjacent and non-adjacent A-B-A-B clones, eliminate legacy placeholder strings, and preserve merged beats in `ResultsView.tsx` via `normalizeStoryboardForDisplay`.
+  4. Compact Character Identity Locks (Option A, `injectCompactCharacterLocks`): Embed a concise 14-18 word locked visual identity and wardrobe/gear anchor into every character-present beat (including pronoun beats) while keeping character-free cartographic beats clean.
+  5. Shot Metadata & Orientation Synchronization (`formatFinalBeatPrompt` & `assembleCleanPrompt`): Guarantee a single orientation declaration (`Vertical 9:16 portrait composition` or `Cinematic 16:9 widescreen composition`), exact 1-for-1 alignment between `shotType`/`cameraAngle` table metadata and prompt prose opening, and Linter rules L10 (intra-scene duplicates), L11 (truncated narration), and L12 (metadata contradiction).
+  6. Natural Biomechanics & Chronological Era Locks: Strip robotic weight percentages ("70% weight") and degree angles ("15 degrees") via `sanitizeFakePrecisionMath` and scrub modern/futuristic scenery bleed from historical scenes via `sanitizeEraBleedAcrossScenes`.
+- **Context:** Directly resolves intra-scene beat duplication, dropped trailing narration clauses (e.g. Scene VII), double orientation prefixes, shot metadata contradictions, and era bleed while preserving visual consistency across stateless diffusion models.
+- **Date:** 2026-11-06
 - **Status:** Active

@@ -1,23 +1,24 @@
 # Reusable Knowledge & Procedures
 
-## Short-Form Visual Retention Pacing
-- **Pattern:** Short-form vertical viewers experience visual fatigue if a single image remains static for more than 2.0 seconds. High-performing content incorporates a visual cut or pattern interrupt every 1.2 to 2.0 seconds (~2 to 4 spoken words).
-- **Implementation:** `splitPhraseIntoSubBeats()` and `enforceBeatCeilings()` in `src/services/beatSplitting.ts` subdivide sentences at commas, conjunctions, and hard 5-word / 1.8-second ceilings.
+## Visual-Event Beat Pacing (Option A) & Narration Coverage
+- **Pattern:** Cutting on hyper-fragmented 1-to-4 word connective phrases produces duplicate image prompts. Under Option A Visual-Event Pacing (~1.5s to 3.0s per visual event), each beat corresponds to a genuine physical action, object state change, perspective shift, or reveal, while short connective filler phrases merge into adjacent action beats and 100% of spoken words in `scene.narratorLine` remain preserved across `scene.beats[].textSpan`.
+- **Implementation:** `beatProgressionEngine.ts` (`deduplicateAndProgressSceneBeats`, `verifyAndRepairSceneNarrationCoverage`, `normalizeStoryboardForDisplay`) and `beatSplitting.ts` (`enforceBeatCeilings`).
 
-## Biomechanical Grounding for Image & Video Prompts
-- **Pattern:** Image diffusion models (Flux.1, Midjourney v6, SDXL) and video diffusion models (Kling, Runway, Sora) produce distorted anatomy when prompts omit kinetic grounding.
+## Natural Biomechanical Grounding for Image & Video Prompts
+- **Pattern:** Image diffusion models (Flux.1, Midjourney v6, SDXL) and video diffusion models (Kling, Runway, Sora) produce distorted anatomy when prompts omit kinetic grounding, while numeric degree angles or body-weight percentages ("70% weight", "15 degrees") confuse diffusion attention.
 - **Rules to Enforce:**
-  1. *Stance & Weight:* Specify percentage of weight on feet (e.g., "75% weight anchored on left heel").
-  2. *Contrapposto:* Specify counter-twist between torso and pelvis to avoid stiff mannequin postures.
-  3. *Hand Biomechanics:* Dictate specific wrist angles and natural finger curvature arcs with tendon tension.
-  4. *Head/Gaze:* Direct head orientation to lead or contrast the body motion.
+  1. *Grounded Stance:* Describe natural foot placement and balance in concrete physical terms (e.g., "both boots planted shoulder-width on uneven stone, leaning forward into a steady stride").
+  2. *Posture & Torso Dynamics:* Describe natural shoulder, ribcage, and hip engagement without degree angles.
+  3. *Hand & Grip Action:* Describe concrete grip, finger curvature, and wrist tension in plain visual language.
+  4. *Head/Gaze:* Direct head orientation and eye focus clearly toward the subject of attention.
+  5. *Sanitizer:* `sanitizeFakePrecisionMath` strips any accidental percentage or degree tokens from generated prompts.
 
 ## Proportional Duration Subdivision
-- **Pattern:** When subdividing an oversized sentence into 3 or 4 beats, durations must be split proportionally (`totalSeconds / subPhrases.length`) based on speaking rate (~2.0-2.2 words/second).
+- **Pattern:** When subdividing an oversized sentence into 2 to 4 beats, durations must be split proportionally (`totalSeconds / subPhrases.length`) based on speaking rate (~2.0-2.2 words/second).
 - **Safeguard:** Never assign a flat 2.5s minimum floor to individual sub-beats, which would artificially inflate a 5-second sentence into 10 seconds.
 
 ## Test Suite Execution
-- **Command:** `npx tsx src/tests/systemTestSuite.ts` executes the 67 comprehensive system assertions across all modes, portrait safe zones, video clip mapping, enhance mode diffs, duration limits, and hook patterns.
+- **Command:** `npx tsx src/tests/systemTestSuite.ts` executes the 156 comprehensive system assertions across all modes, visual-event pacing, narration coverage recovery, clone detection, character identity locking, metadata synchronization, portrait safe zones, video clip mapping, enhance mode diffs, duration limits, and hook patterns.
 
 ## Exponential Backoff Retry Pattern for Gemini 503 / 429
 - **Pattern:** When Google Generative Language API experiences service overload (503 Service Unavailable) or rate limiting (429), immediate retries exacerbate cluster congestion.

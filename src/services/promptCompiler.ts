@@ -1,5 +1,10 @@
 import { Beat, Scene, StyleProfile, StoryFormat, GenerationMode, ThumbnailData, CtaPlatform, CtaModality, CtaEngagementType, CtaPromptData } from '../types';
 import { extractGeographicAnchor } from './beatSplitting';
+import {
+  computeVisualPromptSimilarity,
+  normalizeUnicodeAndDashes,
+  stripLeadingOrientationPrefixes,
+} from './beatProgressionEngine';
 
 export type TargetModel = 'universal' | 'midjourney' | 'kling' | 'runway' | 'luma';
 
@@ -130,12 +135,13 @@ export function compileBeatPrompt(
   const rawArtStyle = styleProfile?.artStyle || 'Cinematic photorealism';
   const { prompt: promptWithoutStyleConflict, artStyle } = resolveStyleAndCastingCompatibility(rawBasePrompt, rawArtStyle);
 
-  // 2. Sanitize kinetic process verbs for image mode
-  let baseImagePrompt = isImageMode
+  // 2. Sanitize kinetic process verbs for image mode and strip duplicate orientation prefix
+  const sanitizedKinetic = isImageMode
     ? sanitizeKineticMotionForImage(promptWithoutStyleConflict)
     : promptWithoutStyleConflict;
+  const baseImagePrompt = normalizeUnicodeAndDashes(stripLeadingOrientationPrefixes(sanitizedKinetic));
 
-  const shotType = beat.shotType || 'Medium shot';
+  const shotType = beat.shotType || 'Medium Shot';
   const cameraAngle = beat.cameraAngle || 'Eye-level';
   const cameraMovement = normalizeCameraMovement(beat.cameraMovement);
   const optics = beat.optics || '35mm anamorphic lens, f/2.8 aperture';
@@ -155,43 +161,47 @@ export function compileBeatPrompt(
 
   // A. Orientation & Mode Declaration
   if (isImageMode) {
-    components.push(`STATIC STILL FRAME ONLY: ${orientationText}. One exact frozen moment in time, crisp edges, zero camera movement, no motion blur, no video.`);
+    components.push(`Generate a single still image of: ${orientationText}. Static frame. One exact moment in time. Crisp edges, zero camera movement, no motion blur, no video.`);
     negativePrompt = 'motion blur, animation, video, moving camera, timelapse, multiple frames, distorted limbs, extra fingers, text, watermark, low quality, artifacting';
   } else {
     const motionDirective = cameraMovement !== 'Static shot' && cameraMovement !== 'Static lock-off shot'
       ? `Continuous camera motion: ${cameraMovement} at smooth controlled velocity.`
       : `Static lock-off shot with steady camera positioning.`;
-    components.push(`CONTINUOUS CINEMATIC VIDEO SHOT: ${orientationText}. ${motionDirective}`);
+    components.push(`Generate a continuous video clip of: ${orientationText}. ${motionDirective}`);
     negativePrompt = 'sudden cuts, frame jitter, morphing, deformed hands, extra limbs, blur, low resolution, watermark, text overlays, warped faces';
   }
 
-  // B. Framing & Angle
-  components.push(`${shotType}, ${cameraAngle}.`);
+  // B. Framing & Angle (only add if baseImagePrompt doesn't already open with the exact shotType)
+  const lowerBase = baseImagePrompt.toLowerCase();
+  const alreadyOpensWithFraming = lowerBase.startsWith(shotType.toLowerCase());
+  if (!alreadyOpensWithFraming) {
+    components.push(`${shotType}, ${cameraAngle}.`);
+  }
 
   // C. Core Visual Subject & Scene Action
   components.push(baseImagePrompt);
 
   // D. Atmospheric Lighting (if not already deeply described in base prompt)
-  if (!baseImagePrompt.toLowerCase().includes('lighting:') && !baseImagePrompt.toLowerCase().includes('kelvin') && !baseImagePrompt.toLowerCase().includes('key light')) {
+  if (!lowerBase.includes('lighting:') && !lowerBase.includes('kelvin') && !lowerBase.includes('key light')) {
     components.push(`Atmospheric Lighting: ${lighting}.`);
   }
 
   // E. Optics & Lens Prescriptions (if not already embedded)
-  if (!baseImagePrompt.toLowerCase().includes('shot on') && !baseImagePrompt.toLowerCase().includes('lens') && !baseImagePrompt.toLowerCase().includes('mm f/')) {
+  if (!lowerBase.includes('shot on') && !lowerBase.includes('lens') && !lowerBase.includes('mm f/')) {
     components.push(`Optics: Shot on ${optics}, shallow depth of field, sharp foreground focus.`);
   }
 
   // F. Visual Style & Palette Continuity (if not already embedded)
-  if (!baseImagePrompt.toLowerCase().includes('visual style:') && !baseImagePrompt.toLowerCase().includes(artStyle.toLowerCase().slice(0, 15))) {
+  if (!lowerBase.includes('visual style:') && !lowerBase.includes(artStyle.toLowerCase().slice(0, 15))) {
     components.push(`Visual Style: ${artStyle}.`);
   }
 
-  // G. Aspect ratio parameter flag (always guaranteed at prompt end)
+  // G. Aspect ratio parameter flag (always guaranteed once at prompt end)
   if (!baseImagePrompt.includes('--ar')) {
-    components.push(`${arFlag} --style raw --v 6.1`);
+    components.push(`${arFlag}`);
   }
 
-  compiledText = components.join(' ').replace(/\s+/g, ' ').trim();
+  compiledText = normalizeUnicodeAndDashes(components.join(' '));
   const wordCount = compiledText.split(/\s+/).filter(Boolean).length;
   const budgetWordCount = 110;
 
@@ -327,7 +337,65 @@ export function lintStoryboard(
           });
         }
       }
+
+      // Rule L12: Shot Metadata vs Prompt Opening Alignment Check
+      const declaredShot = (beat.shotType || '').toLowerCase();
+      const openingSnippet = stripLeadingOrientationPrefixes(beat.imagePrompt || '').slice(0, 60).toLowerCase();
+      if (
+        (declaredShot.includes('close-up') || declaredShot.includes('macro')) &&
+        /\b(?:extreme[-\s]*wide|birds[-\s]*eye\s+wide|wide\s+establishing)\b/i.test(openingSnippet)
+      ) {
+        issues.push({
+          id: `L12-scene-${sceneIndex}-beat-${beatIndex}`,
+          severity: 'warning',
+          message: `Beat ${beatIndex}: Shot size (${beat.shotType}) contradicts wide framing in visual prompt prose.`,
+          suggestion: 'Synchronize beat shotType and cameraAngle with the visual prompt opening.',
+          sceneIndex,
+          beatIndex,
+        });
+      }
     });
+
+    // Rule L10: Intra-Scene Near-Duplicate Beat Detection
+    const sceneBeats = scene.beats || [];
+    for (let i = 0; i < sceneBeats.length; i++) {
+      for (let j = i + 1; j < sceneBeats.length; j++) {
+        const sim = computeVisualPromptSimilarity(sceneBeats[i].imagePrompt || '', sceneBeats[j].imagePrompt || '');
+        if (sim >= 0.52) {
+          issues.push({
+            id: `L10-scene-${sceneIndex}-beat-${sceneBeats[j].beatIndex}`,
+            severity: 'warning',
+            message: `Scene ${sceneIndex} Beat ${sceneBeats[j].beatIndex}: Near-duplicate visual prompt detected (${Math.round(sim * 100)}% overlap with Beat ${sceneBeats[i].beatIndex}).`,
+            suggestion: 'Give each visual beat a distinct camera perspective, physical action, or object state.',
+            sceneIndex,
+            beatIndex: sceneBeats[j].beatIndex,
+          });
+          break;
+        }
+      }
+    }
+
+    // Rule L11: Spoken Narration Completeness Check
+    const normTokens = (str: string) =>
+      str
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .split(/\s+/)
+        .filter((w) => w.length > 2);
+    const narToks = normTokens(scene.narratorLine || '');
+    const beatToks = new Set(normTokens(sceneBeats.map((b) => b.textSpan || '').join(' ')));
+    if (narToks.length >= 6) {
+      const missingCount = narToks.filter((t) => !beatToks.has(t)).length;
+      if (missingCount > Math.max(2, Math.floor(narToks.length * 0.25))) {
+        issues.push({
+          id: `L11-scene-${sceneIndex}`,
+          severity: 'warning',
+          message: `Scene ${sceneIndex}: Spoken narration appears truncated (${missingCount} content words missing from beats).`,
+          suggestion: 'Ensure every spoken clause in narratorLine is covered across the scene beats.',
+          sceneIndex,
+        });
+      }
+    }
   });
 
   return issues;
@@ -473,29 +541,31 @@ export function compileThumbnailPrompt(params: {
     ? 'Platform safe zone: strictly keep the bottom-right corner clear of text and faces for the YouTube timestamp duration badge; keep lower 10% clear for the scrub bar.'
     : 'Platform safe zone: keep the top 12% clear for header/profile icons, bottom 25% clear for captions/music titles, and right edge clear for like/comment buttons.';
 
+  const cleanAccentColor = accentColor.replace(/\s*rim\s+lighting\s*$/i, '').trim() || accentColor;
+
   // Full compiled prompt with typography
-  const compiledPrompt = [
+  const compiledPrompt = normalizeUnicodeAndDashes([
     `STATIC THUMBNAIL IMAGE ONLY. Single high-impact cover frame. No animation, video, camera movement, or motion blur.`,
     `Framed in ${aspectRatio} aspect ratio for a high-CTR ${targetPlatform} cover.`,
     `Style continuity: ${params.styleProfile?.artStyle || 'Cinematic realistic'}, ${params.styleProfile?.colorPalette || 'high-contrast dramatic lighting'}.`,
     `Hero Subject: ${primaryCharClause}, expression ${expression}. ${subjectPlacement}.`,
-    `Visual Conflict: Climactic turning point: ${heroMoment}. Deep shadows, intense ${accentColor} rim lighting from behind separating the subject from a dark simplified background: ${bgDescription}.`,
+    `Visual Conflict: Climactic turning point: ${heroMoment}. Deep shadows, intense ${cleanAccentColor} rim lighting from behind separating the subject from a dark simplified background: ${bgDescription}.`,
     `${safeZoneGuidance}`,
     `Typography & Text Overlay: Graphic headline text "${cleanHook}" rendered in ${storyAdaptiveFont}, in bold uppercase with a thick dark outline and high-contrast fill, positioned ${textPlacement}. Text appears exactly once, perfectly spelled, perfectly legible at small mobile thumbnail scale. No other lettering, subtitles, dialogue, or watermarks.`,
-    `--ar ${aspectRatio} --style raw --s 150 --v 6.1`,
-  ].join(' ');
+    `--ar ${aspectRatio}`,
+  ].join(' '));
 
   // Clean plate prompt without typography (for Canva / Photoshop editors)
-  const cleanPlatePrompt = [
+  const cleanPlatePrompt = normalizeUnicodeAndDashes([
     `STATIC THUMBNAIL IMAGE ONLY. Single high-impact background plate. No animation, video, camera movement, or motion blur.`,
     `Framed in ${aspectRatio} aspect ratio for a ${targetPlatform} cover.`,
     `Style continuity: ${params.styleProfile?.artStyle || 'Cinematic realistic'}, ${params.styleProfile?.colorPalette || 'high-contrast dramatic lighting'}.`,
     `Hero Subject: ${primaryCharClause}, expression ${expression}. ${subjectPlacement}.`,
-    `Visual Conflict: Climactic turning point: ${heroMoment}. Deep shadows, intense ${accentColor} rim lighting from behind separating the subject from a dark simplified background: ${bgDescription}.`,
+    `Visual Conflict: Climactic turning point: ${heroMoment}. Deep shadows, intense ${cleanAccentColor} rim lighting from behind separating the subject from a dark simplified background: ${bgDescription}.`,
     `${safeZoneGuidance}`,
     `Negative Space & Clean Plate: Clean negative space ${textPlacement} left completely empty without any text, lettering, words, watermarks, or logos, designed as a clean text-free background plate for custom graphic overlay.`,
-    `--ar ${aspectRatio} --style raw --s 150 --v 6.1`,
-  ].join(' ');
+    `--ar ${aspectRatio}`,
+  ].join(' '));
 
   return {
     heroMoment,

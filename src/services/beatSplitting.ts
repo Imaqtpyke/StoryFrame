@@ -621,7 +621,7 @@ export function enforceBeatCeilings(
     if (shouldSplit) {
       const targetChunkWords = isVideoMode
         ? Math.max(3, Math.min(maxBeatWords, Math.ceil(wordCount / (targetVideoDuration <= 6 ? 2 : 3))))
-        : MAX_BEAT_WORDS;
+        : Math.min(8, MAX_BEAT_WORDS);
       const subPhrases = splitPhraseIntoSubBeats(text, targetChunkWords);
 
       if (subPhrases.length > 1) {
@@ -645,6 +645,12 @@ export function enforceBeatCeilings(
             ? (originalBeat.cameraMovement || DYNAMIC_MOVEMENT_CYCLE[0])
             : DYNAMIC_MOVEMENT_CYCLE[moveCycleIdx];
 
+          const baseSubPrompt = originalBeat.imagePrompt
+            ? (subIdx === 0
+                ? originalBeat.imagePrompt
+                : `Distinct moment depicting "${subText.replace(/["']/g, '')}" in progression from: ${sanitizeImagePromptShotFraming(originalBeat.imagePrompt)}`)
+            : subText;
+
           validatedBeats.push(alignProseWithShotType({
             ...originalBeat,
             beatIndex: globalBeatCounter++,
@@ -653,7 +659,7 @@ export function enforceBeatCeilings(
             cameraAngle: assignedCameraAngle,
             cameraMovement: assignedCameraMovement,
             estimatedSeconds: Math.min(maxBeatSeconds, Math.max(0.8, subEstimatedSec || subDuration)),
-            imagePrompt: originalBeat.imagePrompt || subText,
+            imagePrompt: baseSubPrompt,
           }));
         });
         continue;

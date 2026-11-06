@@ -5,7 +5,8 @@ import BeatBottomSheet from './BeatBottomSheet';
 import CharacterReferenceModal from './CharacterReferenceModal';
 import StyleAndCharactersSection from './StyleAndCharactersSection';
 import SeriesRoadmapModal from './SeriesRoadmapModal';
-import { enforceBeatCeilings, getPreviewText } from '../services/beatSplitting';
+import { getPreviewText } from '../services/beatSplitting';
+import { normalizeStoryboardForDisplay } from '../services/beatProgressionEngine';
 import { compileBeatPrompt, lintStoryboard, LintIssue, compileThumbnailPrompt, compileCtaPrompt } from '../services/promptCompiler';
 import { generateCMX3600EDL, generateSRTSubtitles, calculatePacing } from '../services/timelineExport';
 import {
@@ -152,16 +153,25 @@ export default function ResultsView({
     allBeats: Beat[];
   } | null>(null);
 
-  // Normalize scenes with hard beat ceilings for short-form retention pacing
+  // Normalize scenes for display while preserving visual-event pacing & metadata alignment
   const normalizedScenes = useMemo(() => {
-    return result.scenes.map((scene) => ({
-      ...scene,
-      beats: enforceBeatCeilings(scene.beats || [], scene.index, {
-        isVideoMode: result.generationMode === 'video',
-        targetVideoDuration: result.targetVideoDuration || 5,
-      }),
-    }));
-  }, [result.scenes, result.generationMode, result.targetVideoDuration]);
+    return normalizeStoryboardForDisplay(result.scenes || [], {
+      isVideoMode: result.generationMode === 'video',
+      isLongForm: format === 'long',
+      targetVideoDuration: result.targetVideoDuration || 5,
+      styleProfile: result.styleProfile,
+      characterSheet: result.characterSheet,
+      locationSheet: result.locationSheet,
+    });
+  }, [
+    result.scenes,
+    result.generationMode,
+    result.targetVideoDuration,
+    result.styleProfile,
+    result.characterSheet,
+    result.locationSheet,
+    format,
+  ]);
 
   // Deterministic Storyboard Linter issues (L01 - L06)
   const lintIssues = useMemo(() => {
@@ -304,17 +314,23 @@ export default function ResultsView({
     });
   }, [fullScript, result.styleProfile, result.characterSheet, format, ctaPlatform, ctaModality, customCtaQuestion, ctaEngagementType]);
 
+  const effectiveTotalDuration = useMemo(() => {
+    const sum = Math.round(normalizedScenes.reduce((acc, s) => acc + (s.estimatedSeconds || 0), 0) * 10) / 10;
+    return sum > 0 ? sum : result.totalDurationSeconds;
+  }, [normalizedScenes, result.totalDurationSeconds]);
+
   // Calculate timeline ranges
   let accumulatedSeconds = 0;
   const sceneTimelineRanges = normalizedScenes.map((scene) => {
     const startSec = accumulatedSeconds;
-    const endSec = startSec + scene.estimatedSeconds;
+    const endSec = Math.round((startSec + scene.estimatedSeconds) * 10) / 10;
     accumulatedSeconds = endSec;
-    const pct = result.totalDurationSeconds > 0
-      ? (scene.estimatedSeconds / result.totalDurationSeconds) * 100
+    const pct = effectiveTotalDuration > 0
+      ? (scene.estimatedSeconds / effectiveTotalDuration) * 100
       : 100 / normalizedScenes.length;
     return {
       sceneIndex: scene.index,
+      estimatedSeconds: scene.estimatedSeconds,
       startSec,
       endSec,
       percentage: Math.max(8, pct),
@@ -433,7 +449,7 @@ export default function ResultsView({
     let md = `# Production Storyboard & Shot List\n\n`;
     md += `**Platform**: ${platform} (${format === 'long' ? '16:9 Widescreen' : '9:16 Vertical'})\n`;
     md += `**Generation Mode**: ${result.generationMode === 'video' ? `Text to Video (~${result.targetVideoDuration || 5}s clips)` : 'Text to Image'}\n`;
-    md += `**Estimated Duration**: ~${formatSecondsToMinutes(result.totalDurationSeconds)}\n`;
+    md += `**Estimated Duration**: ~${formatSecondsToMinutes(effectiveTotalDuration)}\n`;
     md += `**Total Scenes**: ${normalizedScenes.length} | **Total Visual Beats**: ${totalBeatsCount}\n\n`;
 
     if (result.styleProfile) {
@@ -557,7 +573,7 @@ export default function ResultsView({
           </button>
           <span className="text-white/20">·</span>
           <span className="text-[11px] text-[#8C8C86] font-editorial-meta">
-            {result.scenes.length} SCENES · {totalBeatsCount} BEATS · ~{formatSecondsToMinutes(result.totalDurationSeconds)} ({platform})
+            {normalizedScenes.length} SCENES · {totalBeatsCount} BEATS · ~{formatSecondsToMinutes(effectiveTotalDuration)} ({platform})
           </span>
         </div>
 
@@ -662,7 +678,6 @@ export default function ResultsView({
       <div className="flex items-center w-full h-6 bg-[#0E0E0D] border border-white/10 rounded overflow-hidden p-0.5 gap-1">
         {sceneTimelineRanges.map((range) => {
           const roman = toRomanNumeral(range.sceneIndex);
-          const sceneSec = result.scenes[range.sceneIndex - 1]?.estimatedSeconds;
           return (
             <button
               key={range.sceneIndex}
@@ -672,7 +687,7 @@ export default function ResultsView({
               title={`Jump to Scene ${range.sceneIndex} (SC ${roman}) • ${formatTimecode(range.startSec)} - ${formatTimecode(range.endSec)}`}
             >
               <span className="font-editorial-meta text-[9px] text-[#A0A09A] group-hover:text-white truncate">
-                SC {roman} {typeof sceneSec === 'number' && `(~${sceneSec}s)`}
+                SC {roman} {typeof range.estimatedSeconds === 'number' && `(~${range.estimatedSeconds}s)`}
               </span>
             </button>
           );

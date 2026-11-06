@@ -9,23 +9,20 @@
 
 import { GenerateStoryRequest, StoryGenerationResult, StyleProfile, Beat } from '../types';
 import {
-  enforceBeatCeilings,
   extractTemporalAnchor,
-  cleanRedundantOnScreenText,
-  populateSceneTransitionHints,
 } from './beatSplitting';
+import {
+  normalizeUnicodeAndDashes,
+  runTwoPhaseProgressionAndRepair,
+} from './beatProgressionEngine';
 import { updateVideoPromptDuration } from './videoSuitability';
-import { cleanAndDeduplicatePrompt, enforceBeatToBeatProgression, assembleCleanPrompt, sanitizeCharacterIdentitySheet } from './geminiClient';
-import { fetchWithExponentialBackoff } from '../utils/retryFetch';
+import { cleanAndDeduplicatePrompt, assembleCleanPrompt, sanitizeCharacterIdentitySheet } from './geminiClient';
 import { executeGroundedPipeline } from './groundedPipeline';
 import { executeJsonLlmCall } from './unifiedAiService';
 import { compileThumbnailPrompt } from './promptCompiler';
 
 function removeEmDashes(text: string): string {
-  if (!text) return text;
-  return text
-    .replace(/[\u2014\u2013]/g, ', ')
-    .replace(/\s*--\s*/g, ', ');
+  return normalizeUnicodeAndDashes(text);
 }
 
 function sanitizeErrorMessage(errorText: string, apiKey: string): string {
@@ -240,14 +237,14 @@ You MUST take their raw premise, question, draft, or concept and perform compreh
      : `- Speech runs at ~2 words per second. Every scene's "narratorLine" must be a natural spoken sentence, and "estimatedSeconds" must reflect spoken pacing accurately (~1 second per 2 words).
    - If a target duration is set (${durationSeconds ? durationSeconds + 's' : 'automatic'}), pace the script length so all scenes combined match this target closely.`}
 
-6. MANDATORY MULTI-BEAT BREAKDOWN (NEVER A SINGLE BEAT PER SCENE):
+6. VISUAL-EVENT MULTI-BEAT BREAKDOWN & 100% NARRATION COVERAGE:
    ${isVideoMode
      ? `- MANDATORY MULTI-BEAT RULE: A single beat spanning an entire ${targetVideoDuration}-second video clip is STRICTLY FORBIDDEN.
-   - Every ${targetVideoDuration}-second scene MUST be subdivided into 2 to 3 sequential micro-beats (${targetVideoDuration <= 6 ? '2 to 3 beats of ~1.0s to 2.0s each' : '3 to 5 beats of ~1.5s to 2.5s each'}).
-   - Each beat covers a short 2 to 4 word phrase segment of the narratorLine and presents a distinct visual camera shot, angle, and movement progression (Beat 1: establishing/starting action, Beat 2: dynamic reaction or shift, Beat 3: immediate consequence or visual punchline).`
-     : `- HARD SHORT-FORM CEILING RULE: No single beat may represent more than 1.8 seconds of estimated narration or 5 words, whichever is smaller.
-   - SPATIAL & INTRODUCTORY CLAUSES: Introductory prepositional or setting qualifiers followed by a comma (e.g. "Above ground,", "In the dark forest,") MUST form their own distinct visual establishing beat (Beat 1).
-   - Partition each scene's spoken sentence across 3 to 4 rapid, snappy visual beats with dynamic camera variety (wide → medium → close-up) so viewers never stare at a static frame for more than 1.8 seconds.`}
+   - Every ${targetVideoDuration}-second scene MUST be subdivided into 2 to 3 sequential visual-event micro-beats (${targetVideoDuration <= 6 ? '2 to 3 beats of ~1.5s to 2.5s each' : '3 to 4 beats of ~1.5s to 3.0s each'}).
+   - Each beat covers a meaningful action phrase or visual event from the narratorLine and presents a distinct visual camera shot, angle, and movement progression (Beat 1: establishing/starting action, Beat 2: dynamic reaction or shift, Beat 3: immediate consequence or visual punchline).`
+     : `- VISUAL-EVENT PACING RULE (~1.5s to 3.0s PER BEAT): Partition each scene's spoken sentence across 2 to 4 progressive visual-event beats (~1.5s to 3.0s / ~5 to 14 spoken words per beat). Cut to a new beat when a distinct physical action, reaction, object state change, perspective shift, or reveal occurs.
+   - MERGE SHORT CONNECTOR FRAGMENTS: Do NOT slice tiny 1-to-4 word connective filler phrases (e.g. "But he has one problem:", "target for kings", "him live.") into isolated duplicate beats. Combine connectors naturally with the visual action or reaction beat they belong to (unless it is a standalone geographic location/year callout like "In 1896," or "Swedish").
+   - 100% SPOKEN NARRATION COVERAGE (ZERO DROPPED WORDS): Every single word of scene.narratorLine MUST appear across scene.beats[].textSpan in exact sequential order from start to finish. NEVER truncate or drop trailing clauses!`}
 
 7. BIOMECHANICAL ANATOMY, ACCURATE GESTURES & GROUNDED POSTURE:
    When characters appear in prompts:
@@ -255,10 +252,11 @@ You MUST take their raw premise, question, draft, or concept and perform compreh
    - TACTILE MATERIALS & TEXTURES: Real-world surface textures (visible skin pores, weathered leather, brushed cotton, brass patina).
    - LAYERED OUTFIT ARCHITECTURE: Specific outerwear, underlayer, wear condition, footwear, and accessories locked across all scenes.
    - LIMB PROPORTIONS: Arms, legs, and torso must maintain accurate human proportions.
-   - GROUNDED STANCE & FEET: Explicitly describe foot contact and gravity (e.g. "weight anchored 70% onto the back right heel with toes slightly splayed, left foot stepping forward with ankle flexed in mid-stride intent", "both boots planted firmly shoulder-width on the ground"). STRICT BAN ON FLOATING OR WEIGHTLESS FEET.
-   - TORSO & HIP TWIST (CONTRAPPOSTO): Shoulders, ribcage, and pelvis must counter-rotate to reflect the arm's motion (e.g. "torso leaning 15 degrees forward with hips counter-angled in natural contrapposto balance"). STRICT BAN ON WOODEN MANNEQUIN POSES.
-   - HAND & WRIST BIOMECHANICS: Explicitly describe finger curvature arcs, wrist angle, and tendon/knuckle tension (e.g. "wrist flexed at 25 degrees with fingers curved along a natural anatomical arc, thumb lightly resting against the middle knuckle with visible knuckle tension"). STRICT BAN ON FLAT CLAWS OR DISTORTED DIGITS.
+   - GROUNDED STANCE & FEET: Explicitly describe natural foot contact and gravity (e.g. "weight anchored firmly onto his back heel with toes braced in the dirt, front boot stepping forward in poised mid-stride", "both boots planted shoulder-width on uneven stone"). STRICT BAN ON FLOATING OR WEIGHTLESS FEET.
+   - TORSO & HIP TWIST (CONTRAPPOSTO): Shoulders, ribcage, and pelvis must counter-rotate naturally to reflect the arm's motion (e.g. "shoulders and ribcage angled slightly into the movement with hips counter-balanced in natural contrapposto stance"). STRICT BAN ON WOODEN MANNEQUIN POSES.
+   - HAND & WRIST BIOMECHANICS: Explicitly describe natural finger curvature, grip tension, and forearm alignment (e.g. "hand gripping the handle firmly with white-knuckled tension and natural finger curvature"). STRICT BAN ON FLAT CLAWS OR DISTORTED DIGITS.
    - HEAD, NECK & GAZE VECTORS: Explicitly describe head tilt and eye gaze (e.g. "neck angled slightly forward, chin dipped, gaze tracking sharply toward screen-right").
+   - ZERO ROBOTIC BIOMECHANICAL MATH: NEVER write numeric weight percentages or joint degree angles (NEVER write "70% weight", "15 degrees", "25 degrees"). Use vivid, natural physical descriptions only.
 
 8. ATMOSPHERIC MICRO-ENVIRONMENT, TACTILE PHYSICS & LIGHTING KELVIN:
    - PARTICLES & WEATHER: (e.g. "powdery dry snow accumulating in seam creases of dark woolen fabric, subtle breath vapor rising in freezing air").
@@ -441,9 +439,13 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
      * NEVER write "(matching established look from Scene 1)" or "(matching established look)".
      * In EVERY single beat's imagePrompt where the character appears, state their locked clothing explicitly (e.g. "Kael, wearing a plain crewneck white t-shirt and blue slippers").
 
-3. Nested Scenes and Beats:
-   Each scene has index, narratorLine, estimatedSeconds, and beats array.
-   Each beat contains beatIndex, textSpan, estimatedSeconds, shotType, cameraAngle, cameraMovement, imagePrompt, etc.
+3. Nested Scenes and Beats (100% NARRATION COVERAGE & NON-DUPLICATE PROGRESSION):
+   - Each scene has index, narratorLine, estimatedSeconds, and beats array.
+   - Each beat contains beatIndex, textSpan, estimatedSeconds, shotType, cameraAngle, cameraMovement, imagePrompt, etc.
+   - 100% WORD-FOR-WORD NARRATION COVERAGE: Joining every beat's "textSpan" in order MUST reconstruct 100% of "scene.narratorLine" without dropping trailing clauses or ending words.
+   - ZERO INTRA-SCENE DUPLICATE BEATS OR A-B-A-B CLONES: Every beat within a scene MUST depict a distinct physical action, object state change, or visual reaction that differs from ALL other beats in that scene.
+   - METADATA & PROMPT OPENING ALIGNMENT: Every beat's "shotType" and "cameraAngle" MUST match the opening framing written in its "imagePrompt" (e.g. if shotType is "Close-Up" and cameraAngle is "low-angle", imagePrompt begins with "${isLongForm ? 'Cinematic 16:9 widescreen composition' : 'Vertical 9:16 portrait composition'}, Close-Up, low-angle..."). NEVER repeat the orientation phrase twice!
+   - CHRONOLOGICAL ERA LOCK: Once a narrative shifts to a historical period (e.g. sent 800 years into the past, medieval era), strictly lock all environments and props to that era with zero modern/futuristic background bleed.
 
 4. VISUAL INFORMATION BUDGET & REVEAL DISCIPLINE (STRICT NO-LEAKAGE RULE):
    - In multi-beat sentences (e.g. "If you pour tea into a harbor, something terrifying happens"):
@@ -634,20 +636,11 @@ ${durationInstruction}`;
       };
     });
 
-    // Enforce smart duration calibration and beat ceilings for Enhance Story mode
-    const ceilingEnforcedBeats = enforceBeatCeilings(sanitizedBeats, sceneIndex, {
-      isVideoMode,
-      targetVideoDuration,
-      styleProfile: sanitizedStyleProfile,
-    });
-
-    const progressedBeats = enforceBeatToBeatProgression(ceilingEnforcedBeats);
-
     return {
       index: sceneIndex,
       narratorLine,
-      estimatedSeconds: isVideoMode ? targetVideoDuration : Math.round(progressedBeats.reduce((s, b) => s + (b.estimatedSeconds || 1.5), 0)),
-      beats: progressedBeats,
+      estimatedSeconds: isVideoMode ? targetVideoDuration : Math.round(sanitizedBeats.reduce((s, b) => s + (b.estimatedSeconds || 1.5), 0)),
+      beats: sanitizedBeats,
       videoPrompt,
       startFramePrompt,
       establishedCharacters: Array.isArray(scene.establishedCharacters) ? scene.establishedCharacters : [],
@@ -656,8 +649,22 @@ ${durationInstruction}`;
     };
   });
 
-  const scenesWithHints = populateSceneTransitionHints(sanitizedScenes, sanitizedStyleProfile);
-  const totalDuration = scenesWithHints.reduce((sum: number, s: any) => sum + s.estimatedSeconds, 0);
+  const scenesWithHints = await runTwoPhaseProgressionAndRepair({
+    scenes: sanitizedScenes,
+    styleProfile: sanitizedStyleProfile,
+    characterSheet: sanitizedCharacterSheet,
+    locationSheet: sanitizedLocationSheet,
+    isLongForm: format === 'long',
+    isVideoMode,
+    apiKey,
+    aiProvider: req.aiProvider,
+    modelQuality,
+    groqModel: req.groqModel,
+    userSignal,
+    onStatusMessage,
+  });
+
+  const totalDuration = Math.round(scenesWithHints.reduce((sum: number, s: any) => sum + (s.estimatedSeconds || 0), 0) * 10) / 10;
 
   const hookAnalysis = parsedData.hookAnalysis && typeof parsedData.hookAnalysis === 'object'
     ? {
