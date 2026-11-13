@@ -14,7 +14,6 @@ import {
   Clapperboard,
   Image as ImageIcon,
   Zap,
-  Scissors,
 } from 'lucide-react';
 
 interface BeatBottomSheetProps {
@@ -165,12 +164,6 @@ export default function BeatBottomSheet({
               SFX: {beat.visualSoundEffect}
             </span>
           )}
-          {beat.transitionHint && (
-            <span className="stamp-chip text-[9px] bg-amber-950/60 text-amber-300 border-amber-800/50">
-              <Scissors size={9} className="mr-1 text-amber-400 shrink-0" />
-              Editing Note
-            </span>
-          )}
           {beat.overlayText && (
             <span className="stamp-chip text-[9px] bg-amber-950/60 text-amber-300 border-amber-800/50 font-mono">
               Overlay: {beat.overlayText}
@@ -236,20 +229,6 @@ export default function BeatBottomSheet({
               <span className="text-[10px] font-mono text-amber-300/80">
                 Baked into artwork
               </span>
-            </div>
-          )}
-
-          {beat.transitionHint && (
-            <div className="p-3 bg-amber-950/20 border border-amber-800/40 rounded-[3px] space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="font-editorial-meta text-[9px] text-amber-300 tracking-wider uppercase flex items-center gap-1.5 font-medium">
-                  <Scissors size={11} className="text-amber-400" />
-                  <span>Editing Note: Scene Transition Anchor</span>
-                </span>
-              </div>
-              <p className="text-xs text-amber-100/90 leading-relaxed font-narrative">
-                {beat.transitionHint}
-              </p>
             </div>
           )}
 

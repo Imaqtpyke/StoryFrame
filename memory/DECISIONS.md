@@ -268,3 +268,9 @@
 - **Context:** Resolves the root causes of Gemini storyboard breakdowns returning errors or server-busy failures (`gemini-3.8-flash` 404/unsupported model errors, thinking-model `parts[0]` JSON corruption, and Gemini 4 deprecated sampling rejections).
 - **Date:** 2026-11-13
 - **Status:** Active
+
+## Removal of "Editing Note: Scene Transition Anchor" Clutter
+- **Fact/Decision:** Removed the `Editing Note: Scene Transition Anchor` / `EDITING TRANSITION NOTE` UI blocks (`BeatBottomSheet.tsx`, `ResultsView.tsx`, `CustomBeatEditor.tsx`), removed the `Editing Note` column from Markdown and CSV exports (`ResultsView.tsx`), stopped requesting `transitionHint` in LLM prompt schemas (`geminiClient.ts`, `enhanceStoryArchitect.ts`), and updated `populateSceneTransitionHints` (`beatSplitting.ts`) and `normalizeStoryboardForDisplay` (`beatProgressionEngine.ts`) to clear `transitionHint` to `undefined`.
+- **Context:** Synthetic transition anchor boilerplate cramped every boundary beat in the UI inspector, bottom sheet, and shot-list tables without adding actionable visual value.
+- **Date:** 2026-11-13
+- **Status:** Active

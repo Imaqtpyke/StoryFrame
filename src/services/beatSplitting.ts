@@ -752,131 +752,17 @@ export function enforceBeatCeilings(
 }
 
 /**
- * Populates and validates `transitionHint` fields across all scenes.
- * STRICT SPECIFICATION:
- * - Populated ONLY on the last beat of a scene (scene i) and the first beat of the next scene (scene i + 1).
- * - All intermediate beats and outer terminals (first beat of Scene 1, last beat of final scene)
- *   MUST have `transitionHint` set to `undefined`.
- * - Describes a shared visual anchor (shape, color, motion direction, screen position) to make editing cuts
- *   or dissolves intentional rather than random.
- * - This applies to both Image mode (crossfades/match-cuts between stills) and Video mode.
- * - Explicitly framed as an editing-stage operation, NOT an AI-generated clip transition.
+ * Clears any legacy or synthetic `transitionHint` fields across all scenes so beats stay clean
+ * and uncramped in UI cards, inspector panels, and exports.
  */
-export function populateSceneTransitionHints(scenes: Scene[], styleProfile?: StyleProfile): Scene[] {
-  if (!Array.isArray(scenes) || scenes.length <= 1) {
-    return (scenes || []).map((scene) => ({
-      ...scene,
-      beats: (scene.beats || []).map((beat) => ({
-        ...beat,
-        transitionHint: undefined,
-      })),
-    }));
-  }
-
-  return scenes.map((scene, sIdx) => {
-    const isFirstScene = sIdx === 0;
-    const isLastScene = sIdx === scenes.length - 1;
-    const beats = scene.beats || [];
-    if (beats.length === 0) return scene;
-
-    const updatedBeats = beats.map((beat, bIdx) => {
-      const isSceneFirstBeat = bIdx === 0;
-      const isSceneLastBeat = bIdx === beats.length - 1;
-
-      // Only incoming boundary (first beat of scene > 0) or outgoing boundary (last beat of scene < lastScene)
-      const isIncomingTransitionBeat = !isFirstScene && isSceneFirstBeat;
-      const isOutgoingTransitionBeat = !isLastScene && isSceneLastBeat;
-
-      if (!isIncomingTransitionBeat && !isOutgoingTransitionBeat) {
-        return {
-          ...beat,
-          transitionHint: undefined,
-        };
-      }
-
-      // If already populated cleanly and contextually, sanitize it
-      if (beat.transitionHint && beat.transitionHint.trim().length > 6) {
-        const cleaned = beat.transitionHint
-          .replace(/[\u2014\u2013]|--/g, ', ')
-          .replace(/\s+/g, ' ')
-          .trim();
-        return {
-          ...beat,
-          transitionHint: cleaned,
-        };
-      }
-
-      // Generate a structured visual anchor note for editing assembly
-      if (isOutgoingTransitionBeat) {
-        const nextScene = scenes[sIdx + 1];
-        const nextFirstBeat = nextScene?.beats?.[0];
-        const hasWhipPan =
-          (beat.cameraMovement || '').toLowerCase().includes('whip') ||
-          (beat.shotType || '').toLowerCase().includes('whip');
-
-        if (hasWhipPan) {
-          return {
-            ...beat,
-            transitionHint: `Outgoing anchor: Fast lateral whip-pan motion blur providing kinetic exit momentum to match cut or dissolve into Scene ${sIdx + 2}.`,
-          };
-        }
-
-        const colorHint = styleProfile?.colorPalette
-          ? `tonal ${styleProfile.colorPalette.split(/[,;]/)[0].trim()}`
-          : 'ambient lighting';
-        const motionHint =
-          beat.cameraMovement && beat.cameraMovement !== 'Static Frame' && beat.cameraMovement !== 'Static'
-            ? `${beat.cameraMovement.toLowerCase()} motion direction`
-            : 'screen position and focal third';
-        const nextSubject = nextFirstBeat?.textSpan
-          ? `"${nextFirstBeat.textSpan.slice(0, 32)}..."`
-          : `Scene ${sIdx + 2}`;
-
-        return {
-          ...beat,
-          transitionHint: `Outgoing anchor: Harmonized ${colorHint} and ${motionHint} aligning screen geometry for an intentional cut into ${nextSubject}.`,
-        };
-      }
-
-      if (isIncomingTransitionBeat) {
-        const prevScene = scenes[sIdx - 1];
-        const prevLastBeat = prevScene?.beats?.[prevScene.beats.length - 1];
-        const hasWhipPan =
-          (beat.cameraMovement || '').toLowerCase().includes('whip') ||
-          (beat.shotType || '').toLowerCase().includes('whip') ||
-          (prevLastBeat?.cameraMovement || '').toLowerCase().includes('whip') ||
-          (prevLastBeat?.shotType || '').toLowerCase().includes('whip');
-
-        if (hasWhipPan) {
-          return {
-            ...beat,
-            transitionHint: `Incoming anchor: Motion blur settling smoothly onto subject, resolving the whip-pan momentum exiting Scene ${sIdx}.`,
-          };
-        }
-
-        const colorHint = styleProfile?.colorPalette
-          ? `matching ${styleProfile.colorPalette.split(/[,;]/)[0].trim()} palette`
-          : 'tonal continuity';
-        const prevSubject = prevLastBeat?.textSpan
-          ? `"${prevLastBeat.textSpan.slice(0, 32)}..."`
-          : `Scene ${sIdx}`;
-
-        return {
-          ...beat,
-          transitionHint: `Incoming anchor: Shared visual orientation and ${colorHint} picking up the eye position from ${prevSubject} for a deliberate cut or crossfade.`,
-        };
-      }
-
-      return {
-        ...beat,
-        transitionHint: undefined,
-      };
-    });
-
-    return {
-      ...scene,
-      beats: updatedBeats,
-    };
-  });
+export function populateSceneTransitionHints(scenes: Scene[], _styleProfile?: StyleProfile): Scene[] {
+  if (!Array.isArray(scenes)) return [];
+  return scenes.map((scene) => ({
+    ...scene,
+    beats: (scene.beats || []).map((beat) => ({
+      ...beat,
+      transitionHint: undefined,
+    })),
+  }));
 }
 

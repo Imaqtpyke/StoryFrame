@@ -373,27 +373,6 @@ export default function CustomBeatEditor({
                               </select>
                             </div>
                           </div>
-
-                          {/* Editing Transition Note (Optional) */}
-                          <div>
-                            <div className="flex items-center justify-between mb-0.5">
-                              <label className="font-editorial-meta text-[9px] text-[#808078] flex items-center gap-1">
-                                <Scissors size={8} className="text-amber-400" />
-                                <span>EDITING NOTE / TRANSITION ANCHOR (Optional)</span>
-                              </label>
-                              <span className="text-[8px] font-editorial-meta text-[#606058] italic">Post-edit cut / dissolve anchor</span>
-                            </div>
-                            <input
-                              type="text"
-                              value={beat.transitionHint || ''}
-                              onChange={(e) =>
-                                handleUpdateBeat(sIdx, bIdx, 'transitionHint', e.target.value)
-                              }
-                              placeholder="e.g. Shared circular silhouette / match cut on horizon line"
-                              disabled={disabled}
-                              className="w-full bg-[#141412] border border-white/10 px-2.5 py-1.5 text-xs text-amber-300/90 focus:border-amber-400 focus:outline-none placeholder-[#505048]"
-                            />
-                          </div>
                         </div>
                       ))}
                     </div>

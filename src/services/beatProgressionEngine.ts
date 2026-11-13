@@ -1915,7 +1915,7 @@ export function normalizeStoryboardForDisplay(
       shotType: normalizeUnicodeAndDashes(b.shotType || ''),
       cameraAngle: normalizeUnicodeAndDashes(b.cameraAngle || ''),
       cameraMovement: normalizeUnicodeAndDashes(b.cameraMovement || ''),
-      transitionHint: b.transitionHint ? normalizeUnicodeAndDashes(b.transitionHint) : undefined,
+      transitionHint: undefined,
     }));
 
     const deduped = deduplicateAndProgressSceneBeats(rawBeats, {

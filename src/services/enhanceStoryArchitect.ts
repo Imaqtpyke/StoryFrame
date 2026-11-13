@@ -361,7 +361,6 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - "cameraAngle": explicit camera angle
    - "cameraMovement": cinematic camera motion cue
    - "temporalAnchor": optional string for explicit year/date/duration
-   - "transitionHint": optional string describing a shared visual anchor
    - "imagePrompt": A complete, standalone, production-ready TEXT TO VIDEO PROMPT formatted for AI video generators capturing this specific beat's action.
 
 6. VISUAL INFORMATION BUDGET & REVEAL DISCIPLINE (STRICT NO-LEAKAGE RULE):
@@ -422,7 +421,6 @@ STRICT CONSTRAINTS:
           "cameraAngle": "string",
           "cameraMovement": "string",
           "temporalAnchor": "string (optional)",
-          "transitionHint": "string (optional)",
           "imagePrompt": "string"
         }
       ]
@@ -506,7 +504,6 @@ STRICT CONSTRAINTS:
           "cameraAngle": "string",
           "cameraMovement": "string",
           "temporalAnchor": "string (optional)",
-          "transitionHint": "string (optional)",
           "imagePrompt": "string",
           "estimatedSeconds": number
         }
@@ -653,7 +650,6 @@ ${durationInstruction}`;
         cameraAngle,
         cameraMovement,
         temporalAnchor: directAnchor,
-        transitionHint: beat.transitionHint ? removeEmDashes(beat.transitionHint) : undefined,
         soundCue,
         optics,
         imagePrompt: assembleCleanPrompt(imagePrompt.trim(), format === 'long'),

@@ -183,3 +183,7 @@
   - Replaced `gemini-3.8-flash` with `gemini-4-hydrogen` across all generation, grounded pipeline stages, assistant chat, UI selectors, and Help & Guide copy.
   - Omitted deprecated `temperature`/`topP` on `gemini-4-hydrogen`, added `extractGeminiResponseText` to skip `thought` parts when parsing JSON, fixed `AbortError` handling in `retryFetch.ts`, and added clearer 400/404 diagnostics.
   - Updated project version from `3.6.0` (`v3.6`) to `3.7.0` (`v3.7`) in `package.json`, `Footer.tsx`, and `LegalViews.tsx`.
+- [x] **Remove "Editing Note: Scene Transition Anchor" Cramping Beats:**
+  - Removed the `Editing Note` pill badge and `Editing Note: Scene Transition Anchor` panel from `BeatBottomSheet.tsx`, the `EDITING TRANSITION NOTE` card from `ResultsView.tsx`, and the optional field from `CustomBeatEditor.tsx`.
+  - Removed the `Editing Note` column from CSV and Markdown shot-list exports in `ResultsView.tsx`.
+  - Stopped generating or requesting `transitionHint` boilerplate in `beatSplitting.ts` (`populateSceneTransitionHints`), `beatProgressionEngine.ts`, `geminiClient.ts`, and `enhanceStoryArchitect.ts`.

@@ -32,7 +32,6 @@ import {
   Clapperboard,
   Image as ImageIcon,
   Zap,
-  Scissors,
   Users,
 } from 'lucide-react';
 
@@ -434,7 +433,7 @@ export default function ResultsView({
   const downloadCsvExport = () => {
     setIsExportMenuOpen(false);
     const hasVideo = result.generationMode === 'video' || normalizedScenes.some((s) => s.videoPrompt);
-    const headers = ['Scene', 'Roman Scene', 'Beat', 'Estimated Seconds', 'Shot Type', 'Camera Angle', 'Camera Movement', 'Editing Note (Transition Anchor)', 'Spoken Narration', 'Visual Image Prompt'];
+    const headers = ['Scene', 'Roman Scene', 'Beat', 'Estimated Seconds', 'Shot Type', 'Camera Angle', 'Camera Movement', 'Spoken Narration', 'Visual Image Prompt'];
     if (hasVideo) {
       headers.push('Scene Video Prompt (8-Part)', 'Start Frame Keyframe Prompt');
     }
@@ -450,7 +449,6 @@ export default function ResultsView({
           beat.shotType || 'Medium Shot',
           beat.cameraAngle || 'Eye-level',
           beat.cameraMovement || 'Static',
-          beat.transitionHint ? `"${beat.transitionHint.replace(/"/g, '""')}"` : '""',
           `"${beat.textSpan.replace(/"/g, '""')}"`,
           `"${beat.imagePrompt.replace(/"/g, '""')}"`,
         ];
@@ -535,16 +533,15 @@ export default function ResultsView({
         md += `#### Start Frame Keyframe Prompt (Image Ingredient)\n\`\`\`text\n${scene.startFramePrompt}\n\`\`\`\n\n`;
       }
 
-      md += `| Beat | Duration | Shot Size | Angle | Movement | Editing Note | Spoken Words | Visual Image Prompt |\n`;
-      md += `| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n`;
+      md += `| Beat | Duration | Shot Size | Angle | Movement | Spoken Words | Visual Image Prompt |\n`;
+      md += `| :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n`;
       (scene.beats || []).forEach((b) => {
-        const transNote = b.transitionHint ? b.transitionHint.replace(/\|/g, '-') : '-';
         let cleanPrompt = (b.imagePrompt || '').replace(/\|/g, '-');
         cleanPrompt = cleanPrompt.replace(/\s*--ar\s+[0-9:]+/gi, '').replace(/,\s*ar\s+[0-9:]+[.,]?/gi, '').replace(/\bar\s+[0-9:]+[.,]?/gi, '').trim();
         cleanPrompt = cleanPrompt.replace(/\s+([,.;!?])/g, '$1').replace(/\s{2,}/g, ' ').trim();
         if (cleanPrompt && !/[.!?]$/.test(cleanPrompt)) cleanPrompt += '.';
         const promptWithAr = cleanPrompt ? `${cleanPrompt} --ar ${format === 'long' ? '16:9' : '9:16'}` : '';
-        md += `| Beat ${b.beatIndex} | ~${b.estimatedSeconds}s | ${b.shotType || 'Medium Shot'} | ${b.cameraAngle || 'Eye-level'} | ${b.cameraMovement || 'Static'} | ${transNote} | "${b.textSpan.replace(/\|/g, '-')}" | ${promptWithAr} |\n`;
+        md += `| Beat ${b.beatIndex} | ~${b.estimatedSeconds}s | ${b.shotType || 'Medium Shot'} | ${b.cameraAngle || 'Eye-level'} | ${b.cameraMovement || 'Static'} | "${b.textSpan.replace(/\|/g, '-')}" | ${promptWithAr} |\n`;
       });
       md += `\n`;
     });
@@ -1684,18 +1681,6 @@ export default function ResultsView({
                           EDITOR OVERLAY TEXT
                         </span>
                         <span className="text-xs font-mono text-white">{inspBeat.overlayText}</span>
-                      </div>
-                    )}
-
-                    {inspBeat.transitionHint && (
-                      <div className="p-3 bg-amber-950/20 border border-amber-800/40 rounded-[3px] space-y-1">
-                        <span className="font-editorial-meta text-[9px] text-amber-300 flex items-center gap-1.5">
-                          <Scissors size={11} className="text-amber-400" />
-                          <span>EDITING TRANSITION NOTE</span>
-                        </span>
-                        <p className="text-xs text-amber-100/90 leading-relaxed">
-                          {inspBeat.transitionHint}
-                        </p>
                       </div>
                     )}
 

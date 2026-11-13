@@ -7,7 +7,6 @@ import {
   extractTemporalAnchor,
   cleanRedundantOnScreenText,
   sanitizeImagePromptShotFraming,
-  populateSceneTransitionHints,
 } from './beatSplitting';
 import {
   deduplicateAndProgressSceneBeats,
@@ -477,7 +476,6 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
     - "cameraAngle": explicit camera angle
     - "cameraMovement": cinematic camera motion cue
     - "temporalAnchor": optional string for explicit year, date, or elapsed duration
-    - "transitionHint": optional string describing a shared visual anchor (populated ONLY on last beat of scene or first beat of next scene)
     - "imagePrompt": complete, standalone text to video prompt capturing this specific beat's action (45 to 80 words). MUST include: [Subject with locked outfit] performing [precise kinematic action with biomechanical gestures], Camera: [Shot, Angle, Movement], Optics: [Focal length and f-stop], Lighting: [Kelvin temp and contrast], Audio: [Ambient sound/foley, no dialogue], ${defaultAspectRatio}. DO NOT duplicate boilerplate text.
 
 STRICT CONSTRAINTS:
@@ -518,7 +516,6 @@ STRICT CONSTRAINTS:
           "cameraAngle": "eye-level | high-angle | low-angle | birds-eye | worms-eye | dutch-tilt",
           "cameraMovement": "Slow forward push-in | Static Frame | Tracking Subject | Smooth Pan | Whip-Pan",
           "temporalAnchor": "string (optional: e.g. 1945, December 24, 1971, for 29 years)",
-          "transitionHint": "string (optional: populated ONLY on last beat of scene or first beat of next scene for editing cuts/dissolves)",
           "imagePrompt": string
         }
       ]
@@ -692,7 +689,6 @@ STRICT CONSTRAINTS:
           "cameraAngle": "eye-level | high-angle | low-angle | birds-eye | worms-eye | dutch-tilt",
           "cameraMovement": "Slow Push-In | Static Frame | Tracking Subject | Smooth Pan | Whip-Pan",
           "temporalAnchor": "string (optional: e.g. 1945, for 29 years)",
-          "transitionHint": "string (optional: populated ONLY on last beat of scene or first beat of next scene for editing cuts/dissolves)",
           "imagePrompt": string,
           "estimatedSeconds": number
         }
@@ -708,7 +704,7 @@ Do not include markdown code fences or backticks, just the raw JSON object.`;
 The user has explicitly segmented the story into exact scenes and custom visual beats. You MUST follow this exact scene breakdown and phrase assignment. For each beat, follow the user's specific visual guidance and shot suggestions:
 ${customScenes.map((cs, sIdx) => `Scene ${sIdx + 1} narration: "${cs.narratorLine}"
 Beats:
-${cs.beats.map((b, bIdx) => `  - Beat ${bIdx + 1} phrase: "${b.textSpan}"${b.userGuidance ? ` | Director's Visual Note: "${b.userGuidance}"` : ''}${b.shotType ? ` | Preferred Shot: "${b.shotType}"` : ''}${b.transitionHint ? ` | Editing Transition Note: "${b.transitionHint}"` : ''}`).join('\n')}`).join('\n\n')}`;
+${cs.beats.map((b, bIdx) => `  - Beat ${bIdx + 1} phrase: "${b.textSpan}"${b.userGuidance ? ` | Director's Visual Note: "${b.userGuidance}"` : ''}${b.shotType ? ` | Preferred Shot: "${b.shotType}"` : ''}`).join('\n')}`).join('\n\n')}`;
   }
 
   const userPrompt = `Story Idea / Concept Premise:
@@ -973,11 +969,6 @@ ${durationInstruction}${customBeatsPrompt}`;
         optics = removeEmDashes(opticsMatch[1].trim());
       }
 
-      const rawTransitionHint = beat.transitionHint || beat.transition_hint;
-      const transitionHint = typeof rawTransitionHint === 'string' && rawTransitionHint.trim().length > 0
-        ? removeEmDashes(rawTransitionHint.trim())
-        : undefined;
-
       return {
         beatIndex,
         textSpan,
@@ -986,7 +977,6 @@ ${durationInstruction}${customBeatsPrompt}`;
         cameraMovement,
         visualSoundEffect,
         temporalAnchor,
-        transitionHint,
         soundCue,
         optics,
         imagePrompt: removeEmDashes(finalImagePrompt),
