@@ -132,6 +132,7 @@ When the user asks to modify, rewrite, or replace a visual prompt for a specific
 
 import { AiProvider } from '../types';
 import { callGroqChatCompletion } from './groqClient';
+import { extractGeminiResponseText } from './unifiedAiService';
 
 export async function sendChatMessage(
   history: AssistantChatMessage[],
@@ -207,19 +208,23 @@ export async function sendChatMessage(
   });
 
   // Use the exact model chosen by the user in Model Options (no fallback switching)
-  const targetModel = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-3.8-flash';
+  const targetModel = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-4-hydrogen';
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${trimmedKey}`;
+
+  const generationConfig: Record<string, any> = {
+    maxOutputTokens: 1200,
+  };
+  if (targetModel !== 'gemini-4-hydrogen') {
+    generationConfig.temperature = 0.6;
+    generationConfig.topP = 0.9;
+  }
 
   const payload = {
     contents,
     systemInstruction: {
       parts: [{ text: effectiveSystemInstruction }],
     },
-    generationConfig: {
-      temperature: 0.6,
-      topP: 0.9,
-      maxOutputTokens: 1200,
-    },
+    generationConfig,
   };
 
   try {
@@ -234,24 +239,24 @@ export async function sendChatMessage(
     if (!resp.ok) {
       if (resp.status === 503 || resp.status === 429) {
         throw new Error(
-          'Google Gemini servers are temporarily busy (503 Service Unavailable). Do not immediately retry the request at full speed, as this adds more stress to an already struggling server. Instead, we used an exponential backoff strategy—waiting a brief period before retrying, and doubling the wait time for subsequent attempts. Please try again shortly.'
+          'Google Gemini servers are temporarily busy (503/429). We used an exponential backoff retry strategy before surfacing this notice. Please try again shortly.'
         );
       }
       throw new Error(`Server status ${resp.status}: Service temporarily unavailable. Please try again shortly.`);
     }
 
     const resJson = await resp.json();
-    const content = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!content || !content.trim()) {
+    const content = extractGeminiResponseText(resJson);
+    if (!content) {
       throw new Error('An error occurred, please try again.');
     }
 
-    return cleanAssistantText(content.trim());
+    return cleanAssistantText(content);
   } catch (err: any) {
     const msg = err?.message || '';
     if (msg.includes('503') || msg.includes('overloaded') || msg.includes('unavailable')) {
       throw new Error(
-        'Google Gemini servers are temporarily busy (503 Service Unavailable). Do not immediately retry the request at full speed, as this adds more stress to an already struggling server. Instead, we used an exponential backoff strategy—waiting a brief period before retrying, and doubling the wait time for subsequent attempts. Please try again shortly.'
+        'Google Gemini servers are temporarily busy (503/429). We used an exponential backoff retry strategy before surfacing this notice. Please try again shortly.'
       );
     }
     throw new Error(msg || 'An error occurred, please try again.');

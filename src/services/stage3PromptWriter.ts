@@ -7,7 +7,7 @@
 import { StoryBible, StoryFormat, GenerationMode, AiProvider } from '../types';
 import { PlannedBeat } from './stage2BeatPlan';
 import { fetchWithExponentialBackoff } from '../utils/retryFetch';
-import { executeJsonLlmCall } from './unifiedAiService';
+import { executeJsonLlmCall, extractGeminiResponseText, sanitizeGenericErrorMessage } from './unifiedAiService';
 
 export interface WrittenPromptBeat extends PlannedBeat {
   imagePrompt: string;
@@ -57,9 +57,6 @@ export async function stage3WriteScenePrompts(
   provider: AiProvider = 'gemini',
   groqModel?: string
 ): Promise<WrittenPromptBeat[]> {
-  const modelName = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-3.8-flash';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-
   // Formulate prompt context
   const beatsSummary = beats.map((b) => {
     return `BEAT ${b.beatIndex}:
@@ -157,16 +154,20 @@ Output valid JSON matching SCENE_PROMPTS_SCHEMA.`;
       temperature: 0.2,
     });
   } else {
-    const modelName = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-3.8-flash';
+    const modelName = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-4-hydrogen';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+
+    const generationConfig: Record<string, any> = {
+      responseMimeType: 'application/json',
+      responseSchema: SCENE_PROMPTS_SCHEMA,
+    };
+    if (modelName !== 'gemini-4-hydrogen') {
+      generationConfig.temperature = 0.2;
+    }
 
     const payload = {
       contents: [{ role: 'user', parts: [{ text: systemInstruction }] }],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseSchema: SCENE_PROMPTS_SCHEMA,
-        temperature: 0.2,
-      },
+      generationConfig,
     };
 
     const response = await fetchWithExponentialBackoff(
@@ -189,11 +190,12 @@ Output valid JSON matching SCENE_PROMPTS_SCHEMA.`;
     );
 
     if (!response.ok) {
-      throw new Error(`Scene ${sceneIndex} prompt writing failed: HTTP ${response.status}`);
+      const errText = await response.text().catch(() => '');
+      throw new Error(sanitizeGenericErrorMessage(`Scene ${sceneIndex} prompt writing failed (${response.status}): ${errText}`, apiKey, 'gemini'));
     }
 
     const json = await response.json();
-    const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+    const rawText = extractGeminiResponseText(json);
     if (!rawText) {
       throw new Error(`Empty response for Scene ${sceneIndex} prompt writing`);
     }

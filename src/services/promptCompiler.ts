@@ -2,8 +2,13 @@ import { Beat, Scene, StyleProfile, StoryFormat, GenerationMode, ThumbnailData, 
 import { extractGeographicAnchor } from './beatSplitting';
 import {
   computeVisualPromptSimilarity,
+  expandEntityKeysInPrompt,
+  hasDistinctMontageFocalSubject,
+  isMonochromeStyle,
   normalizeUnicodeAndDashes,
+  sanitizeMonochromeLighting,
   stripLeadingOrientationPrefixes,
+  stripTransientExpressionsAndPoses,
 } from './beatProgressionEngine';
 
 export type TargetModel = 'universal' | 'midjourney' | 'kling' | 'runway' | 'luma';
@@ -145,12 +150,13 @@ export function compileBeatPrompt(
   const cameraAngle = beat.cameraAngle || 'Eye-level';
   const cameraMovement = normalizeCameraMovement(beat.cameraMovement);
   const optics = beat.optics || '35mm anamorphic lens, f/2.8 aperture';
-  const lighting = styleProfile?.lighting || 'natural cinematic lighting, 5600K balanced daylight';
+  const rawLighting = styleProfile?.lighting || 'natural cinematic lighting, 5600K balanced daylight';
+  const lighting = isMonochromeStyle(styleProfile)
+    ? sanitizeMonochromeLighting(rawLighting, styleProfile) || 'stark high-contrast chiaroscuro ink lighting with crisp cast shadows'
+    : rawLighting;
 
   const parameters: Record<string, string> = {
     ar: aspectRatio,
-    style: 'raw',
-    v: '6.1',
   };
 
   let compiledText = '';
@@ -221,10 +227,12 @@ export function compileBeatPrompt(
  */
 export function lintStoryboard(
   scenes: Scene[],
-  characterSheet?: Record<string, string>
+  characterSheet?: Record<string, string>,
+  styleProfile?: StyleProfile
 ): LintIssue[] {
   const issues: LintIssue[] = [];
   const knownCharacters = Object.keys(characterSheet || {}).map((c) => c.toLowerCase());
+  const isMono = isMonochromeStyle(styleProfile);
 
   scenes.forEach((scene) => {
     const sceneIndex = scene.index;
@@ -338,18 +346,45 @@ export function lintStoryboard(
         }
       }
 
-      // Rule L12: Shot Metadata vs Prompt Opening Alignment Check
+      // Rule L12: Shot Metadata vs Prompt Opening & Camera Angle Taxonomy Alignment Check
       const declaredShot = (beat.shotType || '').toLowerCase();
-      const openingSnippet = stripLeadingOrientationPrefixes(beat.imagePrompt || '').slice(0, 60).toLowerCase();
+      const declaredAngle = (beat.cameraAngle || '').toLowerCase();
+      const openingSnippet = stripLeadingOrientationPrefixes(beat.imagePrompt || '').slice(0, 80).toLowerCase();
       if (
-        (declaredShot.includes('close-up') || declaredShot.includes('macro')) &&
-        /\b(?:extreme[-\s]*wide|birds[-\s]*eye\s+wide|wide\s+establishing)\b/i.test(openingSnippet)
+        ((declaredShot.includes('close-up') || declaredShot.includes('macro')) &&
+          /\b(?:extreme[-\s]*wide|birds[-\s]*eye\s+wide|wide\s+establishing)\b/i.test(openingSnippet)) ||
+        (/\bclose-up\b/.test(declaredShot) &&
+          !declaredShot.includes('medium') &&
+          !declaredShot.includes('extreme') &&
+          /\bmedium\s+close[-\s]*up\b/i.test(openingSnippet)) ||
+        /\b(?:over[-\s]*the[-\s]*shoulder|ots|pov|point[-\s]*of[-\s]*view|close[-\s]*up|medium\s+shot|wide\s+shot)\b/i.test(declaredAngle)
       ) {
         issues.push({
           id: `L12-scene-${sceneIndex}-beat-${beatIndex}`,
           severity: 'warning',
-          message: `Beat ${beatIndex}: Shot size (${beat.shotType}) contradicts wide framing in visual prompt prose.`,
-          suggestion: 'Synchronize beat shotType and cameraAngle with the visual prompt opening.',
+          message: `Beat ${beatIndex}: Shot metadata (${beat.shotType}, ${beat.cameraAngle}) conflicts with framing/angle taxonomy in visual prompt prose.`,
+          suggestion: 'Keep framing (e.g. OTS, Medium Close-Up) in shotType and vertical/tilt angles (eye-level, low-angle, high-angle) in cameraAngle.',
+          sceneIndex,
+          beatIndex,
+        });
+      }
+
+      // Rule L13: Monochrome Bleed, Raw Variable Key, or Spoken-Text Fallback Leakage Check
+      const rawPromptText = beat.imagePrompt || '';
+      const hasMonoBleed =
+        isMono &&
+        /\b(?:\d{4}K\s+(?:warm|cool|cold)|cold\s+cyan|warm\s+tungsten|golden\s+amber)\b/i.test(rawPromptText);
+      const hasFallbackLeak =
+        /\b(?:turning point of|escalating stakes of)\b/i.test(rawPromptText) ||
+        /\bDarkRoom\b|\bProtagonist\b/.test(rawPromptText);
+      if (hasMonoBleed || hasFallbackLeak) {
+        issues.push({
+          id: `L13-scene-${sceneIndex}-beat-${beatIndex}`,
+          severity: 'warning',
+          message: hasMonoBleed
+            ? `Beat ${beatIndex}: Chromatic lighting terms (Kelvin/cyan/warm) detected inside a monochrome style storyboard.`
+            : `Beat ${beatIndex}: Unexpanded sheet key or fallback prose leak detected in prompt.`,
+          suggestion: 'Run prompt hygiene normalization and monochrome lighting sanitization.',
           sceneIndex,
           beatIndex,
         });
@@ -361,7 +396,8 @@ export function lintStoryboard(
     for (let i = 0; i < sceneBeats.length; i++) {
       for (let j = i + 1; j < sceneBeats.length; j++) {
         const sim = computeVisualPromptSimilarity(sceneBeats[i].imagePrompt || '', sceneBeats[j].imagePrompt || '');
-        if (sim >= 0.52) {
+        const threshold = hasDistinctMontageFocalSubject(sceneBeats[i], sceneBeats[j]) ? 0.68 : 0.52;
+        if (sim >= threshold) {
           issues.push({
             id: `L10-scene-${sceneIndex}-beat-${sceneBeats[j].beatIndex}`,
             severity: 'warning',
@@ -493,19 +529,31 @@ export function compileThumbnailPrompt(params: {
   const aspectRatio: '16:9' | '9:16' = isWidescreen ? '16:9' : '9:16';
   const targetPlatform = isWidescreen ? 'YouTube Widescreen' : 'TikTok / Shorts / Reels';
 
+  const isMono = isMonochromeStyle(params.styleProfile);
   const raw = params.rawThumbnail || {};
-  const heroMoment = (
+  const rawHeroMoment = (
     raw.heroMoment || 'The climactic turning point and central conflict of the story'
   ).trim();
+  const heroMoment = sanitizeMonochromeLighting(
+    expandEntityKeysInPrompt(rawHeroMoment, params.characterSheet),
+    params.styleProfile
+  );
   const expression = (
     raw.expression || 'intense, emotionally charged, and readable at thumbnail scale'
   ).trim();
-  const bgDescription = (
+  const rawBgDescription = (
     raw.bgDescription || 'deep atmospheric background with strong contrast and dramatic depth separation'
   ).trim();
-  const accentColor = (
-    raw.accentColor || (isWidescreen ? 'vibrant electric amber' : 'cold crimson')
+  const bgDescription = sanitizeMonochromeLighting(
+    expandEntityKeysInPrompt(rawBgDescription, params.characterSheet),
+    params.styleProfile
+  );
+  const rawAccentColor = (
+    raw.accentColor || (isMono ? 'stark high-contrast white' : isWidescreen ? 'vibrant electric amber' : 'cold crimson')
   ).trim();
+  const accentColor = isMono
+    ? 'stark high-contrast white'
+    : rawAccentColor;
 
   // Clean hook text: uppercase, max 4 words, no stray punctuation
   let cleanHook = (raw.hookText || 'SURVIVE').replace(/["'’]/g, '').trim().toUpperCase();
@@ -520,12 +568,14 @@ export function compileThumbnailPrompt(params: {
       ? raw.fontStyle.trim()
       : inferStoryAdaptiveFont(params.styleProfile?.artStyle, params.storyPremise);
 
-  // Primary character extraction for identity lock
+  // Primary character extraction for identity lock (strip transient expressions so thumbnail emotion never clashes)
   const characters = Object.entries(params.characterSheet || {});
   let primaryCharClause = 'The protagonist';
   if (characters.length > 0) {
     const [name, desc] = characters[0];
-    primaryCharClause = `${name} (locked visual identity: ${desc})`;
+    const cleanIdentityDesc = stripTransientExpressionsAndPoses(desc) || desc;
+    const displayName = name.trim().toLowerCase() === 'protagonist' ? 'The protagonist' : name.trim();
+    primaryCharClause = `${displayName} (locked visual identity: ${cleanIdentityDesc})`;
   }
 
   // Safe zones and layout
@@ -542,14 +592,22 @@ export function compileThumbnailPrompt(params: {
     : 'Platform safe zone: keep the top 12% clear for header/profile icons, bottom 25% clear for captions/music titles, and right edge clear for like/comment buttons.';
 
   const cleanAccentColor = accentColor.replace(/\s*rim\s+lighting\s*$/i, '').trim() || accentColor;
+  const rimLightPhrase = isMono
+    ? 'stark pure-white rim lighting cutting through pitch-black cross-hatched shadows'
+    : `intense ${cleanAccentColor} rim lighting from behind separating the subject from a dark simplified background`;
+
+  const cleanPalette = sanitizeMonochromeLighting(
+    params.styleProfile?.colorPalette || 'high-contrast dramatic lighting',
+    params.styleProfile
+  );
 
   // Full compiled prompt with typography
   const compiledPrompt = normalizeUnicodeAndDashes([
     `STATIC THUMBNAIL IMAGE ONLY. Single high-impact cover frame. No animation, video, camera movement, or motion blur.`,
     `Framed in ${aspectRatio} aspect ratio for a high-CTR ${targetPlatform} cover.`,
-    `Style continuity: ${params.styleProfile?.artStyle || 'Cinematic realistic'}, ${params.styleProfile?.colorPalette || 'high-contrast dramatic lighting'}.`,
+    `Style continuity: ${params.styleProfile?.artStyle || 'Cinematic realistic'}, ${cleanPalette}.`,
     `Hero Subject: ${primaryCharClause}, expression ${expression}. ${subjectPlacement}.`,
-    `Visual Conflict: Climactic turning point: ${heroMoment}. Deep shadows, intense ${cleanAccentColor} rim lighting from behind separating the subject from a dark simplified background: ${bgDescription}.`,
+    `Visual Conflict: Climactic turning point: ${heroMoment}. Deep shadows, ${rimLightPhrase}: ${bgDescription}.`,
     `${safeZoneGuidance}`,
     `Typography & Text Overlay: Graphic headline text "${cleanHook}" rendered in ${storyAdaptiveFont}, in bold uppercase with a thick dark outline and high-contrast fill, positioned ${textPlacement}. Text appears exactly once, perfectly spelled, perfectly legible at small mobile thumbnail scale. No other lettering, subtitles, dialogue, or watermarks.`,
     `--ar ${aspectRatio}`,
@@ -559,9 +617,9 @@ export function compileThumbnailPrompt(params: {
   const cleanPlatePrompt = normalizeUnicodeAndDashes([
     `STATIC THUMBNAIL IMAGE ONLY. Single high-impact background plate. No animation, video, camera movement, or motion blur.`,
     `Framed in ${aspectRatio} aspect ratio for a ${targetPlatform} cover.`,
-    `Style continuity: ${params.styleProfile?.artStyle || 'Cinematic realistic'}, ${params.styleProfile?.colorPalette || 'high-contrast dramatic lighting'}.`,
+    `Style continuity: ${params.styleProfile?.artStyle || 'Cinematic realistic'}, ${cleanPalette}.`,
     `Hero Subject: ${primaryCharClause}, expression ${expression}. ${subjectPlacement}.`,
-    `Visual Conflict: Climactic turning point: ${heroMoment}. Deep shadows, intense ${cleanAccentColor} rim lighting from behind separating the subject from a dark simplified background: ${bgDescription}.`,
+    `Visual Conflict: Climactic turning point: ${heroMoment}. Deep shadows, ${rimLightPhrase}: ${bgDescription}.`,
     `${safeZoneGuidance}`,
     `Negative Space & Clean Plate: Clean negative space ${textPlacement} left completely empty without any text, lettering, words, watermarks, or logos, designed as a clean text-free background plate for custom graphic overlay.`,
     `--ar ${aspectRatio}`,
@@ -590,7 +648,38 @@ export function inferStoryAdaptiveCtaQuestion(storyPremise?: string, characterNa
   alternateQuestions: string[];
 } {
   const text = (storyPremise || '').toLowerCase();
-  const char = characterName ? characterName.trim() : 'the protagonist';
+  const rawChar = characterName ? characterName.trim() : 'the protagonist';
+  const char = rawChar.toLowerCase() === 'protagonist' ? 'the protagonist' : rawChar;
+
+  // Horror / Supernatural / Mirror / Psychological Suspense (evaluated BEFORE incidental moral words like "lie")
+  if (
+    /\b(?:horror|creature|monster|shadow|dark|fear|haunt|escape|trap|mirror|reflection|entity|mimic|warden|unblinking|smiling|never smiled|parallel universe|staring back|half-second late|nightmare|doppelganger|creep|whisper|grin)\b/i.test(
+      text
+    )
+  ) {
+    const isMirrorHorror = /\b(?:mirror|reflection|mimic|doppelganger|staring back|half-second late)\b/i.test(text);
+    if (isMirrorHorror) {
+      return {
+        primaryQuestion: 'Would you dare look into the mirror tonight, or cover every glass surface in your home?',
+        alternateQuestions: [
+          'At what exact moment did you realize the reflection was no longer copying movements?',
+          'What would you do if your own reflection stayed behind smiling after you stepped away?',
+          'Do you believe mirrors reflect this world, or trap something watching from the other side?',
+          'Would you smash the glass right away, or freeze in place?',
+        ],
+      };
+    }
+
+    return {
+      primaryQuestion: 'Would you have stayed behind, or fled the moment things went dark?',
+      alternateQuestions: [
+        'What would you have done differently to survive?',
+        'Would you open that door if your life depended on it?',
+        `Was ${char}'s survival luck or calculated strategy?`,
+        'Would you enter the darkness to save a companion?',
+      ],
+    };
+  }
 
   // Mystery / Detective / Secret
   if (
@@ -613,39 +702,9 @@ export function inferStoryAdaptiveCtaQuestion(storyPremise?: string, characterNa
     };
   }
 
-  // Horror / Suspense / Survival / Creature / Monster / Dark
-  if (
-    text.includes('horror') ||
-    text.includes('creature') ||
-    text.includes('monster') ||
-    text.includes('shadow') ||
-    text.includes('dark') ||
-    text.includes('fear') ||
-    text.includes('haunt') ||
-    text.includes('escape') ||
-    text.includes('trap')
-  ) {
-    return {
-      primaryQuestion: 'Would you have stayed behind, or fled the moment things went dark?',
-      alternateQuestions: [
-        'What would you have done differently to survive?',
-        'Would you open that door if your life depended on it?',
-        `Was ${char}'s survival luck or calculated strategy?`,
-        'Would you enter the darkness to save a companion?',
-      ],
-    };
-  }
-
   // Betrayal / Revenge / Moral Dilemma / Sacrifice / Loyalty
   if (
-    text.includes('betray') ||
-    text.includes('revenge') ||
-    text.includes('lie') ||
-    text.includes('trust') ||
-    text.includes('moral') ||
-    text.includes('sacrifice') ||
-    text.includes('justice') ||
-    text.includes('crime')
+    /\b(?:betray|betrayal|revenge|lie|lies|lied|lying|trust|moral|sacrifice|justice|crime)\b/i.test(text)
   ) {
     return {
       primaryQuestion: 'Who was truly in the wrong here? Drop your verdict below.',
@@ -736,14 +795,16 @@ export function compileCtaPrompt(params: {
   const isWidescreen = params.format === 'long';
   const aspectRatio: '16:9' | '9:16' = isWidescreen ? '16:9' : '9:16';
 
-  // Primary character extraction for identity lock
+  // Primary character extraction for identity lock (expression-free)
   const characters = Object.entries(params.characterSheet || {});
   let primaryCharName = 'the protagonist';
   let primaryCharClause = 'The protagonist';
   if (characters.length > 0) {
-    const [name, desc] = characters[0];
-    primaryCharName = name;
-    primaryCharClause = `${name} (locked visual identity: ${desc})`;
+    const [rawName, rawDesc] = characters[0];
+    const cleanDesc = stripTransientExpressionsAndPoses(rawDesc) || rawDesc;
+    const isGenericProtag = rawName.trim().toLowerCase() === 'protagonist';
+    primaryCharName = isGenericProtag ? 'the protagonist' : rawName.trim();
+    primaryCharClause = `${isGenericProtag ? 'the protagonist' : rawName.trim()} (locked visual identity: ${cleanDesc})`;
   }
 
   // Question resolution
@@ -753,9 +814,17 @@ export function compileCtaPrompt(params: {
       ? params.questionText.trim()
       : primaryQuestion;
 
+  const isMono = isMonochromeStyle(params.styleProfile);
   const artStyle = params.styleProfile?.artStyle || 'Cinematic realistic';
-  const colorPalette = params.styleProfile?.colorPalette || 'high-contrast dramatic lighting, rich atmospheric haze';
-  const lighting = params.styleProfile?.lighting || 'deep directional key light with saturated rim backlight';
+  const colorPalette = sanitizeMonochromeLighting(
+    params.styleProfile?.colorPalette || 'high-contrast dramatic lighting, rich atmospheric haze',
+    params.styleProfile
+  );
+  const rawLighting =
+    params.styleProfile?.lighting || 'deep directional key light with saturated rim backlight';
+  const lighting = isMono
+    ? sanitizeMonochromeLighting(rawLighting, params.styleProfile) || 'stark chiaroscuro contrast lighting with deep ink shadows'
+    : rawLighting;
 
   // Platform specific safe zone rules & UI annotations
   let platformLabel = 'TikTok';
@@ -781,12 +850,12 @@ export function compileCtaPrompt(params: {
   } else if (platform === 'youtube_shorts') {
     platformLabel = 'YouTube Shorts 9:16 Vertical';
     safeZoneGuidance =
-      'YouTube Shorts safe zone layout: Keep the bottom 20% strictly clear of text and focal faces for the channel avatar, channel name, and red subscribe button. Keep the right 15% clear for engagement icons (thumbs up, comments, share, remix). Keep top 10% clear.';
+      'YouTube Shorts safe zone layout: Keep the bottom 20% strictly clear of text and focal faces for the channel avatar, channel name, and subscribe button. Keep the right 15% clear for engagement icons (thumbs up, comments, share, remix). Keep top 10% clear.';
 
     if (engagementType === 'question') {
       uiCalloutGuidance = `UI Engagement Callout: Upper-middle safe zone graphic displaying "${activeQuestion}" in high-contrast clean typography with sharp drop shadow. Below it, a subtle prompt line: "Share your thoughts in the comments · Subscribe for more stories".`;
     } else if (engagementType === 'follow_subscribe') {
-      uiCalloutGuidance = `UI Engagement Callout: Upper-middle safe zone displaying "${activeQuestion}" along with a graphical red "Subscribe" action indicator and bell reminder, placed safely above the lower 25% boundary.`;
+      uiCalloutGuidance = `UI Engagement Callout: Upper-middle safe zone displaying "${activeQuestion}" along with a clean "Subscribe" action indicator and bell reminder, placed safely above the lower 25% boundary.`;
     } else {
       uiCalloutGuidance = `UI Engagement Callout: Centered safe zone displaying "${activeQuestion}" with interactive prompt: "Drop your verdict below · Subscribe for the sequel".`;
     }
@@ -810,33 +879,33 @@ export function compileCtaPrompt(params: {
 
   if (modality === 'video') {
     modalityHeader = `CINEMATIC 3-SECOND OUTRO VIDEO LOOP. ${platformLabel} moving video plate. Continuous seamless atmospheric loop. No jump cuts, no flashing strobes.`;
-    visualActionClause = `Camera motion: slow subtle cinematic dolly in pushing slowly toward ${primaryCharClause}. Atmospheric ambient dust particles drift through the ${lighting}. The subject holds a lingering, unresolved, emotionally resonant gaze directly into the camera lens, breaking the fourth wall in quiet suspense as the scene holds tension.`;
+    visualActionClause = `Camera motion: slow subtle cinematic dolly in pushing slowly toward ${primaryCharClause}. Atmospheric ambient dust particles drift through ${lighting}. The subject holds a lingering, unresolved, emotionally resonant gaze directly into the camera lens, breaking the fourth wall in quiet suspense as the scene holds tension.`;
   } else {
     modalityHeader = `STATIC OUTRO FRAME ONLY. ${platformLabel} closing freeze frame. Single high-tension still image. Zero camera movement, no motion blur, no video, no multiple frames.`;
-    visualActionClause = `Composition: Freeze-frame closing portrait of ${primaryCharClause} locked in an intense climactic pause, eyes meeting the lens with deep emotional gravity. Shallow depth of field, sharp cinematic focus on facial expression, dramatic ${lighting} separating the hero from atmospheric background shadows.`;
+    visualActionClause = `Composition: Freeze-frame closing portrait of ${primaryCharClause} locked in an intense climactic pause, eyes meeting the lens with deep emotional gravity. Shallow depth of field, sharp cinematic focus on facial expression, ${lighting} separating the hero from atmospheric background shadows.`;
   }
 
-  // Full compiled prompt with typography
-  const compiledPrompt = [
+  // Full compiled prompt with typography (universal clean flags without legacy --style raw --v 6.1)
+  const compiledPrompt = normalizeUnicodeAndDashes([
     modalityHeader,
     `Framed in ${aspectRatio} aspect ratio for high-retention short-form outro engagement.`,
     `Style continuity: ${artStyle}, ${colorPalette}.`,
     visualActionClause,
     safeZoneGuidance,
     uiCalloutGuidance,
-    `--ar ${aspectRatio} --style raw --v 6.1`,
-  ].join(' ');
+    `--ar ${aspectRatio}`,
+  ].join(' '));
 
   // Clean plate prompt (background only, text-free)
-  const cleanPlatePrompt = [
+  const cleanPlatePrompt = normalizeUnicodeAndDashes([
     modalityHeader,
     `Framed in ${aspectRatio} aspect ratio for high-retention short-form outro engagement.`,
     `Style continuity: ${artStyle}, ${colorPalette}.`,
     visualActionClause,
     safeZoneGuidance,
     cleanPlateGuidance,
-    `--ar ${aspectRatio} --style raw --v 6.1`,
-  ].join(' ');
+    `--ar ${aspectRatio}`,
+  ].join(' '));
 
   return {
     questionText: activeQuestion,

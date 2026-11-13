@@ -495,14 +495,14 @@ export default function AssistantChatDrawer({
                   </h2>
                   {currentResult ? (
                     <div className="flex items-center gap-1.5 mt-0.5 truncate">
-                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                      <span className="inline-block w-1.5 h-1.5 rounded-[1px] bg-emerald-400 shrink-0" />
                       <span className="text-[10px] font-mono text-emerald-400 truncate">
                         Connected: {currentResult.title || 'Current Story'} ({currentResult.scenes?.length || 0}S / {currentResult.scenes?.reduce((acc, s) => acc + (s.beats?.length || 0), 0) || 0}B)
                       </span>
                     </div>
                   ) : (
                     <div className="flex items-center gap-1.5 mt-0.5">
-                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-white/40" />
+                      <span className="inline-block w-1.5 h-1.5 rounded-[1px] bg-white/40" />
                       <span className="text-[10px] font-mono text-[#8C8C86]">
                         Context: General Creative Co-Pilot
                       </span>
@@ -928,7 +928,7 @@ export default function AssistantChatDrawer({
                   </span>
                   <div className="p-3.5 bg-[#131312] border border-white/10 rounded-[2px] max-w-[85%] space-y-2">
                     <div className="flex items-center space-x-2 text-xs text-[#8C8C86]">
-                      <span className="inline-block w-2 h-2 rounded-full bg-white animate-pulse" />
+                      <span className="inline-block w-2 h-2 rounded-[1px] bg-white animate-pulse" />
                       <span className="font-mono text-[11px]">
                         thinking with {aiProvider === 'groq' ? 'groq' : 'gemini'}...
                       </span>

@@ -20,7 +20,7 @@ import {
 import {
   extractStoryTitle,
 } from '../services/historyStorage';
-import { cleanAndDeduplicatePrompt, assembleCleanPrompt } from '../services/geminiClient';
+import { cleanAndDeduplicatePrompt, assembleCleanPrompt, sanitizeCharacterIdentitySheet } from '../services/geminiClient';
 import {
   deduplicateAndProgressSceneBeats,
   verifyAndRepairSceneNarrationCoverage,
@@ -28,6 +28,16 @@ import {
   injectCompactCharacterLocks,
   sanitizeEraBleedAcrossScenes,
   normalizeStoryboardForDisplay,
+  stripTransientExpressionsAndPoses,
+  buildCompactCharacterAnchor,
+  formatFinalBeatPrompt,
+  isMonochromeStyle,
+  sanitizeMonochromeLighting,
+  isInfancyOrChildhoodFlashback,
+  hasDistinctMontageFocalSubject,
+  auditScenesForRepair,
+  scaleBeatsToTargetDuration,
+  runTwoPhaseProgressionAndRepair,
 } from '../services/beatProgressionEngine';
 import { sanitizeGroqErrorMessage, extractCleanJson, GROQ_API_BASE_URL, sanitizePromptText, tryRepairTruncatedJson } from '../services/groqClient';
 import { robustJsonParse } from '../services/unifiedAiService';
@@ -38,6 +48,8 @@ import {
   lintStoryboard,
   inferStoryAdaptiveFont,
   compileThumbnailPrompt,
+  inferStoryAdaptiveCtaQuestion,
+  compileCtaPrompt,
 } from '../services/promptCompiler';
 import { Scene, Beat, StyleProfile, StoryGenerationResult } from '../types';
 
@@ -1493,9 +1505,630 @@ assert(
   'Flags intra-scene beat clones (L10), missing spoken narration words (L11), and metadata contradiction (L12)'
 );
 
-console.log('\n====================================================================');
-console.log('                  FULL-SYSTEM VERIFICATION REPORT                  ');
-console.log('====================================================================');
+// ============================================================================
+// 19. MONOCHROME LOCK, TWIST SAFETY, EXPRESSION PURITY, HYGIENE & MIRROR CTA
+// ============================================================================
+console.log('\n--- Running Test Suite 19: Monochrome Lock, Hygiene, Taxonomy & Mirror CTA ---');
+
+// 19.1 Expression/pose stripping in characterSheet & clean phrase-boundary compaction
+const dirtyCharDesc =
+  'gaunt dark-haired person in dark blue oversized cotton pajamas, bare feet, tousled black hair falling into eyes, eyes wide, neutral expression, mouth open, dark circles under eyes';
+const cleanCharSheetDesc = sanitizeCharacterIdentitySheet(dirtyCharDesc);
+const compactCharDesc = buildCompactCharacterAnchor(cleanCharSheetDesc, 20);
+assert(
+  !/eyes wide|neutral expression|mouth open/i.test(cleanCharSheetDesc) &&
+    cleanCharSheetDesc.includes('bare feet') &&
+    !/neutral\)$/.test(compactCharDesc) &&
+    !compactCharDesc.endsWith('('),
+  'Expression-Free CharacterSheet & Safe Compaction',
+  'Strips transient expressions while keeping barefoot trait and never breaks mid-phrase'
+);
+
+// 19.2 Monochrome style lock, entity expansion, barefoot alignment, still-image motion/optics cleanup, & OTS-vs-angle sync
+const junjiStyleProfile: StyleProfile = {
+  artStyle: 'Junji Ito inspired high-contrast black-and-white horror manga ink art, no gray gradients',
+  colorPalette: 'Strict pure black-and-white ink with cold cyan accents and 3200K warm highlights',
+  lighting: '3200K warm tungsten key light with cold 5400K rim lighting',
+  eraAndSetting: 'Cramped shadowy bedroom before an antique standing mirror',
+};
+const mirrorCharSheet: Record<string, string> = {
+  Protagonist: 'pale slender figure with tousled black hair, dark oversized sleepwear, and barefoot stance',
+};
+const mirrorLocSheet: Record<string, string> = {
+  DarkRoom: 'cramped shadowy bedroom with peeling wallpaper, tall wooden standing mirror',
+};
+
+const rawDirtyBeat: Beat = {
+  beatIndex: 1,
+  textSpan: 'Because it is guarding something.',
+  shotType: 'Close-Up',
+  cameraAngle: 'over-the-shoulder',
+  cameraMovement: 'Static Frame',
+  imagePrompt:
+    'Vertical 9:16 portrait composition, Medium Close-Up, over-the-shoulder view of Protagonist in DarkRoom,cramped bedroom.. Shot on 35mm 35mm f/2.8 lens, tracking left to reveal both boots planted firmly while listening to an unseen whisper, 3200K warm tungsten and cold cyan rim lighting. --ar 9:16',
+  estimatedSeconds: 2.2,
+};
+
+const formattedHorrorBeat = formatFinalBeatPrompt(rawDirtyBeat, false, false, {
+  styleProfile: junjiStyleProfile,
+  characterSheet: mirrorCharSheet,
+  locationSheet: mirrorLocSheet,
+});
+
+assert(
+  formattedHorrorBeat.shotType === 'Medium Close-Up' &&
+    formattedHorrorBeat.cameraAngle === 'eye-level' &&
+    !formattedHorrorBeat.imagePrompt.includes('DarkRoom') &&
+    !formattedHorrorBeat.imagePrompt.includes('Protagonist') &&
+    !formattedHorrorBeat.imagePrompt.includes('..') &&
+    !formattedHorrorBeat.imagePrompt.includes('35mm 35mm') &&
+    !formattedHorrorBeat.imagePrompt.includes('tracking left to reveal') &&
+    !formattedHorrorBeat.imagePrompt.includes('listening to an unseen whisper') &&
+    !formattedHorrorBeat.imagePrompt.includes('both boots') &&
+    !/3200K|5400K|warm tungsten|cold cyan/i.test(formattedHorrorBeat.imagePrompt),
+  'Prompt Hygiene, Monochrome Lock & OTS/Angle Sync',
+  'Expands DarkRoom/Protagonist, strips B&W chromatic Kelvin/cyan, fixes OTS in cameraAngle, syncs Medium Close-Up, and respects barefoot stance'
+);
+
+// 19.3 Zero spoken-text fallback leakage in coverage repair & chronological twist safety
+const mirrorTruncatedScene: Scene = {
+  index: 6,
+  narratorLine: 'Think about it: you can touch the glass anytime. So why can you never reach out and cross to the other side?',
+  estimatedSeconds: 4.0,
+  beats: [
+    {
+      beatIndex: 1,
+      textSpan: 'Think about it: you can touch the glass anytime.',
+      shotType: 'Medium Shot',
+      cameraAngle: 'eye-level',
+      cameraMovement: 'Static Frame',
+      imagePrompt:
+        'Vertical 9:16 portrait composition, Medium Shot, eye-level of the protagonist standing motionless before a dark standing mirror, stark ink contrast, 50mm f/2.0 lens. --ar 9:16',
+      estimatedSeconds: 2.0,
+    },
+  ],
+};
+const repairedMirrorScenes = verifyAndRepairSceneNarrationCoverage(
+  [mirrorTruncatedScene],
+  junjiStyleProfile,
+  mirrorCharSheet,
+  mirrorLocSheet,
+  { isLongForm: false, isVideoMode: false }
+);
+const recoveredMirrorPrompt = repairedMirrorScenes[0].beats[1]?.imagePrompt || '';
+assert(
+  repairedMirrorScenes[0].beats.length >= 2 &&
+    !/turning point of|escalating stakes of/i.test(recoveredMirrorPrompt) &&
+    !recoveredMirrorPrompt.includes('Protagonist') &&
+    !recoveredMirrorPrompt.includes('DarkRoom') &&
+    !/smiling/i.test(recoveredMirrorPrompt),
+  'Zero Spoken-Text Leakage & Twist Preservation',
+  'Coverage repair never injects spoken text strings, expands entity keys, and withholds final smile reveal'
+);
+
+// 19.4 Monochrome Thumbnail & Universal Mirror-Horror CTA Compilation
+const monoThumb = compileThumbnailPrompt({
+  rawThumbnail: {
+    heroMoment: 'The protagonist staring into DarkRoom mirror as the reflection freezes',
+    expression: 'horrified, mouth open in silent dread',
+    bgDescription: 'cramped dark bedroom bathed in 3200K warm and cold cyan shadows',
+    accentColor: 'cold electric cyan',
+    hookText: 'IT NEVER BLINKED',
+  },
+  styleProfile: junjiStyleProfile,
+  characterSheet: { Protagonist: dirtyCharDesc },
+  storyPremise: "You've been told a lie about what mirrors are... Your reflection blinks a half-second late. Now it's smiling.",
+  format: 'short',
+  platform: 'TikTok',
+});
+assert(
+  isMonochromeStyle(junjiStyleProfile) &&
+    !/cold electric cyan|cold cyan rim|3200K warm/i.test(monoThumb.compiledPrompt) &&
+    !/eyes wide|neutral expression|mouth open.*locked visual identity/i.test(
+      monoThumb.compiledPrompt.split('expression horrified')[0] || ''
+    ),
+  'Monochrome Thumbnail & Clean Identity Lock',
+  'Removes chromatic rim colors from B&W manga thumbnails and strips clashing neutral expressions'
+);
+
+const mirrorCtaQuery = inferStoryAdaptiveCtaQuestion(
+  "You've been told a lie about what mirrors actually are. Every reflection is a warden guarding a parallel universe. Now it's smiling.",
+  'Protagonist'
+);
+const mirrorCtaPrompt = compileCtaPrompt({
+  storyPremise:
+    "You've been told a lie about what mirrors actually are. Every reflection is a warden guarding a parallel universe. Now it's smiling.",
+  styleProfile: junjiStyleProfile,
+  characterSheet: { Protagonist: dirtyCharDesc },
+  format: 'short',
+  platform: 'tiktok',
+  modality: 'image',
+});
+assert(
+  mirrorCtaQuery.primaryQuestion.toLowerCase().includes('mirror') &&
+    !mirrorCtaQuery.primaryQuestion.includes('in the wrong here') &&
+    !mirrorCtaPrompt.compiledPrompt.includes('--style raw') &&
+    !mirrorCtaPrompt.compiledPrompt.includes('--v 6.1') &&
+    !/3200K|5400K/i.test(mirrorCtaPrompt.compiledPrompt),
+  'Mirror Horror CTA & Universal Flags',
+  'Detects mirror horror ahead of incidental lie keyword and omits legacy --style raw --v 6.1 flags'
+);
+
+// 19.5 Linter L12 + L13 detection for OTS in cameraAngle & monochrome Kelvin bleed
+const l13Scene: Scene[] = [
+  {
+    index: 1,
+    narratorLine: 'He stares into the glass in the dark room.',
+    estimatedSeconds: 3.0,
+    beats: [
+      {
+        beatIndex: 1,
+        textSpan: 'He stares into the glass in the dark room.',
+        shotType: 'Close-Up',
+        cameraAngle: 'over-the-shoulder',
+        cameraMovement: 'Static Frame',
+        imagePrompt:
+          'Vertical 9:16 portrait composition, Medium Close-Up, over-the-shoulder view inside DarkRoom under 3200K warm tungsten key light. --ar 9:16',
+        estimatedSeconds: 3.0,
+      },
+    ],
+  },
+];
+const l13Issues = lintStoryboard(l13Scene, mirrorCharSheet, junjiStyleProfile);
+const l13Codes = new Set(l13Issues.map((i) => i.id.split('-')[0]));
+assert(
+  l13Codes.has('L12') && l13Codes.has('L13'),
+  'Storyboard Linter Rules L12/L13 Extended',
+  'Flags OTS in cameraAngle + Medium Close-Up mismatch (L12) and monochrome Kelvin bleed + raw DarkRoom key (L13)'
+);
+
+// ============================================================================
+// SUITE 20: Action-Triplet Montage, Semantic Crib Flashback & 8-Word Auditor
+// ============================================================================
+console.log('Running Test Suite 20: Action-Triplet Montage, Semantic Flashbacks & Dense Auditor...');
+
+const dualCharEntitySheet: Record<string, string> = {
+  Protagonist: 'young person with short black hair, pallid skin, thin black turtleneck sweater, dark jeans, barefoot',
+  MirrorEntity: 'gaunt pitch-black ink silhouette matching human proportions, hollow white unblinking eyes, elongated tapered fingers',
+};
+
+// 20.1 Preserve "every blink / every breath / every move" rapid montage while still merging pure grammar connectors
+const montageAndGlueScene: Scene = {
+  index: 3,
+  narratorLine: 'perfectly mimicking every blink, every breath, every move.',
+  estimatedSeconds: 2.5,
+  beats: [
+    {
+      beatIndex: 1,
+      textSpan: 'perfectly mimicking every blink,',
+      shotType: 'Extreme Close-Up',
+      cameraAngle: 'eye-level',
+      cameraMovement: 'Static Frame',
+      imagePrompt:
+        'Vertical 9:16 portrait composition, Extreme Close-Up, eye-level macro framing of the protagonist eyelid frozen half-shut mid-blink beside the glass eye reflection in exact 1:1 mirror symmetry, stark white highlight on dark lashes, Shot on 100mm macro f/2.8 lens. --ar 9:16',
+      estimatedSeconds: 0.9,
+    },
+    {
+      beatIndex: 2,
+      textSpan: 'every breath,',
+      shotType: 'Extreme Close-Up',
+      cameraAngle: 'eye-level',
+      cameraMovement: 'Static Frame',
+      imagePrompt:
+        'Vertical 9:16 portrait composition, Extreme Close-Up, eye-level macro view of faint condensation frost vapor misting outward across the cold ebony mirror surface beside parted lips in exact 1:1 mirrored synchrony, cross-hatched condensation droplets, Shot on 85mm f/1.8 lens. --ar 9:16',
+      estimatedSeconds: 0.8,
+    },
+    {
+      beatIndex: 3,
+      textSpan: 'every move.',
+      shotType: 'Medium Shot',
+      cameraAngle: 'eye-level',
+      cameraMovement: 'Static Frame',
+      imagePrompt:
+        'Vertical 9:16 portrait composition, Medium Shot, eye-level wide torso framing of raised left hand and shifted shoulder posture mirrored in exact 1:1 unsmiling synchrony across the tall bedroom mirror glass, bare feet grounded on wooden floorboards, Shot on 35mm f/4 lens. --ar 9:16',
+      estimatedSeconds: 0.8,
+    },
+  ],
+};
+
+const normalizedMontage = normalizeStoryboardForDisplay([montageAndGlueScene], {
+  isVideoMode: false,
+  isLongForm: false,
+  styleProfile: junjiStyleProfile,
+  characterSheet: dualCharEntitySheet,
+  locationSheet: mirrorLocSheet,
+});
+const montageL10Issues = lintStoryboard(normalizedMontage, dualCharEntitySheet, junjiStyleProfile).filter((i) =>
+  i.id.startsWith('L10')
+);
+
+// Also confirm plain grammar stub still merges
+const plainGlueBeats = deduplicateAndProgressSceneBeats(
+  [
+    {
+      beatIndex: 1,
+      textSpan: 'But he has one problem:',
+      shotType: 'Close-Up',
+      cameraAngle: 'eye-level',
+      cameraMovement: 'Static Frame',
+      imagePrompt: 'Close-Up of young knight standing in torchlit stone corridor, 85mm f/1.8 lens.',
+      estimatedSeconds: 1.0,
+    },
+    {
+      beatIndex: 2,
+      textSpan: 'his rifle has no ammo left.',
+      shotType: 'Close-Up',
+      cameraAngle: 'eye-level',
+      cameraMovement: 'Static Frame',
+      imagePrompt: 'Close-Up of young knight staring at open empty metal rifle chamber in torchlit corridor, 85mm f/1.8 lens.',
+      estimatedSeconds: 1.5,
+    },
+  ],
+  { isLongForm: false, isVideoMode: false, styleProfile: junjiStyleProfile }
+);
+
+assert(
+  normalizedMontage[0].beats.length === 3 &&
+    normalizedMontage[0].beats[0].textSpan.includes('every blink') &&
+    normalizedMontage[0].beats[1].textSpan.includes('every breath') &&
+    normalizedMontage[0].beats[2].textSpan.includes('every move') &&
+    montageL10Issues.length === 0 &&
+    plainGlueBeats.length === 1,
+  'Action-Triplet Montage Preservation & Stub Glue Merging',
+  'Preserves every blink / every breath / every move without Pass 3 overwrite or L10 false positives while still merging plain connector stubs'
+);
+
+// 20.2 Semantic-Anchor + Confirmed Crib Flashback Isolation & Zero Adult Wardrobe Bleed
+const semanticFlashbackScene: Scene = {
+  index: 3,
+  narratorLine: "It's an entity that has studied you since birth,",
+  estimatedSeconds: 3.1,
+  beats: [
+    {
+      beatIndex: 1,
+      textSpan: "It's an entity",
+      shotType: 'Medium Close-Up',
+      cameraAngle: 'low-angle',
+      cameraMovement: 'Static Frame',
+      imagePrompt:
+        'Vertical 9:16 portrait composition, Medium Close-Up, low-angle stark reveal of MirrorEntity (gaunt pitch-black ink silhouette, hollow white unblinking eyes, elongated tapered fingers), blank unsmiling expression, Shot on 50mm f/2.0 lens. --ar 9:16',
+      estimatedSeconds: 1.0,
+    },
+    {
+      beatIndex: 2,
+      textSpan: 'that has studied',
+      shotType: 'Over-the-Shoulder (OTS)',
+      cameraAngle: 'high-angle',
+      cameraMovement: 'Static Frame',
+      imagePrompt:
+        'Vertical 9:16 portrait composition, Over-the-Shoulder (OTS), high-angle framing of the protagonist facing forward completely unaware in crisp focus while MirrorEntity looms behind in deep room shadow watching silently, Shot on 35mm f/2.8 lens. --ar 9:16',
+      estimatedSeconds: 1.0,
+    },
+    {
+      beatIndex: 3,
+      textSpan: 'you since birth,',
+      shotType: 'Medium Shot',
+      cameraAngle: 'high-angle',
+      cameraMovement: 'Static Frame',
+      imagePrompt:
+        'Vertical 9:16 portrait composition, Medium Shot, high-angle flashback inside a dimly lit wooden nursery showing a tiny infant protagonist swaddled safely inside a wooden crib while MirrorEntity lurks behind dark crib slats in shadow watching silently, Shot on 35mm f/2.8 lens. --ar 9:16',
+      estimatedSeconds: 1.1,
+    },
+  ],
+};
+
+const normalizedSemantic = normalizeStoryboardForDisplay([semanticFlashbackScene], {
+  isVideoMode: false,
+  isLongForm: false,
+  styleProfile: junjiStyleProfile,
+  characterSheet: dualCharEntitySheet,
+  locationSheet: mirrorLocSheet,
+});
+const cribLockedPrompt = injectCompactCharacterLocks(
+  semanticFlashbackScene.beats[2].imagePrompt,
+  semanticFlashbackScene.beats[2].textSpan,
+  semanticFlashbackScene.narratorLine,
+  dualCharEntitySheet
+);
+
+assert(
+  isInfancyOrChildhoodFlashback('you since birth,', cribLockedPrompt) &&
+    hasDistinctMontageFocalSubject(semanticFlashbackScene.beats[1], semanticFlashbackScene.beats[2]) &&
+    normalizedSemantic[0].beats.length === 3 &&
+    !cribLockedPrompt.includes('turtleneck') &&
+    !cribLockedPrompt.includes('dark jeans') &&
+    !cribLockedPrompt.includes('DarkRoom'),
+  'Semantic-Anchor Crib Flashback Shield',
+  'Keeps Entity -> Studied -> Since Birth split across 3 distinct beats and prevents adult wardrobe or bedroom bleed onto infant crib flashback'
+);
+
+// 20.3 Dense 8-9 Word Blind-Spot Auditor + Climax/Negation Repair with 0.7s Montage Floor
+const denseBlindSpotScenes: Scene[] = [
+  {
+    index: 3,
+    narratorLine: "It's an entity that has studied you since birth,",
+    estimatedSeconds: 2.5,
+    beats: [
+      {
+        beatIndex: 1,
+        textSpan: "It's an entity that has studied you since birth,",
+        shotType: 'Close-Up',
+        cameraAngle: 'eye-level',
+        cameraMovement: 'Static Frame',
+        imagePrompt: 'Vertical 9:16 portrait composition, Close-Up of dark room glass mirror. --ar 9:16',
+        estimatedSeconds: 2.5,
+      },
+    ],
+  },
+  {
+    index: 4,
+    narratorLine: 'perfectly mimicking every blink, every breath, every move.',
+    estimatedSeconds: 2.5,
+    beats: [
+      {
+        beatIndex: 1,
+        textSpan: 'perfectly mimicking every blink, every breath, every move.',
+        shotType: 'Extreme Close-Up',
+        cameraAngle: 'eye-level',
+        cameraMovement: 'Static Frame',
+        imagePrompt: 'Vertical 9:16 portrait composition, Extreme Close-Up of eyelids. --ar 9:16',
+        estimatedSeconds: 2.5,
+      },
+    ],
+  },
+  {
+    index: 6,
+    narratorLine: 'You never reach out. You never cross.',
+    estimatedSeconds: 2.5,
+    beats: [
+      {
+        beatIndex: 1,
+        textSpan: 'You never reach out. You never cross.',
+        shotType: 'Medium Shot',
+        cameraAngle: 'eye-level',
+        cameraMovement: 'Static Frame',
+        imagePrompt: 'Vertical 9:16 portrait composition, Medium Shot of protagonist standing by mirror. --ar 9:16',
+        estimatedSeconds: 2.5,
+      },
+    ],
+  },
+  {
+    index: 7,
+    narratorLine: "But tonight, your reflection was a half-second late. Now it's smiling.",
+    estimatedSeconds: 2.7,
+    beats: [
+      {
+        beatIndex: 1,
+        textSpan: "But tonight, your reflection was a half-second late. Now it's smiling.",
+        shotType: 'Medium Shot',
+        cameraAngle: 'high-angle',
+        cameraMovement: 'Static Frame',
+        imagePrompt: 'Vertical 9:16 portrait composition, Medium Shot of protagonist blinking before glass. --ar 9:16',
+        estimatedSeconds: 2.7,
+      },
+    ],
+  },
+];
+
+const denseAuditResults = auditScenesForRepair(denseBlindSpotScenes, junjiStyleProfile, false);
+const coverageRecoveryMontage = verifyAndRepairSceneNarrationCoverage(
+  [
+    {
+      index: 3,
+      narratorLine: "It's an entity that has studied you since birth",
+      estimatedSeconds: 2.0,
+      beats: [
+        {
+          beatIndex: 1,
+          textSpan: "It's an entity that has studied",
+          shotType: 'Medium Close-Up',
+          cameraAngle: 'low-angle',
+          cameraMovement: 'Static Frame',
+          imagePrompt: 'Vertical 9:16 portrait composition, Medium Close-Up, low-angle of unsmiling MirrorEntity silhouette. --ar 9:16',
+          estimatedSeconds: 1.5,
+        },
+      ],
+    },
+  ],
+  junjiStyleProfile,
+  dualCharEntitySheet,
+  mirrorLocSheet,
+  { isLongForm: false, isVideoMode: false }
+);
+const recoveredCribBeat = coverageRecoveryMontage[0].beats[1];
+
+assert(
+  denseAuditResults.length === 4 &&
+    Boolean(recoveredCribBeat) &&
+    recoveredCribBeat.textSpan.toLowerCase().includes('since birth') &&
+    recoveredCribBeat.estimatedSeconds >= 0.7 &&
+    recoveredCribBeat.estimatedSeconds <= 1.3 &&
+    recoveredCribBeat.imagePrompt.toLowerCase().includes('crib') &&
+    !recoveredCribBeat.imagePrompt.includes('DarkRoom') &&
+    !recoveredCribBeat.imagePrompt.includes('turtleneck'),
+  'Dense 8-9 Word Pattern Auditor & 0.7s Crib Coverage Recovery',
+  'Flags short 8-9 word unsplit triplets, entity+birth flashbacks, negations, and climax merges while recovering infant crib beat cleanly at montage timing'
+);
+
+// ============================================================================
+// TEST SUITE 21: TEXT-TO-VIDEO 4S DURATION ALIGNMENT & IMAGE MODE ISOLATION
+// ============================================================================
+async function runTestSuite21() {
+  console.log('\n--- Running Test Suite 21: Video Mode 4s Alignment ---');
+
+  // 21.1: scaleBeatsToTargetDuration sums cleanly to 4.0s
+  const scaledThreeBeats = scaleBeatsToTargetDuration(
+    [
+      {
+        beatIndex: 1,
+        textSpan: 'You stand still',
+        shotType: 'Medium Shot',
+        cameraAngle: 'eye-level',
+        cameraMovement: 'Slow Push-In',
+        imagePrompt: 'Vertical 9:16 portrait composition, Medium Shot, eye-level of Alex standing still.',
+        estimatedSeconds: 1.8,
+      },
+      {
+        beatIndex: 2,
+        textSpan: 'before the glass',
+        shotType: 'Close-Up',
+        cameraAngle: 'low-angle',
+        cameraMovement: 'Static Frame',
+        imagePrompt: 'Vertical 9:16 portrait composition, Close-Up, low-angle of glass surface.',
+        estimatedSeconds: 1.7,
+      },
+      {
+        beatIndex: 3,
+        textSpan: 'watching in silence',
+        shotType: 'Extreme Close-Up',
+        cameraAngle: 'eye-level',
+        cameraMovement: 'Slow Push-In',
+        imagePrompt: 'Vertical 9:16 portrait composition, Extreme Close-Up, eye-level of unblinking eyes.',
+        estimatedSeconds: 2.0,
+      },
+    ],
+    4
+  );
+  const scaledSum = Math.round(scaledThreeBeats.reduce((sum, b) => sum + (b.estimatedSeconds || 0), 0) * 10) / 10;
+
+  assert(
+    scaledSum === 4 && scaledThreeBeats.every((b) => (b.estimatedSeconds || 0) >= 0.6),
+    'Suite 21: Video Mode 4s Alignment',
+    '21.1 scaleBeatsToTargetDuration Locks Exact 4.0s Sum',
+    `Expected beat sum === 4.0s, got ${scaledSum}s (${scaledThreeBeats.map((b) => b.estimatedSeconds).join(' + ')})`
+  );
+
+  // 21.2: runTwoPhaseProgressionAndRepair syncs Video Mode scenes, beats, and videoPrompt Duration to 4s
+  const videoPipelineScenes = await runTwoPhaseProgressionAndRepair({
+    scenes: [
+      {
+        index: 1,
+        narratorLine: 'It is an entity that has studied you since birth in the dark hallway.',
+        estimatedSeconds: 4,
+        videoPrompt: 'Subject: Protagonist and entity in dark hallway. Duration: 4 seconds. Vertical 9:16.',
+        beats: [
+          {
+            beatIndex: 1,
+            textSpan: 'It is an entity',
+            shotType: 'Medium Close-Up',
+            cameraAngle: 'low-angle',
+            cameraMovement: 'Slow Push-In',
+            imagePrompt: 'Vertical 9:16 portrait composition, Medium Close-Up, low-angle of entity silhouette in hallway.',
+            estimatedSeconds: 2.0,
+          },
+          {
+            beatIndex: 2,
+            textSpan: 'that has studied you since birth',
+            shotType: 'Over-the-Shoulder (OTS)',
+            cameraAngle: 'high-angle',
+            cameraMovement: 'Static Frame',
+            imagePrompt: 'Vertical 9:16 portrait composition, Over-the-Shoulder (OTS), high-angle of infant in wooden crib with shadow behind slats.',
+            estimatedSeconds: 2.2,
+          },
+          {
+            beatIndex: 3,
+            textSpan: 'in the dark hallway.',
+            shotType: 'Wide Establishing Shot',
+            cameraAngle: 'eye-level',
+            cameraMovement: 'Slow Push-In',
+            imagePrompt: 'Vertical 9:16 portrait composition, Wide Establishing Shot, eye-level of empty hallway mirror.',
+            estimatedSeconds: 1.9,
+          },
+        ],
+      },
+    ],
+    styleProfile: junjiStyleProfile,
+    characterSheet: dualCharEntitySheet,
+    locationSheet: mirrorLocSheet,
+    isLongForm: false,
+    isVideoMode: true,
+    targetVideoDuration: 4,
+  });
+
+  const videoScene = videoPipelineScenes[0];
+  const videoBeatSum = Math.round(videoScene.beats.reduce((sum, b) => sum + (b.estimatedSeconds || 0), 0) * 10) / 10;
+  const normalizedVideoDisplay = normalizeStoryboardForDisplay(videoPipelineScenes, {
+    isVideoMode: true,
+    isLongForm: false,
+    targetVideoDuration: 4,
+    styleProfile: junjiStyleProfile,
+    characterSheet: dualCharEntitySheet,
+    locationSheet: mirrorLocSheet,
+  });
+  const displayBeatSum = Math.round(
+    normalizedVideoDisplay[0].beats.reduce((sum, b) => sum + (b.estimatedSeconds || 0), 0) * 10
+  ) / 10;
+
+  assert(
+    videoScene.estimatedSeconds === 4 &&
+      videoBeatSum === 4 &&
+      normalizedVideoDisplay[0].estimatedSeconds === 4 &&
+      displayBeatSum === 4 &&
+      Boolean(videoScene.videoPrompt?.includes('Duration: 4 seconds')),
+    'Suite 21: Video Mode 4s Alignment',
+    '21.2 Video Mode Pipeline & Display Sync to 4.0s Clip Duration',
+    `Expected 4s scene and beat sum, got pipeline=${videoScene.estimatedSeconds}s/${videoBeatSum}s, display=${normalizedVideoDisplay[0].estimatedSeconds}s/${displayBeatSum}s`
+  );
+
+  // 21.3: Image Mode remains isolated and preserves natural beat sum (not forced to 4s)
+  const imageModeScenes = await runTwoPhaseProgressionAndRepair({
+    scenes: [
+      {
+        index: 1,
+        narratorLine: 'perfectly mimicking every blink, every breath, every move.',
+        estimatedSeconds: 2.8,
+        beats: [
+          {
+            beatIndex: 1,
+            textSpan: 'perfectly mimicking every blink,',
+            shotType: 'Extreme Close-Up',
+            cameraAngle: 'eye-level',
+            cameraMovement: 'Static Crisp Frame',
+            imagePrompt: 'Vertical 9:16 portrait composition, Extreme Close-Up, eye-level of eyelids mid-blink.',
+            estimatedSeconds: 0.9,
+          },
+          {
+            beatIndex: 2,
+            textSpan: 'every breath,',
+            shotType: 'Extreme Close-Up',
+            cameraAngle: 'low-angle',
+            cameraMovement: 'Static Crisp Frame',
+            imagePrompt: 'Vertical 9:16 portrait composition, Extreme Close-Up, low-angle of frost mist on glass.',
+            estimatedSeconds: 0.9,
+          },
+          {
+            beatIndex: 3,
+            textSpan: 'every move.',
+            shotType: 'Medium Shot',
+            cameraAngle: 'eye-level',
+            cameraMovement: 'Static Crisp Frame',
+            imagePrompt: 'Vertical 9:16 portrait composition, Medium Shot, eye-level of raised shoulders.',
+            estimatedSeconds: 1.0,
+          },
+        ],
+      },
+    ],
+    styleProfile: junjiStyleProfile,
+    characterSheet: dualCharEntitySheet,
+    locationSheet: mirrorLocSheet,
+    isLongForm: false,
+    isVideoMode: false,
+    targetVideoDuration: 4,
+  });
+  const imageBeatSum = Math.round(imageModeScenes[0].beats.reduce((sum, b) => sum + (b.estimatedSeconds || 0), 0) * 10) / 10;
+
+  assert(
+    imageBeatSum === 2.8 && imageModeScenes[0].estimatedSeconds === 2.8,
+    'Suite 21: Video Mode 4s Alignment',
+    '21.3 Strict Image Mode Isolation Preserves Natural Montage Timing',
+    `Expected natural 2.8s sum in Image Mode even if targetVideoDuration passed, got ${imageModeScenes[0].estimatedSeconds}s / ${imageBeatSum}s`
+  );
+}
+
+runTestSuite21().then(() => {
+  console.log('\n====================================================================');
+  console.log('                  FULL-SYSTEM VERIFICATION REPORT                  ');
+  console.log('====================================================================');
 
 const total = results.length;
 const passed = results.filter(r => r.passed).length;
@@ -1518,4 +2151,5 @@ if (failed > 0) {
 } else {
   process.exit(0);
 }
+});
 

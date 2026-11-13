@@ -156,3 +156,30 @@
   - Added `sanitizeFakePrecisionMath` (removing robotic weight percentages and joint degree angles) and `sanitizeEraBleedAcrossScenes` (preventing modern/futuristic scenery from leaking into historical scenes).
   - Updated `ResultsView.tsx` to use `normalizeStoryboardForDisplay` instead of re-chopping merged beats into clones, and added Linter rules L10, L11, and L12 in `promptCompiler.ts`.
   - Expanded automated system test suite to 156 tests in `src/tests/systemTestSuite.ts` (all 156 passing).
+- [x] **Monochrome Lock, Twist Preservation, Expression-Free Sheets, Entity Expansion & Mirror CTA:**
+  - Eliminated spoken-text fallback interpolation (`"turning point of"`, `"escalating stakes of"`) and enforced chronological twist & negation discipline across `beatProgressionEngine.ts`, `geminiClient.ts`, and `enhanceStoryArchitect.ts`.
+  - Added `stripTransientExpressionsAndPoses`, phrase-boundary compaction in `buildCompactCharacterAnchor`, `expandEntityKeysInPrompt` (`DarkRoom`, `Protagonist`), footwear harmonization (`barefoot`), and `sanitizeStillImageMotionAndOptics` (`35mm 35mm`, `..`, still-image `tracking left to reveal` & phantom audio cleanup).
+  - Added `isMonochromeStyle` and `sanitizeMonochromeLighting` stripping chromatic Kelvin (`3200K warm`, `cold 5400K`) and hues (`cold cyan`, `amber`) from monochrome/B&W manga beats, Thumbnails, and CTAs.
+  - Separated framing `shotType` (OTS/POV/Medium Close-Up/Close-Up) from vertical/tilt `cameraAngle` cleanly in `synchronizeBeatMetadataWithPrompt` and added L12/L13 checks in `lintStoryboard` (wired with `result.styleProfile` in `ResultsView.tsx`).
+  - Upgraded `inferStoryAdaptiveCtaQuestion` to catch mirror/supernatural horror ahead of incidental `"lie"` words and cleaned universal `--ar` flags in `compileCtaPrompt` without legacy `--style raw --v 6.1`.
+  - Expanded test suite with Suite 19 in `src/tests/systemTestSuite.ts` (162/162 passing).
+- [x] **Action-Triplet Montage, Semantic Crib Flashback Decomposition & Dense 8-Word Auditor:**
+  - Implemented `isInfancyOrChildhoodFlashback`, `extractMontageFocalCategory`, `isIntentionalMontageOrSemanticBeat`, `hasDistinctMontageFocalSubject`, and `detectUnsplitDenseBeatPattern` in `src/services/beatProgressionEngine.ts` with a `0.7s` montage duration floor (`MONTAGE_MIN_SECONDS`).
+  - Updated `deduplicateAndProgressSceneBeats` (Pass 2 & Pass 3) and `lintStoryboard` Rule L10 (`promptCompiler.ts`) to preserve distinct montage triplets (`every blink / every breath / every move`), semantic flashbacks (`It's an entity / that has studied / you since birth`), repeated negations (`You never reach out. / You never cross.`), and separated climax turns (`half-second late / Now it's smiling / And you never smiled`) while continuing to merge plain grammar stubs.
+  - Added infancy flashback shield in `injectCompactCharacterLocks`, `geminiClient.ts` continuity appenders, `buildContextPreservingProgressionBeat`, and `verifyAndRepairSceneNarrationCoverage` so adult clothes (`turtleneck`, `dark jeans`) and present-day `locationSheet` rooms (`DarkRoom`) never bleed into baby-in-crib shots.
+  - Updated Image/Video prompts in `geminiClient.ts`, `enhanceStoryArchitect.ts`, and `runTwoPhaseProgressionAndRepair` to lock recurring entities in `characterSheet`, keep stalking protagonists facing forward unaware, freeze montage states in Image Mode, and withhold late lag/smile reveals.
+  - Added Test Suite 20 in `src/tests/systemTestSuite.ts` (165 total tests).
+- [x] **Text-to-Video 4s Clip Duration Alignment & Multi-Clip Spill (Video Mode Only):**
+  - Added `scaleBeatsToTargetDuration` and passed `targetVideoDuration` through `runTwoPhaseProgressionAndRepair` (`src/services/beatProgressionEngine.ts`) so Video Mode sub-beats sum cleanly to `targetVideoDuration` (`4.0s`), `scene.estimatedSeconds` stays locked, `videoPrompt` duration syncs post-repair, and `normalizeStoryboardForDisplay` preserves exact clip-sum alignment.
+  - Updated Video Mode prompts in `geminiClient.ts`, `enhanceStoryArchitect.ts`, and `runTwoPhaseProgressionAndRepair` to enforce spoken word budgets per clip and spill combined flashback + montage sentences across sequential clips while keeping Text-to-Image mode completely isolated.
+  - Added Test Suite 21 in `src/tests/systemTestSuite.ts` (168 / 168 tests passing).
+- [x] **Full UI/UX Overhaul & Wide-Screen Desktop Architecture:**
+  - Replaced animated rising particles and canvas film grain in `BackgroundEffect.tsx` with a static radial gradient backdrop.
+  - Widened containers to `max-w-7xl` and implemented 2-column desktop layouts across Home (`GeneratorForm.tsx`), Results (`ResultsView.tsx` with sticky Beat Inspector + mobile `BeatBottomSheet`), and Guide/BYOK/Legal pages (`LegalViews.tsx`).
+  - Removed dead `HelpGuideModal.tsx`, added direct `Help & Guide` and `API Keys` links in `Header.tsx`, wired `StyleAndCharactersSection` to `Style & Cast`, and decluttered toolbars.
+  - Added dual-provider BYOK management (Google Gemini + Groq Cloud with eye toggle), updated Guide/Privacy/Terms copy, and added live search + `All | Image | Video` filtering to `HistoryModal.tsx`.
+  - Unified obsidian + subtle amber/emerald palette, Title Case buttons, zero `rounded-full` pills, zero `purple-*` accents, and zero em/en dashes across all components (`168/168` tests, `tsc --noEmit`, and `npm run build` passing).
+- [x] **Gemini 4 Hydrogen Upgrade & Project Version v3.7:**
+  - Replaced `gemini-3.8-flash` with `gemini-4-hydrogen` across all generation, grounded pipeline stages, assistant chat, UI selectors, and Help & Guide copy.
+  - Omitted deprecated `temperature`/`topP` on `gemini-4-hydrogen`, added `extractGeminiResponseText` to skip `thought` parts when parsing JSON, fixed `AbortError` handling in `retryFetch.ts`, and added clearer 400/404 diagnostics.
+  - Updated project version from `3.6.0` (`v3.6`) to `3.7.0` (`v3.7`) in `package.json`, `Footer.tsx`, and `LegalViews.tsx`.

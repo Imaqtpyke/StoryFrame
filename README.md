@@ -73,7 +73,7 @@ StoryFrame is a creative suite for storytellers, filmmakers, video creators, and
 4. Click **Deploy**.
 
 > **Note on 503 (Model Overloaded) Errors**:
-> Google's free-tier Gemini endpoints can occasionally experience high-traffic spikes, resulting in temporary `503 Service Unavailable: The model is overloaded` responses. StoryFrame includes built-in exponential backoff retries and automatic multi-model failover (`gemini-3.8-flash` ➔ `gemini-flash-latest` ➔ `gemini-2.5-flash` ➔ `gemini-3.1-pro-preview`). If a 503 occurs during peak hours, waiting 10-20 seconds before retrying usually resolves it immediately as Google's cluster clears.
+> Google's free-tier Gemini endpoints can occasionally experience high-traffic spikes, resulting in temporary `503 Service Unavailable` or `429 Quota` responses. StoryFrame includes built-in exponential backoff retries on `gemini-4-hydrogen` and `gemini-3.1-pro-preview`. If a 503 occurs during peak hours, waiting 10-20 seconds before retrying usually resolves it immediately as Google's cluster clears.
 
 ---
 

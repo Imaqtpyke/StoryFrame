@@ -219,4 +219,52 @@
   6. Natural Biomechanics & Chronological Era Locks: Strip robotic weight percentages ("70% weight") and degree angles ("15 degrees") via `sanitizeFakePrecisionMath` and scrub modern/futuristic scenery bleed from historical scenes via `sanitizeEraBleedAcrossScenes`.
 - **Context:** Directly resolves intra-scene beat duplication, dropped trailing narration clauses (e.g. Scene VII), double orientation prefixes, shot metadata contradictions, and era bleed while preserving visual consistency across stateless diffusion models.
 - **Date:** 2026-11-06
+- **Status:** Outdated (Superseded by Dynamic Visual-Event & Selective Rapid Montage Pacing on 2026-11-13)
+
+## Monochrome Style Lock, Twist Protection, Expression-Free Sheets & Mirror CTA
+- **Fact/Decision:**
+  1. Zero Spoken-Text Fallback Leakage & Chronological Twist Protection: Fallback and repair builders never interpolate literal spoken `textSpan` strings (`"turning point of..."`, `"escalating stakes of..."`), withhold late horror reveals (e.g. smiling/lagging reflections) until their exact scene, honor negations literally (`"You never reach out"`), and block unstated sound whispers or etched mirror dates in Image mode.
+  2. Expression-Free CharacterSheets & Entity Expansion (`stripTransientExpressionsAndPoses`, `expandEntityKeysInPrompt`): Strip transient expressions (`eyes wide`, `neutral expression`, `horrified`, `mouth open`, `smiling`) and temporary poses from `characterSheet` across beats/Thumbnails/CTAs, keep footwear consistent (`barefoot` stays barefoot), break anchors cleanly at phrase boundaries (no `"neutral)"` truncation), and expand raw CamelCase keys (`DarkRoom`, `Protagonist`) into natural prose.
+  3. Monochrome Style Lock (`isMonochromeStyle`, `sanitizeMonochromeLighting`): Automatically scrub chromatic Kelvin temps (`3200K warm tungsten`, `cold 5400K`) and color hues (`cold cyan`, `amber`) from beat prompts, Thumbnails, and CTAs whenever `styleProfile` specifies pure black-and-white / monochrome / manga ink.
+  4. Still-Image Motion Filtering & OTS-vs-Angle Taxonomy: Clean video tracking phrases (`tracking left to reveal`), duplicate focal lengths (`35mm 35mm`), and double periods (`..`) in Image mode (`sanitizeStillImageMotionAndOptics`), keep framing (`Over-the-Shoulder (OTS)`, `Medium Close-Up`) strictly in `shotType` and vertical/tilt angles in `cameraAngle`, and extend Linter L12/L13.
+  5. Genre-Accurate Horror CTA & Universal Flags: Evaluate mirror/supernatural horror keywords ahead of incidental moral words (`lie`) in `inferStoryAdaptiveCtaQuestion` and use clean `--ar 9:16` / `--ar 16:9` flags in `compileCtaPrompt` without legacy `--style raw --v 6.1`.
+- **Context:** Resolved all prompt-craft, monochrome tint bleed, twist spoiler, expression clash, CamelCase leak, and CTA classification defects surfaced in the horror mirror storyboard test.
+- **Date:** 2026-11-13
+- **Status:** Active
+
+## Dynamic Visual-Event & Selective Rapid Montage Pacing, Entity Sheet Locks & Infancy Flashback Shield
+- **Fact/Decision:**
+  1. Preserved Option A (~1.5s-3.0s) as baseline pacing for normal sentences and grammar-connector merging, while introducing selective rapid cuts (~0.7s-1.2s minimum floor) for: (a) parallel action triplets/lists (`every blink, every breath, every move`), (b) semantic-anchor + temporal-origin flashbacks (`It's an entity` -> `that has studied` -> `you since birth`), (c) repeated rhetorical negations (`You never reach out.` -> `You never cross.`), and (d) climax timing-lag vs smile turns (`half-second late.` -> `Now it's smiling.` -> `And you never smiled.`).
+  2. Confirmed Infancy Flashback Framing (`you since birth`): Infant protagonist swaddled inside a wooden nursery crib while the entity hides/lurks in shadow behind crib slats watching; protected via `isInfancyOrChildhoodFlashback` so adult `characterSheet` wardrobe and present-day `locationSheet` rooms never bleed into infant crib frames.
+  3. Protected deliberate rapid cuts in `deduplicateAndProgressSceneBeats` (Pass 2 & Pass 3) and `lintStoryboard` (L10) via `extractMontageFocalCategory` and `hasDistinctMontageFocalSubject` (requiring radically distinct shot scale and focal nouns per cut, raising clone threshold to `0.68` only when distinct focal subjects apply).
+  4. Added `detectUnsplitDenseBeatPattern` in `auditScenesForRepair` to catch dense 7-14 word lines missed by the 15-word ceiling check, added recurring entity/antagonist locking in `characterSheet`, enforced forward-facing unaware protagonist separation in stalking beats, and locked Short-Form/Video/Beat Engine scope while leaving Long-Form `groundedPipeline.ts` for a later pass.
+- **Context:** Directly solves merged action triplets, missing visual metaphors for temporal origin lines ("since birth"), merged climax beats, and entity drift while preserving zero stub-clone regressions on routine prose.
+- **Date:** 2026-11-13
+- **Status:** Active
+
+## Text-to-Video Clip Duration Alignment & Multi-Clip Spill
+- **Fact/Decision:** Updated Text-to-Video mode cleanly without modifying Text-to-Image behavior:
+  1. Added `scaleBeatsToTargetDuration` in `src/services/beatProgressionEngine.ts` and passed `targetVideoDuration` into `runTwoPhaseProgressionAndRepair`, guaranteeing Video Mode scene durations stay locked to `targetVideoDuration` (e.g., `4s`), sub-beat durations sum accurately to `targetVideoDuration` (`4.0s`) after both Phase 2 repair and `normalizeStoryboardForDisplay`, and master `videoPrompt` duration notes synchronize post-repair.
+  2. Refined `auditScenesForRepair` and Video Mode prompts (`geminiClient.ts`, `enhanceStoryArchitect.ts`, and Phase-2 `repairSystemPrompt`) so dense multi-concept lines stacking flashbacks and action triplets spill across consecutive `targetVideoDuration` clips (<= 3 cohesive beats summing to clip duration) instead of cramming 5-6 disparate cuts into one short clip.
+  3. Kept Text-to-Image natural beat timing (`~0.7s-1.2s` montage / `~1.5s-3.0s` visual events) completely isolated and unaffected.
+- **Context:** Prevents beat timing mismatches and AI video morphing when generating `4s` Video Mode clips on dense scripts while preserving full Image Mode fidelity.
+- **Date:** 2026-11-13
+- **Status:** Active
+
+## Desktop-First UI/UX Overhaul & Visual System Unification
+- **Fact/Decision:** Executed a cohesive desktop-first UI/UX overhaul across all views:
+  1. Replaced rising amber particles and per-frame film grain loops in `BackgroundEffect.tsx` with a calm static CSS radial gradient backdrop.
+  2. Expanded app containers to `max-w-7xl` with balanced 2-column desktop layouts (`GeneratorForm.tsx`, `ResultsView.tsx` with sticky right-side Beat Inspector `#desktop-beat-inspector` + Prev/Next stepping, and `LegalViews.tsx` with sticky sidebar navigation).
+  3. Removed orphaned `HelpGuideModal.tsx`, consolidated Help & Guide into `LegalViews.tsx`, added direct `Help & Guide` and `API Keys` desktop header links, decluttered toolbars, and wired `StyleAndCharactersSection.tsx` to `Style & Cast`.
+  4. Upgraded BYOK Security in `LegalViews.tsx` to manage both Google Gemini and Groq Cloud keys with show/hide eye toggles, and updated Help & Guide, Privacy, and Terms to reflect both providers, `4s` Video clip alignment, and `sessionStorage`/`localStorage` usage.
+  5. Added live search and `All | Image | Video` mode filters to `HistoryModal.tsx`.
+  6. Enforced unified obsidian + subtle amber/emerald styling: zero `rounded-full` pills, zero `purple-*` accents, Title Case buttons, and zero em/en dashes.
+- **Context:** Eliminates visual motion distractions, cramped single-column layouts on PC/wide screens, duplicate guide surfaces, and design-system inconsistencies while preserving all 168 automated tests and functional IDs.
+- **Date:** 2026-11-13
+- **Status:** Active
+
+## Gemini 4 Hydrogen Upgrade, Thinking-Part Safe Extraction & Version v3.7
+- **Fact/Decision:** Replaced invalid `gemini-3.8-flash` references with `gemini-4-hydrogen` across all Gemini REST services (`unifiedAiService.ts`, `assistantChatService.ts`, `stage1StoryBible.ts`, `stage2BeatPlan.ts`, `stage3PromptWriter.ts`, `stage4VerifyRepair.ts`) and UI/documentation (`GeneratorForm.tsx`, `LegalViews.tsx`, `ApiKeyContext.tsx`, `README.md`), omitted deprecated `temperature` / `topP` parameters on `gemini-4-hydrogen`, added `extractGeminiResponseText` to filter out internal `thought` parts before JSON parsing, stopped `retryFetch.ts` from retrying user `AbortError` cancellations, and bumped project version from `3.6.0` (`v3.6`) to `3.7.0` (`v3.7`). Kept client-side BYOK architecture per user decision.
+- **Context:** Resolves the root causes of Gemini storyboard breakdowns returning errors or server-busy failures (`gemini-3.8-flash` 404/unsupported model errors, thinking-model `parts[0]` JSON corruption, and Gemini 4 deprecated sampling rejections).
+- **Date:** 2026-11-13
 - **Status:** Active

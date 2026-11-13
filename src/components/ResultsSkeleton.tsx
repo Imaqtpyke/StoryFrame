@@ -68,7 +68,7 @@ export default function ResultsSkeleton({ request, onBackToEdit, onCancelRequest
 
   return (
     <div
-      className="w-full max-w-5xl mx-auto space-y-6 sm:space-y-8 font-narrative text-[#F5F5F0]"
+      className="w-full max-w-7xl mx-auto space-y-6 sm:space-y-8 font-narrative text-[#F5F5F0]"
       aria-busy="true"
       aria-live="polite"
     >
@@ -93,8 +93,8 @@ export default function ResultsSkeleton({ request, onBackToEdit, onCancelRequest
               TEXT TO VIDEO ({request?.targetVideoDuration || 5}S CLIPS)
             </span>
           ) : (
-            <span className="stamp-chip bg-sky-950/25 text-sky-200/70 border-sky-800/25 font-semibold">
-              <ImageIcon size={9} className="mr-1 inline text-sky-400/60" />
+            <span className="stamp-chip bg-white/5 text-[#EDEDE8] border-white/20 font-semibold">
+              <ImageIcon size={9} className="mr-1 inline text-[#C4C4BE]" />
               TEXT TO IMAGE
             </span>
           )}
@@ -129,7 +129,7 @@ export default function ResultsSkeleton({ request, onBackToEdit, onCancelRequest
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center space-x-2">
             <span
-              className={`w-2 h-2 rounded-full animate-ping shrink-0 ${
+              className={`w-2 h-2 rounded-[1px] animate-pulse shrink-0 ${
                 autoArchitectMode ? 'bg-amber-400' : 'bg-white'
               }`}
             />

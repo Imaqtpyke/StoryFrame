@@ -10,7 +10,6 @@ import Forbidden403View from './components/Forbidden403View';
 import LegalView from './components/LegalViews';
 import ScrollToTopButton from './components/ScrollToTopButton';
 import HistoryModal from './components/HistoryModal';
-import HelpGuideModal from './components/HelpGuideModal';
 import AssistantChatDrawer from './components/AssistantChatDrawer';
 import { ApiKeyProvider, useApiKey } from './context/ApiKeyContext';
 import { generateStoryDirectly } from './services/geminiClient';
@@ -38,7 +37,6 @@ function StoryFrameMain() {
   const [lastRequest, setLastRequest] = useState<GenerateStoryRequest | null>(null);
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
   const [openModelOptionsTrigger, setOpenModelOptionsTrigger] = useState(0);
   const [generationStatusMessage, setGenerationStatusMessage] = useState<string | null>(null);
@@ -256,7 +254,7 @@ function StoryFrameMain() {
         historyCount={historyItems.length}
       />
 
-      <main className="flex-1 w-full max-w-5xl mx-auto px-3 xs:px-4 sm:px-6 pt-6 sm:pt-14 pb-12 sm:pb-16 relative z-10">
+      <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-10 pb-12 sm:pb-16 relative z-10">
         {isForbidden ? (
           <Forbidden403View
             errorMessage={errorMessage || undefined}
@@ -317,7 +315,6 @@ function StoryFrameMain() {
 
       <Footer
         onNavigate={setActivePage}
-        onOpenHelp={() => setIsHelpOpen(true)}
       />
 
       {/* Story History Modal (Web) / Drawer (Mobile) */}
@@ -328,12 +325,6 @@ function StoryFrameMain() {
         onSelectStory={handleSelectFromHistory}
         onDeleteItem={handleDeleteHistoryItem}
         onClearAll={handleClearAllHistory}
-      />
-
-      {/* User Guide & Free AI Directory Modal */}
-      <HelpGuideModal
-        isOpen={isHelpOpen}
-        onClose={() => setIsHelpOpen(false)}
       />
 
       {/* Dedicated Project Assistant Drawer */}

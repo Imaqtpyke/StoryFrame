@@ -1,8 +1,36 @@
 import { useState, FormEvent, MouseEvent, useEffect } from 'react';
 import CustomDropdown, { DropdownOption } from './CustomDropdown';
 import { useApiKey } from '../context/ApiKeyContext';
-import { StoryFormat, GenerateStoryRequest, GenerationMode, CustomSceneDefinition, CustomBeatDefinition, ActivePage, AiProvider, StoryGenerationResult } from '../types';
-import { Sliders, RefreshCw, AlertCircle, Dices, Eye, EyeOff, KeyRound, Trash2, CheckCircle2, Shield, Camera, Video, Sparkles, Scissors, ExternalLink, ShieldCheck, Cpu, Zap, Film } from 'lucide-react';
+import {
+  StoryFormat,
+  GenerateStoryRequest,
+  GenerationMode,
+  CustomSceneDefinition,
+  ActivePage,
+  AiProvider,
+  StoryGenerationResult,
+} from '../types';
+import {
+  Sliders,
+  RefreshCw,
+  AlertCircle,
+  Dices,
+  Eye,
+  EyeOff,
+  KeyRound,
+  Trash2,
+  CheckCircle2,
+  Shield,
+  Camera,
+  Video,
+  Sparkles,
+  Scissors,
+  ShieldCheck,
+  Zap,
+  Film,
+  ChevronDown,
+  ChevronUp,
+} from 'lucide-react';
 import { parseManuscriptMarkdown } from '../services/scriptParser';
 
 interface GeneratorFormProps {
@@ -16,7 +44,6 @@ interface GeneratorFormProps {
 }
 
 const RANDOM_STORIES: string[] = [
-
   "A lonely clockmaker discovers an ancient mechanical pocket watch that ticks backward, rewinding the room around him by thirty seconds whenever he presses the winding crown.",
   "Two deep-sea marine biologists in a research submersible encounter an illuminated underwater metropolis buried inside the Mariana Trench that responds to sonar pulses with musical harmonics.",
   "A ramen chef operates a midnight street stall at a forgotten Tokyo crossroads that only spirits and wandering ghosts can see, serving warm broth that restores mortal memories.",
@@ -63,7 +90,8 @@ const LONG_DURATIONS: DropdownOption[] = [
 ];
 
 const VIDEO_DURATIONS: DropdownOption[] = [
-  { value: '5', label: '5 seconds', sublabel: 'Kling / Runway / Luma / Haiper standard' },
+  { value: '4', label: '4 seconds', sublabel: 'Fast cut short-form clip' },
+  { value: '5', label: '5 seconds', sublabel: 'Kling / Runway / Luma standard' },
   { value: '6', label: '6 seconds', sublabel: 'Standard AI clip duration' },
   { value: '7', label: '7 seconds', sublabel: 'Extended shot' },
   { value: '8', label: '8 seconds', sublabel: 'Extended shot' },
@@ -99,7 +127,7 @@ const AI_PROVIDER_OPTIONS: DropdownOption[] = [
 const GEMINI_MODEL_OPTIONS: DropdownOption[] = [
   {
     value: 'standard',
-    label: 'Gemini 3.8 Flash',
+    label: 'Gemini 4 Hydrogen',
     badge: 'Standard: Fast',
     badgeColor: 'default',
     description: 'Recommended: High-speed inference and precise narrative scene-to-beat partitioning.',
@@ -168,6 +196,7 @@ export default function GeneratorForm({
     groqModel,
     setGroqModel,
   } = useApiKey();
+
   const [generationMode, setGenerationMode] = useState<GenerationMode>(initialValues?.generationMode || 'image');
   const [autoArchitectMode, setAutoArchitectMode] = useState<boolean>(initialValues?.autoArchitectMode || false);
   const [beatMode, setBeatMode] = useState<'automatic' | 'custom'>(initialValues?.beatMode || 'automatic');
@@ -188,9 +217,8 @@ export default function GeneratorForm({
   );
   const [customNumeric, setCustomNumeric] = useState('');
   const [customVideoSeconds, setCustomVideoSeconds] = useState('');
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(!hasCustomKey);
 
-  // Programmatically expand and scroll to model & API options when triggered (e.g. from Assistant)
   useEffect(() => {
     if (openModelOptionsTrigger && openModelOptionsTrigger > 0) {
       setShowAdvanced(true);
@@ -203,7 +231,6 @@ export default function GeneratorForm({
     }
   }, [openModelOptionsTrigger]);
 
-  // Synchronize when initialValues changes (e.g. Back to Edit from Results)
   useEffect(() => {
     if (initialValues) {
       if (initialValues.story !== undefined) setStory(initialValues.story);
@@ -244,23 +271,17 @@ export default function GeneratorForm({
 
       const animate = (currentTime: number) => {
         const elapsed = (currentTime - startTime) / 1000;
-
-        // Smooth continuous exponential curve: 0 to ~96% with perfectly continuous velocity
-        // Phase 1 (0-3s): 2% -> 38%
-        // Phase 2 (3-7s): 38% -> 72%
-        // Phase 3 (7-12s): 72% -> 89%
-        // Phase 4 (12s+): 89% -> 95.5% asymptotic calm drift
         const progressTarget = 96 * (1 - Math.exp(-elapsed / 4.5));
         const p = Math.min(95.8, Math.max(2, progressTarget));
 
         if (elapsed < 2.8) {
           setProgressPhase('Analyzing screenplay structure...');
         } else if (elapsed < 6.5) {
-          setProgressPhase('Extracting character staging & locations...');
+          setProgressPhase('Extracting character staging and locations...');
         } else if (elapsed < 11.0) {
-          setProgressPhase('Directing camera angles & kinematic staging...');
+          setProgressPhase('Directing camera angles and movement...');
         } else if (elapsed < 15.0) {
-          setProgressPhase('Synthesizing visual prompts & anchors...');
+          setProgressPhase('Synthesizing visual prompts and anchors...');
         } else {
           setProgressPhase('Finalizing production storyboard...');
         }
@@ -321,8 +342,8 @@ export default function GeneratorForm({
     setCustomApiKey(keyInput.trim(), rememberOptIn, aiProvider);
     setKeyFeedback(
       aiProvider === 'groq'
-        ? 'Groq API key applied. Requests execute directly from your browser to Groq Cloud.'
-        : 'Gemini API key applied. Requests execute directly from your browser to Google Gemini.'
+        ? 'Groq API key applied for this session.'
+        : 'Gemini API key applied for this session.'
     );
     setFormValidationNotice(null);
     setTimeout(() => setKeyFeedback(null), 4000);
@@ -362,7 +383,6 @@ export default function GeneratorForm({
     const cleaned = sourceText.trim();
     if (!cleaned) return [];
 
-    // Split sentences using punctuation
     const rawSentences = cleaned
       .split(/(?<=[.?!])\s+/)
       .map((s) => s.trim())
@@ -371,7 +391,6 @@ export default function GeneratorForm({
     const sentences = rawSentences.length > 0 ? rawSentences : [cleaned];
 
     return sentences.map((sentence, sIdx) => {
-      // Split each sentence into phrase beats using commas, semicolons, lists, and conjunctions
       const phrases = sentence
         .split(/(?<=[,;:])\s+|\s+(?=and\s+|but\s+|while\s+|as\s+|when\s+|because\s+|even\s+though\s+|so\s+next\s+time\s+|don't\s+just\s+ask\s+|ask\s+what\s+)/i)
         .map((p) => p.trim())
@@ -412,16 +431,6 @@ export default function GeneratorForm({
     }
   };
 
-  const syncStoryFromCustomScenes = (scenes: CustomSceneDefinition[]) => {
-    const text = scenes
-      .map((s) => s.beats.map((b) => b.textSpan.trim()).filter(Boolean).join(' '))
-      .filter(Boolean)
-      .join(' ');
-    if (text) {
-      setStory(text);
-    }
-  };
-
   const isManuscriptFormat =
     /(?:###\s*Clip\s*\d+|Clip\s*\d+:)/i.test(story) &&
     /(?:\*\*Voice-over:\*\*|\*\*Visual:\*\*|Voice-over:|Visual:)/i.test(story);
@@ -433,7 +442,6 @@ export default function GeneratorForm({
     e.preventDefault();
     if (!story.trim() || isLoading) return;
 
-    // Smart auto-detection: if structured manuscript with clips is pasted, ingest directly
     if (isManuscriptFormat) {
       try {
         const parsed = parseManuscriptMarkdown(story);
@@ -463,9 +471,13 @@ export default function GeneratorForm({
       setShowAdvanced(true);
       setFormValidationNotice(
         aiProvider === 'groq'
-          ? 'Please provide and apply your Groq API key in the Model Options panel below before generating a breakdown.'
-          : 'Please provide and apply your Gemini API key in the Model Options panel below before generating a breakdown.'
+          ? 'Please enter and apply your Groq API key in the Model & API Settings panel before generating.'
+          : 'Please enter and apply your Gemini API key in the Model & API Settings panel before generating.'
       );
+      setTimeout(() => {
+        const el = document.getElementById('model-options-section');
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 80);
       return;
     }
 
@@ -513,7 +525,6 @@ export default function GeneratorForm({
       }
     }
 
-    // Extract manual parenthetical beats (e.g. She fell (beat 1) two miles (beat 2)...)
     let parsedCustomScenes: CustomSceneDefinition[] | undefined = undefined;
     const inlineMatches = story.match(/\((?:beat\s*)?\d+\)|\[(?:beat\s*)?\d+\]/gi);
 
@@ -577,24 +588,79 @@ export default function GeneratorForm({
     });
   };
 
+  const wordCount = story.trim().split(/\s+/).filter(Boolean).length;
+  const activeModelSummary =
+    aiProvider === 'groq'
+      ? `Groq: ${groqModel}`
+      : modelQuality === 'high'
+        ? 'Gemini 3.1 Pro Preview'
+        : 'Gemini 4 Hydrogen';
+
   return (
-    <div className="w-full max-w-4xl mx-auto">
-      {/* Intro header centered */}
-      <div className="mb-6 sm:mb-8 text-center px-1">
-        <h1 className="text-3xl sm:text-4xl lg:text-5xl font-normal font-display tracking-tight text-white mb-2.5 sm:mb-3 leading-tight" style={{ fontSize: 'clamp(1.85rem, 5.5vw, 3.35rem)' }}>
-          {generationMode === 'video' ? 'Story to Video Prompt & Production Script Generator' : 'Story to Image Prompt and Narrator Script Generator'}
-        </h1>
-        <p className="text-sm sm:text-base md:text-lg text-[#9C9C96] leading-relaxed max-w-3xl mx-auto font-narrative">
-          {generationMode === 'video'
-            ? 'Convert any narrative idea into a scene by scene video generation plan. Receive structured 8-part video prompts with temporal actions, continuity anchors, and pacing beat analysis.'
-            : 'Convert any narrative idea into a scene by scene production plan. Receive precise visual prompts formatted for your chosen platform alongside a complete, copyable narrator script.'}
-        </p>
+    <div className="w-full space-y-6 lg:space-y-8">
+      {/* Compact Editorial Page Header */}
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 pb-5 border-b border-white/10">
+        <div className="space-y-2 max-w-3xl">
+          <h1
+            className="text-2xl sm:text-3xl lg:text-4xl font-normal font-display tracking-tight text-white leading-tight"
+          >
+            {generationMode === 'video'
+              ? 'Story to Video Prompt & Production Script Generator'
+              : 'Story to Image Prompt and Narrator Script Generator'}
+          </h1>
+          <p className="text-sm sm:text-base text-[#9C9C96] leading-relaxed font-narrative">
+            {generationMode === 'video'
+              ? 'Convert any story into clip-timed video prompts with motion cues, locked characters, and narrator scripts.'
+              : 'Convert any story into a scene-by-scene visual storyboard with camera framing and voiceover narration.'}
+          </p>
+        </div>
+
+        {/* Generation Mode Segmented Switcher */}
+        <div
+          id="mode-toggle-group"
+          className="inline-flex p-1 bg-[#121211] border border-white/15 rounded-[4px] w-full sm:w-auto lg:min-w-[300px] shrink-0"
+          role="tablist"
+          aria-label="Story Generation Mode"
+        >
+          <button
+            type="button"
+            id="mode-image-btn"
+            role="tab"
+            aria-selected={generationMode === 'image'}
+            onClick={() => setGenerationMode('image')}
+            disabled={isLoading}
+            className={`flex-1 px-4 py-2 text-xs sm:text-sm transition-colors font-display flex items-center justify-center gap-2 whitespace-nowrap rounded-[3px] cursor-pointer ${
+              generationMode === 'image'
+                ? 'bg-white text-black font-semibold'
+                : 'text-[#9C9C96] hover:text-white'
+            }`}
+          >
+            <Camera size={14} className="shrink-0" />
+            <span>Text to Image</span>
+          </button>
+          <button
+            type="button"
+            id="mode-video-btn"
+            role="tab"
+            aria-selected={generationMode === 'video'}
+            onClick={() => setGenerationMode('video')}
+            disabled={isLoading}
+            className={`flex-1 px-4 py-2 text-xs sm:text-sm transition-colors font-display flex items-center justify-center gap-2 whitespace-nowrap rounded-[3px] cursor-pointer ${
+              generationMode === 'video'
+                ? 'bg-white text-black font-semibold'
+                : 'text-[#9C9C96] hover:text-white'
+            }`}
+          >
+            <Video size={14} className="shrink-0" />
+            <span>Text to Video</span>
+          </button>
+        </div>
       </div>
 
       {formValidationNotice && (
         <div
           id="validation-alert-banner"
-          className="mb-6 p-4 bg-[#18140B] border border-amber-800/80 text-amber-200 flex items-start space-x-3"
+          className="p-4 bg-[#18140B] border border-amber-700/70 rounded-[3px] text-amber-200 flex items-start gap-3"
           role="alert"
         >
           <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
@@ -605,296 +671,363 @@ export default function GeneratorForm({
         </div>
       )}
 
-      <form onSubmit={handleSubmit} id="story-generator-form" className="space-y-6 sm:space-y-8 font-narrative">
-        {/* Prominent Mode Toggle: Text to Image vs Text to Video */}
-        <div className="bg-[#121211] border border-white/15 p-2.5 sm:p-3 space-y-2">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-2 border-b border-white/10 pb-2.5 sm:pb-2">
-            <div className="text-center sm:text-left">
-              <span className="font-editorial-meta text-[10px] sm:text-[11px] text-[#C4C4C0] font-semibold block">
-                GENERATION MODE
-              </span>
-            </div>
-
-            <div
-              id="mode-toggle-group"
-              className="flex p-1 bg-[#0A0A09] border border-white/15 w-full sm:w-auto self-center sm:self-auto min-w-[280px] max-w-sm sm:max-w-none mx-auto sm:mx-0"
-              role="tablist"
-              aria-label="Story Generation Mode"
-            >
-              <button
-                type="button"
-                id="mode-image-btn"
-                role="tab"
-                aria-selected={generationMode === 'image'}
-                onClick={() => setGenerationMode('image')}
-                disabled={isLoading}
-                className={`flex-1 px-3 py-1.5 sm:py-2 text-xs transition-all font-display flex items-center justify-center space-x-1.5 whitespace-nowrap min-h-[34px] ${
-                  generationMode === 'image'
-                    ? 'bg-white text-black font-semibold shadow-sm'
-                    : 'text-[#9C9C96] hover:text-white'
-                }`}
-              >
-                <Camera size={13} className="shrink-0" />
-                <span>Text to Image</span>
-              </button>
-              <button
-                type="button"
-                id="mode-video-btn"
-                role="tab"
-                aria-selected={generationMode === 'video'}
-                onClick={() => setGenerationMode('video')}
-                disabled={isLoading}
-                className={`flex-1 px-3 py-1.5 sm:py-2 text-xs transition-all font-display flex items-center justify-center space-x-1.5 whitespace-nowrap min-h-[34px] ${
-                  generationMode === 'video'
-                    ? 'bg-white text-black font-semibold shadow-sm'
-                    : 'text-[#9C9C96] hover:text-white'
-                }`}
-              >
-                <Video size={13} className="shrink-0" />
-                <span>Text to Video</span>
-              </button>
-            </div>
+      {errorMessage && (
+        <div
+          className="p-4 bg-red-950/30 border border-red-700/60 rounded-[3px] text-red-200 flex items-start gap-3"
+          role="alert"
+        >
+          <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+          <div className="text-sm leading-relaxed">
+            <p className="font-semibold mb-0.5 text-white font-display">Generation Error</p>
+            <p className="text-red-200/90 font-narrative">{errorMessage}</p>
           </div>
         </div>
+      )}
 
-        {/* Story Textarea Container */}
-        <div className="space-y-1.5 sm:space-y-2">
-          <div className="flex items-center justify-between">
-            <label
-              htmlFor="story-input-box"
-              className="block font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96]"
-            >
-              {autoArchitectMode ? 'STORY PREMISE, QUESTION, OR DRAFT' : 'STORY IDEA'}
-            </label>
-
-            <div className="flex items-center space-x-2">
-              <span className="font-editorial-meta text-[9px] sm:text-[10px] text-[#7D7D76]">
-                {story.trim().split(/\s+/).filter(Boolean).length} WORDS
-              </span>
-              {isManuscriptFormat && (
-                <span
-                  id="manuscript-detected-badge"
-                  className="inline-flex items-center gap-1 font-editorial-meta text-[9px] sm:text-[10px] text-amber-300 bg-amber-950/60 border border-amber-800/60 px-2 py-0.5 rounded-[2px] tracking-wider uppercase shadow-sm"
-                  title="Structured manuscript detected. Clicking Generate will ingest clips directly."
-                >
-                  <Film size={11} className="text-amber-400 shrink-0" />
-                  <span>Script Detected ({detectedClipsCount} {detectedClipsCount === 1 ? 'clip' : 'clips'})</span>
-                </span>
-              )}
-              <button
-                type="button"
-                id="random-story-dice-btn"
-                onClick={handlePickRandomStory}
-                disabled={isLoading}
-                title="Roll for a random story idea"
-                aria-label="Pick random story idea"
-                className="p-1 sm:p-1.5 bg-[#1C1C1A] hover:bg-[#282826] active:bg-[#333330] text-[#9C9C96] hover:text-white border border-white/15 transition-all shadow-sm group focus:outline-none focus:ring-1 focus:ring-white"
+      <form
+        onSubmit={handleSubmit}
+        id="story-generator-form"
+        className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start font-narrative"
+      >
+        {/* LEFT COLUMN (7/12): Story Input, Style, Key Status & Primary Generate CTA */}
+        <div className="lg:col-span-7 space-y-5">
+          {/* Story Textarea */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <label
+                htmlFor="story-input-box"
+                className="block font-display text-sm font-medium text-white"
               >
-                <Dices size={13} className="transition-transform duration-300 group-hover:rotate-45" />
-              </button>
-            </div>
-          </div>
+                {autoArchitectMode ? 'Story Premise, Question, or Draft' : 'Story Idea or Script'}
+              </label>
 
-          {/* Exact, single Story Idea textarea with (beat 1), (beat 2) parenthetical syntax */}
-          <div className="relative">
+              <div className="flex items-center gap-2.5">
+                <span className="font-mono tabular-nums text-[11px] text-[#8C8C86]">
+                  {wordCount} {wordCount === 1 ? 'word' : 'words'}
+                </span>
+                {isManuscriptFormat && (
+                  <span
+                    id="manuscript-detected-badge"
+                    className="inline-flex items-center gap-1 font-mono text-[10px] text-amber-300 bg-amber-950/60 border border-amber-700/60 px-2 py-0.5 rounded-[2px]"
+                    title="Structured manuscript detected. Clicking Generate will ingest clips directly."
+                  >
+                    <Film size={11} className="text-amber-400 shrink-0" />
+                    <span>Script Detected ({detectedClipsCount})</span>
+                  </span>
+                )}
+                <button
+                  type="button"
+                  id="random-story-dice-btn"
+                  onClick={handlePickRandomStory}
+                  disabled={isLoading}
+                  title="Insert a sample story idea"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#181816] hover:bg-[#242422] text-[#C4C4BE] hover:text-white border border-white/15 rounded-[3px] text-xs font-display transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-white cursor-pointer"
+                >
+                  <Dices size={13} />
+                  <span className="hidden sm:inline">Sample Idea</span>
+                </button>
+              </div>
+            </div>
+
             <textarea
               id="story-input-box"
-              rows={6}
+              rows={10}
               value={story}
               onChange={(e) => setStory(e.target.value)}
               disabled={isLoading}
               placeholder={
                 autoArchitectMode
-                  ? "Enter any concept, question, or rough draft (e.g. 'What happens if you swallow a magnet?' or 'A deep-sea diver finds a glowing hatch'). The AI will research causal facts, craft a viral hook, script full sentences, and generate scene prompts."
-                  : (beatMode === 'custom'
-                      ? 'e.g. She fell (beat 1) two miles through open air (beat 2), strapped to three airplane seats, and survived (beat 3).'
-                      : 'Type your story, synopsis, or sequence of events here. Describe what happens from beginning to end.')
+                  ? "Enter any premise, question, or rough draft (for example: 'What happens if you swallow a magnet?' or 'A deep-sea diver discovers a glowing hatch'). StoryFrame expands the narrative and directs every shot."
+                  : beatMode === 'custom'
+                    ? 'e.g. She fell (beat 1) two miles through open air (beat 2), strapped to three airplane seats, and survived (beat 3).'
+                    : 'Write your story, narration script, or scene sequence from beginning to end...'
               }
-              className={`w-full p-3 sm:p-4 bg-[#121211] hover:bg-[#161614] focus:bg-[#121211] text-[#F5F5F0] placeholder:text-[#666660] border transition-colors focus:outline-none text-sm sm:text-base leading-relaxed resize-y story-textarea-scroll ${
+              className={`w-full p-4 bg-[#121211] hover:bg-[#151513] focus:bg-[#121211] text-[#F5F5F0] placeholder:text-[#666660] border rounded-[3px] transition-colors focus:outline-none text-sm sm:text-base leading-relaxed resize-y story-textarea-scroll ${
                 autoArchitectMode
-                  ? 'border-amber-400/40 focus:border-amber-400'
-                  : (beatMode === 'custom' ? 'border-amber-400/50 focus:border-amber-400' : 'border-white/10 focus:border-white')
+                  ? 'border-amber-500/40 focus:border-amber-400'
+                  : beatMode === 'custom'
+                    ? 'border-amber-500/50 focus:border-amber-400'
+                    : 'border-white/15 focus:border-white'
               }`}
               required
             />
-          </div>
 
-          {!autoArchitectMode && beatMode === 'custom' && (
-            <div className="text-[11px] text-amber-300/90 flex flex-wrap items-center justify-between gap-1 px-1 py-1 bg-[#18160E] border border-amber-400/20">
-              <span>
-                Manual Beats: place <strong>(beat 1)</strong>, <strong>(beat 2)</strong>, <strong>(beat 3)</strong> right after each line or phrase.
-              </span>
-              <span className="font-mono text-amber-400 font-semibold">
-                {(story.match(/\((?:beat\s*)?\d+\)|\[(?:beat\s*)?\d+\]/gi) || []).length} beats detected
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* Character Style Input Box */}
-        <div className="space-y-1.5 sm:space-y-2">
-          <label
-            htmlFor="character-prompt-input"
-            className="block font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96]"
-          >
-            CHARACTER STYLE DESCRIPTOR
-          </label>
-          <input
-            type="text"
-            id="character-prompt-input"
-            value={characterStyle}
-            onChange={(e) => setCharacterStyle(e.target.value)}
-            disabled={isLoading}
-            placeholder="e.g. cinematic hyperrealism, 90s anime cel animation, stop-motion felt, textured oil painting..."
-            className="w-full px-3.5 sm:px-4 py-2 sm:py-3 bg-[#121211] hover:bg-[#161614] focus:bg-[#121211] text-[#F5F5F0] placeholder:text-[#666660] border border-white/10 transition-colors focus:outline-none focus:border-white text-sm sm:text-base"
-          />
-        </div>
-
-        {/* Enhance Story Toggle */}
-        <div
-          id="auto-architect-toggle-card"
-          className={`p-3 sm:p-3.5 border rounded-[2px] transition-all flex items-center justify-between gap-3 ${
-            autoArchitectMode
-              ? 'bg-[#15140F] border-amber-500/60 shadow-[0_0_24px_rgba(245,158,11,0.09)]'
-              : 'bg-[#121211] border-white/10 hover:border-white/20'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <Sparkles size={14} className={autoArchitectMode ? 'text-amber-400' : 'text-[#888880]'} />
-            <span className="font-display font-medium text-xs sm:text-sm text-white">
-              Enhance Story
-            </span>
-          </div>
-
-          {/* Toggle Switch */}
-          <div className="flex items-center gap-2.5 shrink-0">
-            <button
-              type="button"
-              id="auto-architect-toggle-switch"
-              role="switch"
-              aria-checked={autoArchitectMode}
-              disabled={isLoading}
-              onClick={() => setAutoArchitectMode(!autoArchitectMode)}
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-1 focus:ring-amber-400 ${
-                autoArchitectMode ? 'bg-amber-500' : 'bg-[#252522]'
-              }`}
-              title="Toggle Enhance Story"
-            >
-              <span
-                aria-hidden="true"
-                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                  autoArchitectMode ? 'translate-x-5 !bg-black' : 'translate-x-0'
-                }`}
-              />
-            </button>
-          </div>
-        </div>
-
-        {/* Beat Pacing Controls (under Enhance Story) */}
-        <div className="space-y-1.5 sm:space-y-2">
-          <span className="block font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96]">
-            BEAT PACING
-          </span>
-          {autoArchitectMode ? (
-            <div
-              id="auto-architect-pacing-indicator"
-              className="w-full flex items-center justify-between px-3 bg-[#15140F] border border-amber-500/40 h-[42px] sm:h-[46px] rounded-[2px]"
-              title="Enhance Story automatically optimizes scene beats and narrative pacing"
-            >
-              <div className="flex items-center space-x-1.5 min-w-0">
-                <Sparkles size={12} className="text-amber-400 shrink-0" />
-                <span className="text-xs font-display text-amber-300 font-medium truncate">
-                  AI Auto-Pacing (Direct 1-Pass)
+            {!autoArchitectMode && beatMode === 'custom' && (
+              <div className="text-xs text-amber-200/90 flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-[#18150D] border border-amber-500/30 rounded-[3px]">
+                <span>
+                  Manual Beats: place <strong>(beat 1)</strong>, <strong>(beat 2)</strong>, <strong>(beat 3)</strong> after each phrase.
+                </span>
+                <span className="font-mono tabular-nums text-amber-400 font-semibold">
+                  {(story.match(/\((?:beat\s*)?\d+\)|\[(?:beat\s*)?\d+\]/gi) || []).length} beats detected
                 </span>
               </div>
-              <span className="text-[9px] font-editorial-meta uppercase tracking-wider text-amber-400/80 bg-amber-950/60 border border-amber-800/40 px-1.5 py-0.5 rounded-[1px] shrink-0">
-                Active
-              </span>
-            </div>
-          ) : (
-            <div
-              id="beat-mode-toggle-group"
-              className="w-full flex p-1 bg-[#121211] border border-white/10 h-[42px] sm:h-[46px] items-center"
-              role="group"
-              aria-label="Beat pacing mode selection"
+            )}
+          </div>
+
+          {/* Character & Visual Style Input */}
+          <div className="space-y-2">
+            <label
+              htmlFor="character-prompt-input"
+              className="block font-display text-sm font-medium text-white"
             >
-              <button
-                type="button"
-                id="beat-mode-auto-btn"
-                disabled={isLoading}
-                onClick={() => handleToggleBeatMode('automatic')}
-                className={`flex-1 h-full px-2 sm:px-3 text-xs sm:text-sm transition-all font-display text-center whitespace-nowrap flex items-center justify-center ${
-                  beatMode === 'automatic'
-                    ? 'bg-white text-black font-semibold shadow-sm'
-                    : 'text-[#9C9C96] hover:text-white'
+              Character &amp; Visual Style <span className="text-[#8C8C86] font-normal">(Optional)</span>
+            </label>
+            <input
+              type="text"
+              id="character-prompt-input"
+              value={characterStyle}
+              onChange={(e) => setCharacterStyle(e.target.value)}
+              disabled={isLoading}
+              placeholder="e.g. cinematic hyperrealism, 90s anime cel animation, stop-motion felt, textured oil painting..."
+              className="w-full px-4 py-2.5 bg-[#121211] hover:bg-[#151513] focus:bg-[#121211] text-[#F5F5F0] placeholder:text-[#666660] border border-white/15 rounded-[3px] transition-colors focus:outline-none focus:border-white text-sm sm:text-base"
+            />
+          </div>
+
+          {/* Action Row: API Key Status + Generate CTA */}
+          <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-t border-white/10">
+            <button
+              type="button"
+              onClick={() => {
+                setShowAdvanced(true);
+                setTimeout(() => {
+                  const el = document.getElementById('model-options-section');
+                  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }, 60);
+              }}
+              className="inline-flex items-center gap-2.5 px-3 py-2 bg-[#141412] hover:bg-[#1B1B19] border border-white/10 rounded-[3px] text-left transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-white cursor-pointer"
+              title="Review or update your AI provider and API key"
+            >
+              <span
+                className={`w-2 h-2 rounded-[1px] shrink-0 ${
+                  hasCustomKey ? 'bg-emerald-400' : 'bg-amber-400'
                 }`}
-              >
-                Automatic
-              </button>
-              <button
-                type="button"
-                id="beat-mode-custom-btn"
-                disabled={isLoading}
-                onClick={() => handleToggleBeatMode('custom')}
-                className={`flex-1 h-full px-2 sm:px-3 text-xs sm:text-sm transition-all font-display text-center whitespace-nowrap flex items-center justify-center space-x-1.5 ${
-                  beatMode === 'custom'
-                    ? 'bg-amber-400 text-black font-semibold shadow-sm'
-                    : 'text-[#9C9C96] hover:text-white'
+              />
+              <div className="min-w-0">
+                <div className="text-xs font-display text-white font-medium truncate">
+                  {hasCustomKey ? activeModelSummary : 'API Key Required'}
+                </div>
+                <div className="text-[11px] font-mono text-[#8C8C86] truncate">
+                  {hasCustomKey ? 'Ready for direct generation' : 'Click to add Gemini or Groq key'}
+                </div>
+              </div>
+            </button>
+
+            <button
+              type="submit"
+              id="generate-scenes-button"
+              disabled={isLoading || !story.trim()}
+              className={`relative w-full sm:w-auto min-w-[240px] min-h-[46px] font-display text-sm sm:text-base font-medium rounded-[3px] transition-colors flex items-center justify-center overflow-hidden shadow-lg cursor-pointer ${
+                isLoading
+                  ? 'p-0 bg-[#141413] border border-white/25 cursor-wait'
+                  : autoArchitectMode
+                    ? 'px-6 py-3 bg-amber-400 text-black hover:bg-amber-300 active:bg-amber-500 font-semibold disabled:opacity-40 disabled:cursor-not-allowed'
+                    : 'px-6 py-3 bg-white text-black hover:bg-[#EAEAE6] active:bg-[#D4D4D0] font-semibold disabled:opacity-40 disabled:cursor-not-allowed'
+              }`}
+            >
+              {isLoading ? (
+                <>
+                  <div className="w-full min-h-[46px] px-6 py-3 flex items-center justify-center gap-2 text-white select-none">
+                    <RefreshCw size={15} className="animate-spin text-white/80 shrink-0" />
+                    <span className="font-display text-sm font-medium text-white">
+                      {autoArchitectMode
+                        ? 'Architecting Story...'
+                        : `Generating ${generationMode === 'video' ? 'Video' : 'Storyboard'}...`}
+                    </span>
+                  </div>
+                  <div
+                    className={`absolute inset-0 flex items-center justify-center gap-2 px-6 py-3 select-none pointer-events-none z-10 ${
+                      autoArchitectMode ? 'bg-amber-400 text-black' : 'bg-white text-black'
+                    }`}
+                    style={{ clipPath: `inset(0 ${Math.max(0, 100 - progress)}% 0 0)` }}
+                  >
+                    <RefreshCw size={15} className="animate-spin text-black shrink-0" />
+                    <span className="font-display text-sm font-bold text-black">
+                      {autoArchitectMode
+                        ? 'Architecting Story...'
+                        : `Generating ${generationMode === 'video' ? 'Video' : 'Storyboard'}...`}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <span className="flex items-center gap-2">
+                  {autoArchitectMode && <Sparkles size={15} className="shrink-0" />}
+                  <span>
+                    {autoArchitectMode
+                      ? generationMode === 'video'
+                        ? 'Enhance & Generate Video Plan'
+                        : 'Enhance & Generate Breakdown'
+                      : generationMode === 'video'
+                        ? 'Generate Video Breakdown'
+                        : 'Generate Breakdown'}
+                  </span>
+                </span>
+              )}
+            </button>
+          </div>
+
+          {isLoading && (
+            <div className="flex items-center gap-2 text-xs font-mono text-[#A0A09A]">
+              <span
+                className={`w-2 h-2 rounded-[1px] animate-pulse shrink-0 ${
+                  autoArchitectMode ? 'bg-amber-400' : 'bg-white'
                 }`}
-              >
-                <Scissors size={12} className={beatMode === 'custom' ? 'text-black' : 'text-amber-400'} />
-                <span>Manual Beats</span>
-              </button>
+              />
+              <span>{progressPhase}</span>
             </div>
           )}
         </div>
 
-        {/* Format, Distribution Platform, and Target Duration Controls */}
-        <div className="space-y-3">
-          {/* Aspect Ratio Format Full Width or Responsive Grid */}
-          <div className="space-y-1.5 sm:space-y-2">
-            <span className="block font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96]">
-              ASPECT RATIO FORMAT
-            </span>
-            <div
-              id="format-toggle-group"
-              className="w-full flex p-1 bg-[#121211] border border-white/10 h-[42px] sm:h-[46px] items-center"
-              role="group"
-              aria-label="Aspect ratio format selection"
-            >
+        {/* RIGHT COLUMN (5/12): Flat Director Controls Card + Model & API Key Settings */}
+        <div className="lg:col-span-5 space-y-4">
+          <div className="bg-[#121211] border border-white/15 rounded-[3px] p-4 sm:p-5 space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+              <span className="font-display text-sm font-medium text-white">
+                Director Controls
+              </span>
+              <span className="font-mono text-[11px] text-[#8C8C86]">
+                {generationMode === 'video' ? 'Video Mode' : 'Image Mode'}
+              </span>
+            </div>
+
+            {/* Enhance Story Toggle */}
+            <div className="flex items-center justify-between gap-3">
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <Sparkles size={14} className={autoArchitectMode ? 'text-amber-400' : 'text-[#8C8C86]'} />
+                  <span className="font-display font-medium text-sm text-white">
+                    Enhance Story
+                  </span>
+                </div>
+                <p className="text-xs text-[#8C8C86] leading-snug">
+                  Expands short notes into a structured hook and full narration.
+                </p>
+              </div>
+
               <button
                 type="button"
-                id="format-short-btn"
+                id="auto-architect-toggle-switch"
+                role="switch"
+                aria-checked={autoArchitectMode}
                 disabled={isLoading}
-                onClick={() => handleFormatChange('short')}
-                className={`flex-1 h-full px-2 sm:px-3 text-xs sm:text-sm transition-all font-display text-center whitespace-nowrap flex items-center justify-center ${
-                  format === 'short'
-                    ? 'bg-white text-black font-semibold shadow-sm'
-                    : 'text-[#9C9C96] hover:text-white'
+                onClick={() => setAutoArchitectMode(!autoArchitectMode)}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-[3px] border transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-amber-400 ${
+                  autoArchitectMode
+                    ? 'bg-amber-500 border-amber-400'
+                    : 'bg-[#1D1D1B] border-white/20'
                 }`}
+                title="Toggle Enhance Story"
               >
-                Short form (9:16)
-              </button>
-              <button
-                type="button"
-                id="format-long-btn"
-                disabled={isLoading}
-                onClick={() => handleFormatChange('long')}
-                className={`flex-1 h-full px-2 sm:px-3 text-xs sm:text-sm transition-all font-display text-center whitespace-nowrap flex items-center justify-center ${
-                  format === 'long'
-                    ? 'bg-white text-black font-semibold shadow-sm'
-                    : 'text-[#9C9C96] hover:text-white'
-                }`}
-              >
-                Long form (16:9)
+                <span
+                  aria-hidden="true"
+                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-[2px] transition-transform ${
+                    autoArchitectMode ? 'translate-x-5.5 bg-black' : 'translate-x-1 bg-[#D4D4D0]'
+                  }`}
+                />
               </button>
             </div>
-          </div>
 
-          {/* Responsive row: Distribution Platform | Target Duration */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 items-start">
-            {/* 1. Distribution Platform */}
-            <div className="col-span-1">
+            <div className="border-t border-white/10" />
+
+            {/* Beat Pacing */}
+            <div className="space-y-2">
+              <label className="block font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96]">
+                BEAT PACING
+              </label>
+              {autoArchitectMode ? (
+                <div
+                  id="auto-architect-pacing-indicator"
+                  className="w-full flex items-center justify-between px-3 bg-[#15140F] border border-amber-500/40 h-[42px] rounded-[3px]"
+                >
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Sparkles size={13} className="text-amber-400 shrink-0" />
+                    <span className="text-xs font-display text-amber-300 font-medium truncate">
+                      AI Auto-Pacing Active
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono text-amber-300 px-1.5 py-0.5 bg-amber-950/60 border border-amber-700/50 rounded-[2px] shrink-0">
+                    1-Pass
+                  </span>
+                </div>
+              ) : (
+                <div
+                  id="beat-mode-toggle-group"
+                  className="w-full flex p-1 bg-[#0C0C0B] border border-white/15 h-[42px] items-center rounded-[3px]"
+                  role="group"
+                  aria-label="Beat pacing mode selection"
+                >
+                  <button
+                    type="button"
+                    id="beat-mode-auto-btn"
+                    disabled={isLoading}
+                    onClick={() => handleToggleBeatMode('automatic')}
+                    className={`flex-1 h-full px-3 text-xs sm:text-sm transition-colors font-display text-center whitespace-nowrap flex items-center justify-center rounded-[2px] cursor-pointer ${
+                      beatMode === 'automatic'
+                        ? 'bg-white text-black font-semibold'
+                        : 'text-[#9C9C96] hover:text-white'
+                    }`}
+                  >
+                    Automatic
+                  </button>
+                  <button
+                    type="button"
+                    id="beat-mode-custom-btn"
+                    disabled={isLoading}
+                    onClick={() => handleToggleBeatMode('custom')}
+                    className={`flex-1 h-full px-3 text-xs sm:text-sm transition-colors font-display text-center whitespace-nowrap flex items-center justify-center gap-1.5 rounded-[2px] cursor-pointer ${
+                      beatMode === 'custom'
+                        ? 'bg-amber-400 text-black font-semibold'
+                        : 'text-[#9C9C96] hover:text-white'
+                    }`}
+                  >
+                    <Scissors size={12} className={beatMode === 'custom' ? 'text-black' : 'text-amber-400'} />
+                    <span>Manual Beats</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Aspect Ratio Format */}
+            <div className="space-y-2">
+              <label className="block font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96]">
+                ASPECT RATIO FORMAT
+              </label>
+              <div
+                id="format-toggle-group"
+                className="w-full flex p-1 bg-[#0C0C0B] border border-white/15 h-[42px] items-center rounded-[3px]"
+                role="group"
+                aria-label="Aspect ratio format selection"
+              >
+                <button
+                  type="button"
+                  id="format-short-btn"
+                  disabled={isLoading}
+                  onClick={() => handleFormatChange('short')}
+                  className={`flex-1 h-full px-3 text-xs sm:text-sm transition-colors font-display text-center whitespace-nowrap flex items-center justify-center rounded-[2px] cursor-pointer ${
+                    format === 'short'
+                      ? 'bg-white text-black font-semibold'
+                      : 'text-[#9C9C96] hover:text-white'
+                  }`}
+                >
+                  Short Form (9:16)
+                </button>
+                <button
+                  type="button"
+                  id="format-long-btn"
+                  disabled={isLoading}
+                  onClick={() => handleFormatChange('long')}
+                  className={`flex-1 h-full px-3 text-xs sm:text-sm transition-colors font-display text-center whitespace-nowrap flex items-center justify-center rounded-[2px] cursor-pointer ${
+                    format === 'long'
+                      ? 'bg-white text-black font-semibold'
+                      : 'text-[#9C9C96] hover:text-white'
+                  }`}
+                >
+                  Long Form (16:9)
+                </button>
+              </div>
+            </div>
+
+            {/* Platform & Duration */}
+            <div className="space-y-4">
               <CustomDropdown
                 id="platform-select"
                 label="Distribution Platform"
@@ -903,12 +1036,9 @@ export default function GeneratorForm({
                 onSelect={setPlatform}
                 disabled={isLoading}
               />
-            </div>
 
-            {/* 2. Target / Clip Duration */}
-            <div className="col-span-1 space-y-1.5 sm:space-y-2">
               {generationMode === 'video' ? (
-                <>
+                <div className="space-y-2">
                   <CustomDropdown
                     id="video-duration-select"
                     label="Clip Duration"
@@ -916,13 +1046,13 @@ export default function GeneratorForm({
                     selectedValue={videoDurationValue}
                     onSelect={setVideoDurationValue}
                     disabled={isLoading}
+                    helperText="Aligns narration pacing and camera beats to your video generator clip length."
                   />
-
                   {videoDurationValue === 'custom' && (
-                    <div className="pt-1.5 sm:pt-2">
+                    <div className="pt-1 space-y-1.5">
                       <label
                         htmlFor="custom-video-numeric-input"
-                        className="block font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96] mb-1.5"
+                        className="block font-editorial-meta text-[10px] text-[#9C9C96]"
                       >
                         CUSTOM CLIP DURATION (1 - 60 SECONDS)
                       </label>
@@ -934,15 +1064,15 @@ export default function GeneratorForm({
                         value={customVideoSeconds}
                         onChange={(e) => setCustomVideoSeconds(e.target.value)}
                         disabled={isLoading}
-                        placeholder="e.g. 5"
-                        className="w-full px-3 sm:px-4 h-[42px] sm:h-[46px] bg-[#121211] text-[#F5F5F0] placeholder:text-[#666660] border border-white/10 focus:border-white rounded-[2px] focus:outline-none text-xs sm:text-sm font-mono transition-colors"
+                        placeholder="e.g. 4"
+                        className="w-full px-3.5 h-[42px] bg-[#0C0C0B] text-[#F5F5F0] placeholder:text-[#666660] border border-white/15 focus:border-white rounded-[3px] focus:outline-none text-xs sm:text-sm font-mono transition-colors"
                         required
                       />
                     </div>
                   )}
-                </>
+                </div>
               ) : (
-                <>
+                <div className="space-y-2">
                   <CustomDropdown
                     id="duration-select"
                     label="Target Duration"
@@ -951,12 +1081,11 @@ export default function GeneratorForm({
                     onSelect={setDurationValue}
                     disabled={isLoading}
                   />
-
                   {durationValue === 'custom' && (
-                    <div className="pt-1.5 sm:pt-2">
+                    <div className="pt-1 space-y-1.5">
                       <label
                         htmlFor="custom-numeric-input"
-                        className="block font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96] mb-1.5"
+                        className="block font-editorial-meta text-[10px] text-[#9C9C96]"
                       >
                         {format === 'long' ? 'CUSTOM MINUTES (1 - 120)' : 'CUSTOM SECONDS (1 - 600)'}
                       </label>
@@ -969,239 +1098,119 @@ export default function GeneratorForm({
                         onChange={(e) => setCustomNumeric(e.target.value)}
                         disabled={isLoading}
                         placeholder={format === 'long' ? 'e.g. 7' : 'e.g. 35'}
-                        className="w-full px-3 sm:px-4 h-[42px] sm:h-[46px] bg-[#121211] text-[#F5F5F0] placeholder:text-[#666660] border border-white/10 focus:border-white rounded-[2px] focus:outline-none text-xs sm:text-sm font-mono transition-colors"
+                        className="w-full px-3.5 h-[42px] bg-[#0C0C0B] text-[#F5F5F0] placeholder:text-[#666660] border border-white/15 focus:border-white rounded-[3px] focus:outline-none text-xs sm:text-sm font-mono transition-colors"
                         required
                       />
                     </div>
                   )}
-                </>
+                </div>
               )}
             </div>
           </div>
-        </div>
 
-        {/* Generate Button with progressive liquid illumination bar */}
-        <div className="pt-1 sm:pt-2 flex flex-col items-center justify-center">
-          <button
-            type="submit"
-            id="generate-scenes-button"
-            disabled={isLoading || !story.trim()}
-            className={`relative w-full sm:w-auto min-w-[260px] sm:min-w-[340px] min-h-[44px] sm:min-h-[48px] font-display text-sm sm:text-base font-medium tracking-tight rounded-[2px] transition-all flex items-center justify-center overflow-hidden shadow-lg ${
-              isLoading
-                ? 'p-0 bg-[#141413] border border-white/25 cursor-wait shadow-[0_0_30px_rgba(0,0,0,0.85)]'
-                : (autoArchitectMode
-                    ? 'px-6 sm:px-10 py-2.5 sm:py-3.5 bg-amber-400 text-black hover:bg-amber-300 active:bg-amber-500 font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:shadow-xl'
-                    : 'px-6 sm:px-10 py-2.5 sm:py-3.5 bg-white text-black hover:bg-[#EAEAE6] active:bg-[#D4D4D0] disabled:opacity-40 disabled:cursor-not-allowed hover:shadow-xl')
-            }`}
+          {/* Model & API Settings Collapsible Card */}
+          <div
+            id="model-options-section"
+            className="bg-[#121211] border border-white/15 rounded-[3px] scroll-mt-24 overflow-hidden"
           >
-            {isLoading ? (
-              <>
-                {/* 1. Base Dim Track: dark obsidian background with crisp pure white text */}
-                <div className="w-full min-h-[44px] sm:min-h-[48px] px-6 sm:px-10 py-2.5 sm:py-3.5 flex items-center justify-center space-x-2.5 text-white select-none">
-                  <RefreshCw size={15} className="animate-spin text-white/80 shrink-0" />
-                  <span className="font-display text-xs sm:text-sm font-medium tracking-tight text-white">
-                    {autoArchitectMode
-                      ? 'Architecting Story & Prompts...'
-                      : `Generating ${generationMode === 'video' ? 'Video' : 'Storyboard'} Breakdown...`}
-                  </span>
-                </div>
-
-                {/* 2. Light Progress Fill Layer: bright amber-yellow or white illumination with crisp black text clipped to progress */}
-                <div
-                  className={`absolute inset-0 flex items-center justify-center space-x-2.5 px-6 sm:px-10 py-2.5 sm:py-3.5 select-none pointer-events-none z-10 ${
-                    autoArchitectMode ? 'bg-amber-400 text-black' : 'bg-white text-black'
-                  }`}
-                  style={{ clipPath: `inset(0 ${Math.max(0, 100 - progress)}% 0 0)` }}
-                >
-                  {/* Subtle fluid surface shimmer reflection across filled light */}
-                  <div
-                    className={`absolute inset-0 w-1/3 pointer-events-none animate-liquid-shimmer ${
-                      autoArchitectMode
-                        ? 'bg-gradient-to-r from-transparent via-amber-200/50 to-transparent'
-                        : 'bg-gradient-to-r from-transparent via-white/40 to-transparent'
-                    }`}
-                  />
-
-                  <RefreshCw size={15} className="animate-spin text-black shrink-0" />
-                  <span className="font-display text-xs sm:text-sm font-bold tracking-tight text-black">
-                    {autoArchitectMode
-                      ? 'Architecting Story & Prompts...'
-                      : `Generating ${generationMode === 'video' ? 'Video' : 'Storyboard'} Breakdown...`}
-                  </span>
-                </div>
-
-                {/* 3. Liquid Light Wave Crest: seamless periodic sine wave leading edge */}
-                {progress > 0.5 && progress < 99.5 && (
-                  <div
-                    className="absolute -top-12 -bottom-12 w-6 pointer-events-none z-20 overflow-visible"
-                    style={{ left: `calc(${progress}% - 2px)` }}
-                  >
-                    {/* Secondary Wave Crest (Translucent Liquid Depth) */}
-                    <div className="absolute inset-0 w-full h-full animate-liquid-wave-back opacity-40">
-                      <svg
-                        viewBox="0 0 20 200"
-                        preserveAspectRatio="none"
-                        className={`w-full h-full ${autoArchitectMode ? 'fill-amber-300' : 'fill-white'}`}
-                      >
-                        <path d="M0,0 C8,25 16,50 8,75 C0,90 8,100 0,100 C8,125 16,150 8,175 C0,190 8,200 0,200 L0,0 Z" />
-                      </svg>
-                    </div>
-
-                    {/* Primary Wave Crest (Solid Organic Wave with Ambient Glow) */}
-                    <div
-                      className={`absolute inset-0 w-full h-full animate-liquid-wave-front ${
-                        autoArchitectMode ? 'animate-liquid-glow-amber' : 'animate-liquid-glow'
-                      }`}
-                    >
-                      <svg
-                        viewBox="0 0 20 200"
-                        preserveAspectRatio="none"
-                        className={`w-full h-full ${autoArchitectMode ? 'fill-amber-400' : 'fill-white'}`}
-                      >
-                        <path d="M0,0 C12,25 2,50 10,75 C14,88 4,100 0,100 C12,125 2,150 10,175 C14,188 4,200 0,200 L0,0 Z" />
-                      </svg>
-                    </div>
+            <button
+              type="button"
+              id="toggle-advanced-btn"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className="w-full px-4 sm:px-5 py-3.5 flex items-center justify-between text-left hover:bg-[#171715] transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-white cursor-pointer"
+              aria-expanded={showAdvanced}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Sliders size={14} className="text-[#9C9C96] shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-sm font-display font-medium text-white">
+                    Model &amp; API Settings
                   </div>
-                )}
-              </>
-            ) : (
-              <span className="flex items-center gap-1.5">
-                {autoArchitectMode && <Sparkles size={14} className="shrink-0" />}
-                <span>
-                  {autoArchitectMode
-                    ? (generationMode === 'video' ? 'Enhance & Generate Video Plan' : 'Enhance & Generate Breakdown')
-                    : (generationMode === 'video' ? 'Generate Video Breakdown' : 'Generate Breakdown')}
-                </span>
-              </span>
-            )}
-          </button>
+                  <div className="text-xs font-mono text-[#8C8C86] truncate">
+                    {activeModelSummary} {hasCustomKey ? '(Key Connected)' : '(No Key Set)'}
+                  </div>
+                </div>
+              </div>
+              {showAdvanced ? (
+                <ChevronUp size={16} className="text-[#9C9C96] shrink-0" />
+              ) : (
+                <ChevronDown size={16} className="text-[#9C9C96] shrink-0" />
+              )}
+            </button>
 
-          {/* Real-time generation phase indicator while loading */}
-          {isLoading && (
-            <div className="mt-2.5 flex items-center justify-center space-x-2 text-[11px] font-editorial-meta text-[#A0A09A] tracking-wider animate-in fade-in duration-300">
-              <span
-                className={`w-1.5 h-1.5 rounded-full animate-pulse shrink-0 ${
-                  autoArchitectMode
-                    ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.9)]'
-                    : 'bg-white shadow-[0_0_6px_white]'
-                }`}
-              />
-              <span className="truncate max-w-[300px] sm:max-w-none">{progressPhase}</span>
-            </div>
-          )}
-        </div>
-
-        {/* Configure Model Options Toggle */}
-        <div id="model-options-section" className="pt-1 flex flex-col items-center scroll-mt-24">
-          <button
-            type="button"
-            id="toggle-advanced-btn"
-            onClick={() => setShowAdvanced(!showAdvanced)}
-            className="inline-flex items-center justify-center font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96] hover:text-white transition-colors min-h-[36px] sm:min-h-[40px] px-3 tracking-wider"
-          >
-            <Sliders size={13} className="mr-1.5 text-[#7D7D76] sm:w-3.5 sm:h-3.5" />
-            {showAdvanced ? 'HIDE MODEL & API OPTIONS' : 'CONFIGURE MODEL & API OPTIONS'}
-          </button>
-
-          {showAdvanced && (
-            <div className="mt-2 w-full p-4 sm:p-6 bg-[#121211] border border-white/10 corner-bracket-container shadow-2xl rounded-[2px] space-y-5 text-left animate-in fade-in duration-200">
-              {/* Compact AI Provider & Model Dropdown Configuration */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pb-1">
-                {/* Provider Dropdown */}
+            {showAdvanced && (
+              <div className="px-4 sm:px-5 pb-5 pt-4 border-t border-white/10 space-y-4">
                 <CustomDropdown
                   id="ai-provider"
                   label="AI Provider"
                   options={AI_PROVIDER_OPTIONS}
                   selectedValue={aiProvider}
                   onSelect={(val) => handleSwitchProvider(val as AiProvider)}
-                  headerBadge={aiProvider === 'groq' ? 'LPU ACCELERATED' : 'GOOGLE GENERATIVE AI'}
-                  helperText={
-                    aiProvider === 'groq'
-                      ? 'Ultra-fast LPU inference via console.groq.com/keys.'
-                      : 'Direct client execution via Google Generative Language API.'
-                  }
+                  headerBadge={aiProvider === 'groq' ? 'LPU ACCELERATED' : 'GOOGLE AI'}
                 />
 
-                {/* Model Dropdown */}
-                <div className="space-y-2">
-                  {aiProvider === 'gemini' ? (
+                {aiProvider === 'gemini' ? (
+                  <CustomDropdown
+                    id="gemini-model"
+                    label="Gemini Model"
+                    options={GEMINI_MODEL_OPTIONS}
+                    selectedValue={modelQuality}
+                    onSelect={(val) => setModelQuality(val as 'standard' | 'high')}
+                    headerBadge={modelQuality === 'high' ? 'PRO REASONING' : 'HIGH SPEED'}
+                  />
+                ) : (
+                  <div className="space-y-2">
                     <CustomDropdown
-                      id="gemini-model"
-                      label="Gemini Model"
-                      options={GEMINI_MODEL_OPTIONS}
-                      selectedValue={modelQuality}
-                      onSelect={(val) => setModelQuality(val as 'standard' | 'high')}
-                      headerBadge={modelQuality === 'high' ? 'PRO REASONING' : 'HIGH SPEED'}
-                      helperText={
-                        modelQuality === 'standard'
-                          ? 'Rapid story beat partitioning with minimal latency.'
-                          : 'Enhanced cinematic reasoning for intricate scripts.'
+                      id="groq-model"
+                      label="Groq Model"
+                      options={GROQ_MODEL_OPTIONS}
+                      selectedValue={
+                        GROQ_MODEL_OPTIONS.some((o) => o.value === groqModel)
+                          ? groqModel
+                          : 'custom'
                       }
+                      onSelect={handleSelectGroqModel}
+                      headerBadge="FREE TIER SAFE"
                     />
-                  ) : (
-                    <>
-                      <CustomDropdown
-                        id="groq-model"
-                        label="Groq Model"
-                        options={GROQ_MODEL_OPTIONS}
-                        selectedValue={
-                          GROQ_MODEL_OPTIONS.some((o) => o.value === groqModel)
-                            ? groqModel
-                            : 'custom'
-                        }
-                        onSelect={handleSelectGroqModel}
-                        headerBadge="FREE TIER COMPLIANT"
-                        helperText={
-                          groqModel === 'openai/gpt-oss-120b'
-                            ? 'Flagship 120B model on Groq LPU hardware with 128k context.'
-                            : groqModel === 'qwen/qwen3.8-27b'
-                              ? 'Alibaba Cloud 27B model on Groq LPU with fast token streaming.'
-                              : groqModel === 'openai/gpt-oss-20b'
-                                ? 'Low-latency 20B model for near-instant scene generation.'
-                                : `Custom model active: ${groqModel}`
-                        }
-                      />
-                      {(groqModel === 'custom' || !GROQ_MODEL_OPTIONS.some((o) => o.value === groqModel)) && (
-                        <div className="pt-1 space-y-1 animate-in fade-in duration-150">
-                          <label
-                            htmlFor="custom-groq-model-input"
-                            className="block font-editorial-meta text-[10px] text-[#9C9C96]"
-                          >
-                            CUSTOM GROQ MODEL ID
-                          </label>
-                          <input
-                            type="text"
-                            id="custom-groq-model-input"
-                            value={customGroqInput}
-                            onChange={(e) => handleCustomGroqInputChange(e.target.value)}
-                            placeholder="e.g. qwen/qwen3.8-27b or openai/gpt-oss-120b"
-                            className="w-full px-3 py-2 bg-[#0A0A09] text-white border border-white/20 rounded-[3px] text-xs font-mono focus:outline-none focus:border-white placeholder:text-[#555550]"
-                          />
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* Bring Your Own Key (BYOK) Section */}
-              <div className="space-y-3 pt-3 border-t border-white/10">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-1.5">
-                    <KeyRound size={13} className="text-[#9C9C96]" />
-                    <span className="font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96]">
-                      {aiProvider === 'groq' ? 'GROQ API KEY (BYOK)' : 'GEMINI API KEY (BYOK)'}
-                    </span>
+                    {(groqModel === 'custom' || !GROQ_MODEL_OPTIONS.some((o) => o.value === groqModel)) && (
+                      <div className="space-y-1.5">
+                        <label
+                          htmlFor="custom-groq-model-input"
+                          className="block font-editorial-meta text-[10px] text-[#9C9C96]"
+                        >
+                          CUSTOM GROQ MODEL ID
+                        </label>
+                        <input
+                          type="text"
+                          id="custom-groq-model-input"
+                          value={customGroqInput}
+                          onChange={(e) => handleCustomGroqInputChange(e.target.value)}
+                          placeholder="e.g. qwen/qwen3.8-27b"
+                          className="w-full px-3 py-2 bg-[#0C0C0B] text-white border border-white/20 rounded-[3px] text-xs font-mono focus:outline-none focus:border-white placeholder:text-[#555550]"
+                        />
+                      </div>
+                    )}
                   </div>
-                  {hasCustomKey && (
-                    <span className="inline-flex items-center text-[10px] text-emerald-400 font-editorial-meta font-medium">
-                      <CheckCircle2 size={11} className="mr-1" />
-                      KEY ACTIVE
-                    </span>
-                  )}
-                </div>
+                )}
 
-                <div className="space-y-2.5">
+                {/* Bring Your Own Key (BYOK) Input */}
+                <div className="space-y-3 pt-3 border-t border-white/10">
+                  <div className="flex items-center justify-between">
+                    <label
+                      htmlFor={aiProvider === 'groq' ? 'groq-api-key-input' : 'gemini-api-key-input'}
+                      className="inline-flex items-center gap-1.5 font-display text-xs font-medium text-white"
+                    >
+                      <KeyRound size={13} className="text-[#9C9C96]" />
+                      <span>{aiProvider === 'groq' ? 'Groq API Key' : 'Gemini API Key'}</span>
+                    </label>
+                    {hasCustomKey && (
+                      <span className="inline-flex items-center text-[11px] text-emerald-400 font-mono">
+                        <CheckCircle2 size={12} className="mr-1" />
+                        Active
+                      </span>
+                    )}
+                  </div>
+
                   <div className="relative">
                     <input
                       type={showKeyText ? 'text' : 'password'}
@@ -1209,130 +1218,101 @@ export default function GeneratorForm({
                       value={keyInput}
                       onChange={(e) => setKeyInput(e.target.value)}
                       placeholder={aiProvider === 'groq' ? 'gsk_...' : 'AIzaSy...'}
-                      className="w-full pl-3.5 pr-20 py-2.5 bg-[#0A0A09] text-[#F5F5F0] placeholder:text-[#555550] border border-white/15 rounded-[2px] focus:outline-none focus:border-white text-xs sm:text-sm font-mono"
+                      className="w-full pl-3.5 pr-10 py-2.5 bg-[#0C0C0B] text-[#F5F5F0] placeholder:text-[#555550] border border-white/15 rounded-[3px] focus:outline-none focus:border-white text-xs sm:text-sm font-mono"
                     />
-                    <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center space-x-1">
-                      <button
-                        type="button"
-                        id="toggle-key-visibility-btn"
-                        onClick={() => setShowKeyText(!showKeyText)}
-                        className="p-1.5 text-[#888884] hover:text-white transition-colors"
-                        title={showKeyText ? 'Hide API key' : 'Show API key'}
-                        aria-label="Toggle API key visibility"
-                      >
-                        {showKeyText ? <EyeOff size={14} /> : <Eye size={14} />}
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      id="toggle-key-visibility-btn"
+                      onClick={() => setShowKeyText(!showKeyText)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-[#888884] hover:text-white transition-colors cursor-pointer"
+                      title={showKeyText ? 'Hide API key' : 'Show API key'}
+                      aria-label="Toggle API key visibility"
+                    >
+                      {showKeyText ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
                   </div>
 
-                  <div className="flex flex-wrap items-center justify-between gap-2.5 pt-0.5">
-                    <label className="flex items-center space-x-2 text-[11px] sm:text-xs text-[#9C9C96] cursor-pointer select-none font-narrative">
+                  <div className="flex flex-wrap items-center justify-between gap-2.5">
+                    <label className="flex items-center gap-2 text-xs text-[#9C9C96] cursor-pointer select-none">
                       <input
                         type="checkbox"
                         id="remember-key-checkbox"
                         checked={rememberOptIn}
                         onChange={(e) => setRememberOptIn(e.target.checked)}
-                        className="rounded-[2px] border-white/20 bg-[#121211] text-white focus:ring-0 focus:ring-offset-0"
+                        className="rounded-[2px] border-white/25 bg-[#0C0C0B] text-white focus:ring-0 focus:ring-offset-0"
                       />
-                      <span>Remember in this browser session (sessionStorage)</span>
+                      <span>Remember for this session</span>
                     </label>
 
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center gap-2">
                       {hasCustomKey && (
                         <button
                           type="button"
                           id="clear-key-button"
                           onClick={handleClearKey}
-                          className="inline-flex items-center font-editorial-meta text-[10px] text-red-400 hover:text-red-300 transition-colors py-1 px-2"
+                          className="inline-flex items-center font-display text-xs text-red-400 hover:text-red-300 transition-colors py-1.5 px-2.5 rounded-[3px] hover:bg-red-950/30 cursor-pointer"
                         >
-                          <Trash2 size={11} className="mr-1" />
-                          REMOVE
+                          <Trash2 size={12} className="mr-1" />
+                          Remove
                         </button>
                       )}
                       <button
                         type="button"
                         id="apply-key-button"
                         onClick={handleApplyKey}
-                        className="inline-flex items-center font-editorial-meta text-[10px] sm:text-[11px] px-3.5 py-1.5 bg-white text-black font-semibold hover:bg-[#EAEAE6] transition-colors rounded-[2px]"
+                        className="inline-flex items-center font-display text-xs px-3.5 py-1.5 bg-white text-black font-semibold hover:bg-[#EAEAE6] transition-colors rounded-[3px] cursor-pointer"
                       >
-                        APPLY KEY
+                        Apply Key
                       </button>
                     </div>
                   </div>
 
                   {keyFeedback && (
-                    <p className="text-[11px] text-emerald-400 font-narrative mt-1 animate-in fade-in duration-150">
+                    <p className="text-xs text-emerald-400 font-narrative">
                       {keyFeedback}
                     </p>
                   )}
 
-                  {aiProvider === 'gemini' ? (
-                    <div className="p-3 bg-[#171715] border border-white/10 rounded-[2px] text-xs text-[#9C9C96] space-y-1.5 font-narrative">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-1.5 text-white font-medium">
-                          <Shield size={12} className="text-emerald-400" />
-                          <span className="font-editorial-meta text-[10px]">DIRECT BROWSER-TO-GOOGLE ARCHITECTURE</span>
-                        </div>
-                        {onNavigate && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onNavigate('byok-security');
-                              window.scrollTo({ top: 0, behavior: 'smooth' });
-                            }}
-                            className="text-[10px] text-amber-400 hover:text-amber-300 font-editorial-meta tracking-wider underline underline-offset-2 inline-flex items-center gap-1"
-                          >
-                            <ShieldCheck size={11} />
-                            <span>READ SECURITY &amp; CONSENT GUIDE</span>
-                          </button>
-                        )}
+                  <div className="p-3 bg-[#0C0C0B] border border-white/10 rounded-[3px] text-xs text-[#9C9C96] space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 text-white font-display font-medium">
+                        <Shield size={13} className="text-emerald-400 shrink-0" />
+                        <span>Direct Browser-Only Key Storage</span>
                       </div>
-                      <p className="leading-relaxed">
-                        Your Gemini API key is kept exclusively within your local browser memory and used directly for Google Generative AI queries. Keys are never transmitted to or logged on third-party servers.
-                      </p>
-                      <a
-                        href="https://aistudio.google.com/app/apikey"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center text-white hover:underline underline-offset-2 pt-0.5 font-editorial-meta text-[10px]"
-                      >
-                        GET A FREE GEMINI API KEY AT GOOGLE AI STUDIO &rarr;
-                      </a>
-                    </div>
-                  ) : (
-                    <div className="p-3 bg-[#171715] border border-white/10 rounded-[2px] text-xs text-[#9C9C96] space-y-1.5 font-narrative">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-1.5 text-white font-medium">
-                          <Shield size={12} className="text-emerald-400" />
-                          <span className="font-editorial-meta text-[10px]">DIRECT BROWSER-TO-GROQ CLOUD ARCHITECTURE</span>
-                        </div>
-                        <div className="flex items-center space-x-1 text-[10px] text-emerald-400 font-editorial-meta">
-                          <Zap size={11} />
-                          <span>FREE TIER SAFE</span>
-                        </div>
-                      </div>
-                      <p className="leading-relaxed">
-                        Your Groq API key executes directly from your browser to Groq Cloud endpoint (https://api.groq.com/openai/v1/chat/completions). Free tier rate limits (429) are gracefully handled with exponential backoff and compact token formatting.
-                      </p>
-                      <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
-                        <p className="text-[11px] text-[#A6A69F] font-mono">
-                          Endpoint: api.groq.com &bull; Active: {groqModel}
-                        </p>
-                        <a
-                          href="https://console.groq.com/keys"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center text-white hover:underline underline-offset-2 font-editorial-meta text-[10px]"
+                      {onNavigate && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onNavigate('byok-security');
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                          }}
+                          className="text-xs text-amber-400 hover:text-amber-300 font-display inline-flex items-center gap-1 cursor-pointer"
                         >
-                          GET A FREE GROQ KEY AT CONSOLE.GROQ.COM &rarr;
-                        </a>
-                      </div>
+                          <ShieldCheck size={12} />
+                          <span>Security Guide</span>
+                        </button>
+                      )}
                     </div>
-                  )}
+                    <p className="leading-relaxed">
+                      {aiProvider === 'groq'
+                        ? 'Your key calls api.groq.com directly from your browser and never passes through our servers.'
+                        : 'Your key calls Google Generative Language API directly from your browser and never passes through our servers.'}
+                    </p>
+                    <a
+                      href={aiProvider === 'groq' ? 'https://console.groq.com/keys' : 'https://aistudio.google.com/app/apikey'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center text-white hover:underline underline-offset-2 font-display font-medium"
+                    >
+                      {aiProvider === 'groq'
+                        ? 'Get a free Groq API key at console.groq.com ->'
+                        : 'Get a free Gemini key at Google AI Studio ->'}
+                    </a>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </form>
     </div>

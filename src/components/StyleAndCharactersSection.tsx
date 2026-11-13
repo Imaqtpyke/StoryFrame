@@ -28,18 +28,18 @@ export default function StyleAndCharactersSection({
   }
 
   return (
-    <div className="space-y-5 sm:space-y-7 font-narrative text-[#F5F5F0]">
-      {/* Story Style Profile Panel with Corner Accent Brackets */}
+    <div className="space-y-5 font-narrative text-[#F5F5F0]">
+      {/* Story Style Profile Panel */}
       {styleProfile && (
         <div
           id={isModal ? 'modal-style-profile-panel' : 'style-profile-panel'}
-          className="bg-[#111110] border border-white/10 p-4 sm:p-6 md:p-7 space-y-4 corner-bracket-container shadow-2xl"
+          className="bg-[#121211] border border-white/10 rounded-[3px] p-4 sm:p-5 space-y-4"
         >
-          <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-3 sm:pb-4">
-            <div className="flex items-center space-x-2.5">
-              <Sparkles size={16} className="text-white shrink-0" />
-              <h3 className="font-editorial-meta text-xs sm:text-sm font-semibold text-white">
-                VISUAL STYLE PROFILE
+          <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-3">
+            <div className="flex items-center space-x-2">
+              <Sparkles size={15} className="text-white shrink-0" />
+              <h3 className="font-display text-sm sm:text-base font-medium text-white">
+                Visual Style Profile
               </h3>
             </div>
             <button
@@ -49,29 +49,29 @@ export default function StyleAndCharactersSection({
                 const styleText = `Art Style: ${styleProfile.artStyle}\nColor Palette: ${styleProfile.colorPalette}\nLighting: ${styleProfile.lighting}\nEra and Setting: ${styleProfile.eraAndSetting}`;
                 onCopy(styleText, isModal ? 'modal-style-profile' : 'style-profile');
               }}
-              className="inline-flex items-center font-editorial-meta text-[9px] sm:text-[10px] px-2 sm:px-2.5 py-1 text-[#D4D4D0] hover:text-white bg-[#1a1a18] hover:bg-[#262624] border border-white/15 transition-colors whitespace-nowrap min-h-[28px]"
+              className="inline-flex items-center font-display text-xs px-3 py-1.5 text-[#D4D4D0] hover:text-white bg-[#1a1a18] hover:bg-[#262624] border border-white/15 rounded-[3px] transition-colors whitespace-nowrap cursor-pointer"
             >
               {copiedIndex === (isModal ? 'modal-style-profile' : 'style-profile') ? (
                 <>
-                  <Check size={11} className="mr-1 text-white sm:w-3 sm:h-3" />
-                  <span>COPIED</span>
+                  <Check size={12} className="mr-1.5 text-emerald-400" />
+                  <span>Copied</span>
                 </>
               ) : (
                 <>
-                  <Copy size={11} className="mr-1 text-[#9C9C96] sm:w-3 sm:h-3" />
-                  <span>COPY STYLE</span>
+                  <Copy size={12} className="mr-1.5 text-[#9C9C96]" />
+                  <span>Copy Style</span>
                 </>
               )}
             </button>
           </div>
 
           <p className="text-xs text-[#9C9C96] leading-relaxed font-narrative">
-            Generated specifically for this story to adapt dynamically to its genre, tone, and visual continuity. Appended onto every visual beat prompt.
+            Generated for this story to preserve genre tone and aesthetic continuity across every visual beat prompt.
           </p>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 pt-1">
-            <div className="bg-[#171715] border border-white/5 p-3 sm:p-4 space-y-1">
-              <span className="font-editorial-meta text-[9px] sm:text-[10px] text-[#8C8C86] block">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            <div className="bg-[#0C0C0B] border border-white/10 rounded-[3px] p-3.5 space-y-1">
+              <span className="font-editorial-meta text-[10px] text-[#8C8C86] block">
                 ART STYLE
               </span>
               <p className="text-xs sm:text-sm text-[#F5F5F0] font-narrative leading-relaxed">
@@ -79,8 +79,8 @@ export default function StyleAndCharactersSection({
               </p>
             </div>
 
-            <div className="bg-[#171715] border border-white/5 p-3 sm:p-4 space-y-1">
-              <span className="font-editorial-meta text-[9px] sm:text-[10px] text-[#8C8C86] block">
+            <div className="bg-[#0C0C0B] border border-white/10 rounded-[3px] p-3.5 space-y-1">
+              <span className="font-editorial-meta text-[10px] text-[#8C8C86] block">
                 COLOR PALETTE
               </span>
               <p className="text-xs sm:text-sm text-[#F5F5F0] font-narrative leading-relaxed">
@@ -88,8 +88,8 @@ export default function StyleAndCharactersSection({
               </p>
             </div>
 
-            <div className="bg-[#171715] border border-white/5 p-3 sm:p-4 space-y-1">
-              <span className="font-editorial-meta text-[9px] sm:text-[10px] text-[#8C8C86] block">
+            <div className="bg-[#0C0C0B] border border-white/10 rounded-[3px] p-3.5 space-y-1">
+              <span className="font-editorial-meta text-[10px] text-[#8C8C86] block">
                 LIGHTING &amp; ATMOSPHERE
               </span>
               <p className="text-xs sm:text-sm text-[#F5F5F0] font-narrative leading-relaxed">
@@ -97,8 +97,8 @@ export default function StyleAndCharactersSection({
               </p>
             </div>
 
-            <div className="bg-[#171715] border border-white/5 p-3 sm:p-4 space-y-1">
-              <span className="font-editorial-meta text-[9px] sm:text-[10px] text-[#8C8C86] block">
+            <div className="bg-[#0C0C0B] border border-white/10 rounded-[3px] p-3.5 space-y-1">
+              <span className="font-editorial-meta text-[10px] text-[#8C8C86] block">
                 ERA &amp; SETTING
               </span>
               <p className="text-xs sm:text-sm text-[#F5F5F0] font-narrative leading-relaxed">
@@ -113,13 +113,13 @@ export default function StyleAndCharactersSection({
       {characterEntries.length > 0 && (
         <div
           id={isModal ? 'modal-character-sheet-panel' : 'character-sheet-panel'}
-          className="bg-[#111110] border border-white/10 p-4 sm:p-6 md:p-7 space-y-4 corner-bracket-container shadow-2xl"
+          className="bg-[#121211] border border-white/10 rounded-[3px] p-4 sm:p-5 space-y-4"
         >
-          <div className="flex items-center justify-between border-b border-white/10 pb-3 sm:pb-4 flex-wrap gap-2">
-            <div className="flex items-center space-x-2.5">
-              <Users size={16} className="text-white shrink-0" />
-              <h3 className="font-editorial-meta text-xs sm:text-sm font-semibold text-white">
-                CHARACTER CONTINUITY SHEET
+          <div className="flex items-center justify-between border-b border-white/10 pb-3 flex-wrap gap-2">
+            <div className="flex items-center space-x-2">
+              <Users size={15} className="text-white shrink-0" />
+              <h3 className="font-display text-sm sm:text-base font-medium text-white">
+                Character Continuity Sheet
               </h3>
             </div>
             <div className="flex items-center gap-2">
@@ -128,24 +128,24 @@ export default function StyleAndCharactersSection({
                   type="button"
                   id={`${isModal ? 'modal-' : ''}open-ref-packet-btn`}
                   onClick={() => onOpenReferencePacket()}
-                  className="inline-flex items-center font-editorial-meta text-[9px] sm:text-[10px] px-2.5 py-1 text-white bg-[#222220] hover:bg-[#2e2e2a] border border-white/20 rounded transition-colors whitespace-nowrap min-h-[28px]"
+                  className="inline-flex items-center font-display text-xs px-3 py-1.5 text-white bg-[#1f1f1d] hover:bg-[#2a2a27] border border-white/20 rounded-[3px] transition-colors whitespace-nowrap cursor-pointer"
                   title="Generate multi-angle character reference prompts for Midjourney, Kling, and Runway"
                 >
-                  <Sparkles size={11} className="mr-1.5 text-white" />
-                  <span>REFERENCE PACKETS</span>
+                  <Sparkles size={12} className="mr-1.5 text-amber-400" />
+                  <span>Reference Packets</span>
                 </button>
               )}
-              <span className="stamp-chip text-[9px]">
+              <span className="stamp-chip text-[10px]">
                 {characterEntries.length} {characterEntries.length === 1 ? 'CHARACTER' : 'CHARACTERS'}
               </span>
             </div>
           </div>
 
           <p className="text-xs text-[#9C9C96] leading-relaxed font-narrative">
-            Fixed visual descriptions for recurring characters, reused across visual beat prompts to guarantee character continuity.
+            Fixed visual descriptions for recurring characters, reused across beat prompts to prevent visual drift.
           </p>
 
-          <div className="grid grid-cols-1 gap-3 sm:gap-4 pt-1">
+          <div className="grid grid-cols-1 gap-3 pt-1">
             {characterEntries.map(([charName, desc]) => {
               const copyId = isModal ? `modal-char-${charName}` : `char-${charName}`;
               const isCopied = copiedIndex === copyId;
@@ -153,11 +153,11 @@ export default function StyleAndCharactersSection({
                 <div
                   key={charName}
                   id={`${isModal ? 'modal-' : ''}character-card-${charName.toLowerCase().replace(/[^a-z0-9]/g, '-')}`}
-                  className="bg-[#171715] border border-white/5 p-3.5 sm:p-4 space-y-2.5"
+                  className="bg-[#0C0C0B] border border-white/10 rounded-[3px] p-3.5 space-y-2"
                 >
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center space-x-2">
-                      <span className="inline-block w-1.5 h-1.5 bg-white" />
+                      <span className="inline-block w-1.5 h-1.5 bg-white rounded-[1px]" />
                       <span className="font-display text-sm sm:text-base font-medium text-white tracking-tight">
                         {charName}
                       </span>
@@ -167,17 +167,17 @@ export default function StyleAndCharactersSection({
                       type="button"
                       id={`${isModal ? 'modal-' : ''}copy-character-btn-${charName.toLowerCase().replace(/[^a-z0-9]/g, '-')}`}
                       onClick={() => onCopy(desc, copyId)}
-                      className="inline-flex items-center font-editorial-meta text-[9px] sm:text-[10px] px-2 sm:px-2.5 py-1 text-[#D4D4D0] hover:text-white bg-[#222220] hover:bg-[#2d2d29] border border-white/15 transition-colors whitespace-nowrap min-h-[28px]"
+                      className="inline-flex items-center font-display text-xs px-2.5 py-1 text-[#D4D4D0] hover:text-white bg-[#1c1c1a] hover:bg-[#262624] border border-white/15 rounded-[3px] transition-colors whitespace-nowrap cursor-pointer"
                     >
                       {isCopied ? (
                         <>
-                          <Check size={11} className="mr-1 text-white sm:w-3 sm:h-3" />
-                          <span>COPIED</span>
+                          <Check size={11} className="mr-1 text-emerald-400" />
+                          <span>Copied</span>
                         </>
                       ) : (
                         <>
-                          <Copy size={11} className="mr-1 text-[#9C9C96] sm:w-3 sm:h-3" />
-                          <span>COPY</span>
+                          <Copy size={11} className="mr-1 text-[#9C9C96]" />
+                          <span>Copy</span>
                         </>
                       )}
                     </button>
@@ -197,25 +197,25 @@ export default function StyleAndCharactersSection({
       {locationEntries.length > 0 && (
         <div
           id={isModal ? 'modal-location-sheet-panel' : 'location-sheet-panel'}
-          className="bg-[#111110] border border-white/10 p-4 sm:p-6 md:p-7 space-y-4 corner-bracket-container shadow-2xl"
+          className="bg-[#121211] border border-white/10 rounded-[3px] p-4 sm:p-5 space-y-4"
         >
-          <div className="flex items-center justify-between border-b border-white/10 pb-3 sm:pb-4">
-            <div className="flex items-center space-x-2.5">
-              <MapPin size={16} className="text-white shrink-0" />
-              <h3 className="font-editorial-meta text-xs sm:text-sm font-semibold text-white">
-                LOCATION CONTINUITY SHEET
+          <div className="flex items-center justify-between border-b border-white/10 pb-3">
+            <div className="flex items-center space-x-2">
+              <MapPin size={15} className="text-white shrink-0" />
+              <h3 className="font-display text-sm sm:text-base font-medium text-white">
+                Location Continuity Sheet
               </h3>
             </div>
-            <span className="stamp-chip text-[9px]">
+            <span className="stamp-chip text-[10px]">
               {locationEntries.length} {locationEntries.length === 1 ? 'LOCATION' : 'LOCATIONS'}
             </span>
           </div>
 
           <p className="text-xs text-[#9C9C96] leading-relaxed font-narrative">
-            Fixed visual descriptions for recurring locations, reused across visual beat prompts to guarantee environmental continuity.
+            Fixed environment anchors reused across beat prompts for spatial and lighting continuity.
           </p>
 
-          <div className="grid grid-cols-1 gap-3 sm:gap-4 pt-1">
+          <div className="grid grid-cols-1 gap-3 pt-1">
             {locationEntries.map(([locationName, desc]) => {
               const copyId = isModal ? `modal-loc-${locationName}` : `loc-${locationName}`;
               const isCopied = copiedIndex === copyId;
@@ -223,11 +223,11 @@ export default function StyleAndCharactersSection({
                 <div
                   key={locationName}
                   id={`${isModal ? 'modal-' : ''}location-card-${locationName.toLowerCase().replace(/[^a-z0-9]/g, '-')}`}
-                  className="bg-[#171715] border border-white/5 p-3.5 sm:p-4 space-y-2.5"
+                  className="bg-[#0C0C0B] border border-white/10 rounded-[3px] p-3.5 space-y-2"
                 >
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center space-x-2">
-                      <span className="inline-block w-1.5 h-1.5 bg-white" />
+                      <span className="inline-block w-1.5 h-1.5 bg-white rounded-[1px]" />
                       <span className="font-display text-sm sm:text-base font-medium text-white tracking-tight">
                         {locationName}
                       </span>
@@ -237,17 +237,17 @@ export default function StyleAndCharactersSection({
                       type="button"
                       id={`${isModal ? 'modal-' : ''}copy-location-btn-${locationName.toLowerCase().replace(/[^a-z0-9]/g, '-')}`}
                       onClick={() => onCopy(desc, copyId)}
-                      className="inline-flex items-center font-editorial-meta text-[9px] sm:text-[10px] px-2 sm:px-2.5 py-1 text-[#D4D4D0] hover:text-white bg-[#222220] hover:bg-[#2d2d29] border border-white/15 transition-colors whitespace-nowrap min-h-[28px]"
+                      className="inline-flex items-center font-display text-xs px-2.5 py-1 text-[#D4D4D0] hover:text-white bg-[#1c1c1a] hover:bg-[#262624] border border-white/15 rounded-[3px] transition-colors whitespace-nowrap cursor-pointer"
                     >
                       {isCopied ? (
                         <>
-                          <Check size={11} className="mr-1 text-white sm:w-3 sm:h-3" />
-                          <span>COPIED</span>
+                          <Check size={11} className="mr-1 text-emerald-400" />
+                          <span>Copied</span>
                         </>
                       ) : (
                         <>
-                          <Copy size={11} className="mr-1 text-[#9C9C96] sm:w-3 sm:h-3" />
-                          <span>COPY</span>
+                          <Copy size={11} className="mr-1 text-[#9C9C96]" />
+                          <span>Copy</span>
                         </>
                       )}
                     </button>

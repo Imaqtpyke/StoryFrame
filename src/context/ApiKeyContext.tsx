@@ -22,7 +22,7 @@ interface ApiKeyContextType {
   groqApiKey: string;
 
   // Model selection
-  modelQuality: 'standard' | 'high'; // Gemini: standard (3.8 Flash), high (3.1 Pro)
+  modelQuality: 'standard' | 'high'; // Gemini: standard (4 Hydrogen), high (3.1 Pro)
   groqModel: string; // Groq: openai/gpt-oss-120b (Recommended), qwen/qwen3.8-27b, openai/gpt-oss-20b
   setModelQuality: (quality: 'standard' | 'high') => void;
   setGroqModel: (model: string) => void;

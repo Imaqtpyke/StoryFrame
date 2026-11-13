@@ -39,8 +39,10 @@ export async function fetchWithExponentialBackoff(
 
       return response;
     } catch (err: any) {
-      // Network errors (TypeError) or abort errors
-      const isNetworkError = err instanceof TypeError || err?.name === 'AbortError' || err?.message?.includes('network');
+      // Never retry user-cancelled requests
+      if (err?.name === 'AbortError') {
+        throw err;
+      }
       if (attempt < maxAttempts) {
         const delayMs = Math.min(initialDelayMs * Math.pow(2, attempt - 1), maxDelayMs);
         

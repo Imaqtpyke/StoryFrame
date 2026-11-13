@@ -7,7 +7,7 @@
 import { StoryBible, StoryFormat, GenerationMode, AiProvider } from '../types';
 import { NumberedWord } from './stage0Prepare';
 import { fetchWithExponentialBackoff } from '../utils/retryFetch';
-import { executeJsonLlmCall } from './unifiedAiService';
+import { executeJsonLlmCall, extractGeminiResponseText, sanitizeGenericErrorMessage } from './unifiedAiService';
 
 export interface PacingConfig {
   minDwell: number;
@@ -353,16 +353,20 @@ Output valid JSON matching the schema.`;
       temperature: 0.2,
     });
   } else {
-    const modelName = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-3.8-flash';
+    const modelName = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-4-hydrogen';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+
+    const generationConfig: Record<string, any> = {
+      responseMimeType: 'application/json',
+      responseSchema: BEAT_PLAN_SCHEMA,
+    };
+    if (modelName !== 'gemini-4-hydrogen') {
+      generationConfig.temperature = 0.2;
+    }
 
     const payload = {
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseSchema: BEAT_PLAN_SCHEMA,
-        temperature: 0.2,
-      },
+      generationConfig,
     };
 
     const response = await fetchWithExponentialBackoff(
@@ -385,11 +389,12 @@ Output valid JSON matching the schema.`;
     );
 
     if (!response.ok) {
-      throw new Error(`Beat Plan API error: HTTP ${response.status}`);
+      const errText = await response.text().catch(() => '');
+      throw new Error(sanitizeGenericErrorMessage(`Beat Plan API error (${response.status}): ${errText}`, apiKey, 'gemini'));
     }
 
     const json = await response.json();
-    const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+    const rawText = extractGeminiResponseText(json);
     if (!rawText) {
       throw new Error('Empty response from Beat Plan generator');
     }

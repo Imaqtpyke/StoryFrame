@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { StoryGenerationResult, StoryFormat, Beat, CtaPlatform, CtaModality, CtaEngagementType } from '../types';
+import { StoryGenerationResult, StoryFormat, Beat, CtaPlatform, CtaModality, CtaEngagementType, Scene } from '../types';
 import BeatBottomSheet from './BeatBottomSheet';
 import CharacterReferenceModal from './CharacterReferenceModal';
 import StyleAndCharactersSection from './StyleAndCharactersSection';
 import SeriesRoadmapModal from './SeriesRoadmapModal';
 import { getPreviewText } from '../services/beatSplitting';
 import { normalizeStoryboardForDisplay } from '../services/beatProgressionEngine';
-import { compileBeatPrompt, lintStoryboard, LintIssue, compileThumbnailPrompt, compileCtaPrompt } from '../services/promptCompiler';
+import { compileBeatPrompt, lintStoryboard, compileThumbnailPrompt, compileCtaPrompt } from '../services/promptCompiler';
 import { generateCMX3600EDL, generateSRTSubtitles, calculatePacing } from '../services/timelineExport';
 import {
   Copy,
@@ -18,10 +18,11 @@ import {
   Sparkles,
   FileCode,
   FileText,
-  SlidersHorizontal,
   X,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   Download,
   Camera,
   Video,
@@ -32,10 +33,6 @@ import {
   Image as ImageIcon,
   Zap,
   Scissors,
-  AlertTriangle,
-  Info,
-  CheckCheck,
-  ExternalLink,
   Users,
 } from 'lucide-react';
 
@@ -63,7 +60,6 @@ interface ResultsViewProps {
   }) => void;
 }
 
-// Convert numbers (1, 2, 3...) to Roman Numerals ("I", "II", "III"...) for editorial scene headers
 const toRomanNumeral = (num: number): string => {
   const n = Math.floor(Number(num));
   if (isNaN(n) || n <= 0) return String(num);
@@ -113,7 +109,6 @@ export default function ResultsView({
   const [isRoadmapModalOpen, setIsRoadmapModalOpen] = useState<boolean>(false);
   const [isContinuitySaved, setIsContinuitySaved] = useState<boolean>(() => hasSavedSeriesContinuity());
 
-  // Auto-persist series continuity if manuscript has series roadmap
   useEffect(() => {
     if (result.seriesRoadmap && result.seriesRoadmap.length > 0) {
       syncStoryResultToContinuity(result, 1);
@@ -122,13 +117,13 @@ export default function ResultsView({
   }, [result]);
 
   const handleManualSaveContinuity = () => {
-    const currentTitle = result.title || "Untitled Series";
+    const currentTitle = result.title || 'Untitled Series';
     syncStoryResultToContinuity(result, 1, currentTitle);
     setIsContinuitySaved(true);
   };
 
   const handleSelectEpisodeForDraft = (ep: { episodeNumber: number; title: string; description: string }) => {
-    const currentTitle = result.title || "Untitled Series";
+    const currentTitle = result.title || 'Untitled Series';
     const continuity = loadSeriesContinuity(currentTitle) || syncStoryResultToContinuity(result, 1, currentTitle);
     const draft = initializeNextEpisodeDraft(continuity, ep.episodeNumber);
     if (onStartEpisodeDraft) {
@@ -145,7 +140,7 @@ export default function ResultsView({
     setIsRoadmapModalOpen(false);
   };
 
-  // Mobile bottom sheet beat breakdown state
+  // Mobile bottom sheet beat breakdown state (< lg)
   const [mobileActiveBeat, setMobileActiveBeat] = useState<{
     sceneIndex: number;
     sceneRoman: string;
@@ -153,7 +148,7 @@ export default function ResultsView({
     allBeats: Beat[];
   } | null>(null);
 
-  // Normalize scenes for display while preserving visual-event pacing & metadata alignment
+  // Normalize scenes for display
   const normalizedScenes = useMemo(() => {
     return normalizeStoryboardForDisplay(result.scenes || [], {
       isVideoMode: result.generationMode === 'video',
@@ -173,12 +168,31 @@ export default function ResultsView({
     format,
   ]);
 
-  // Deterministic Storyboard Linter issues (L01 - L06)
-  const lintIssues = useMemo(() => {
-    return lintStoryboard(normalizedScenes, result.characterSheet);
-  }, [normalizedScenes, result.characterSheet]);
+  // Desktop inline inspector selection
+  const [desktopSelection, setDesktopSelection] = useState<{ sceneIndex: number; beatIndex: number }>(() => {
+    const firstScene = normalizedScenes[0];
+    const firstBeat = firstScene?.beats?.[0];
+    return {
+      sceneIndex: firstScene?.index ?? 1,
+      beatIndex: firstBeat?.beatIndex ?? 1,
+    };
+  });
 
-  // Scene collapse state (default: all expanded)
+  useEffect(() => {
+    const firstScene = normalizedScenes[0];
+    const firstBeat = firstScene?.beats?.[0];
+    if (firstScene && firstBeat) {
+      setDesktopSelection({
+        sceneIndex: firstScene.index,
+        beatIndex: firstBeat.beatIndex,
+      });
+    }
+  }, [result]);
+
+  useMemo(() => {
+    return lintStoryboard(normalizedScenes, result.characterSheet, result.styleProfile);
+  }, [normalizedScenes, result.characterSheet, result.styleProfile]);
+
   const [expandedScenes, setExpandedScenes] = useState<Record<number, boolean>>(() => {
     const initial: Record<number, boolean> = {};
     result.scenes.forEach((s) => {
@@ -187,7 +201,6 @@ export default function ResultsView({
     return initial;
   });
 
-  // Close export dropdown on outside click
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
@@ -200,16 +213,16 @@ export default function ResultsView({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isExportMenuOpen]);
 
-  // Close export menu on escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (isExportMenuOpen) setIsExportMenuOpen(false);
+        if (isStyleModalOpen) setIsStyleModalOpen(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isExportMenuOpen]);
+  }, [isExportMenuOpen, isStyleModalOpen]);
 
   const formatSecondsToMinutes = (seconds: number) => {
     if (seconds < 60) return `${seconds}s`;
@@ -252,7 +265,6 @@ export default function ResultsView({
   };
 
   const scrollToScene = (sceneIndex: number) => {
-    // Ensure scene is expanded
     setExpandedScenes((prev) => ({ ...prev, [sceneIndex]: true }));
     const element = document.getElementById(`scene-card-${sceneIndex}`);
     if (element) {
@@ -260,23 +272,21 @@ export default function ResultsView({
     }
   };
 
-  // Beat click handler opens bottom sheet modal with full prompt details
   const handleBeatClick = (sceneIndex: number, sceneRoman: string, beat: Beat, allBeats: Beat[]) => {
-    setMobileActiveBeat({ sceneIndex, sceneRoman, beat, allBeats });
+    setDesktopSelection({ sceneIndex, beatIndex: beat.beatIndex });
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+      setMobileActiveBeat({ sceneIndex, sceneRoman, beat, allBeats });
+    }
   };
-
-
 
   const fullScript = normalizedScenes.map((s) => s.narratorLine).join(' ');
   const totalBeatsCount = normalizedScenes.reduce((acc, s) => acc + (s.beats?.length || 0), 0);
   const characterEntries = Object.entries(result.characterSheet || {});
   const isVideoMode = result.generationMode === 'video';
 
-  // Thumbnail accordion state (defaults to collapsed)
+  // Thumbnail & CTA states
   const [isThumbnailExpanded, setIsThumbnailExpanded] = useState<boolean>(false);
   const [thumbnailPromptMode, setThumbnailPromptMode] = useState<'full' | 'clean'>('full');
-
-  // Story-Adaptive CTA Outro state (defaults to collapsed)
   const [isCtaExpanded, setIsCtaExpanded] = useState<boolean>(false);
   const [ctaPlatform, setCtaPlatform] = useState<CtaPlatform>(() => {
     if (platform.toLowerCase().includes('youtube')) return 'youtube_shorts';
@@ -319,25 +329,43 @@ export default function ResultsView({
     return sum > 0 ? sum : result.totalDurationSeconds;
   }, [normalizedScenes, result.totalDurationSeconds]);
 
-  // Calculate timeline ranges
   let accumulatedSeconds = 0;
   const sceneTimelineRanges = normalizedScenes.map((scene) => {
     const startSec = accumulatedSeconds;
     const endSec = Math.round((startSec + scene.estimatedSeconds) * 10) / 10;
     accumulatedSeconds = endSec;
-    const pct = effectiveTotalDuration > 0
-      ? (scene.estimatedSeconds / effectiveTotalDuration) * 100
-      : 100 / normalizedScenes.length;
     return {
       sceneIndex: scene.index,
       estimatedSeconds: scene.estimatedSeconds,
       startSec,
       endSec,
-      percentage: Math.max(8, pct),
     };
   });
 
-  // Batch actions
+  // Flat list of beats for Prev/Next stepping in desktop inspector
+  const flatBeatRefs = useMemo(() => {
+    const list: { scene: Scene; beat: Beat }[] = [];
+    normalizedScenes.forEach((scene) => {
+      (scene.beats || []).forEach((beat) => {
+        list.push({ scene, beat });
+      });
+    });
+    return list;
+  }, [normalizedScenes]);
+
+  const currentFlatIndex = flatBeatRefs.findIndex(
+    (item) =>
+      item.scene.index === desktopSelection.sceneIndex &&
+      item.beat.beatIndex === desktopSelection.beatIndex
+  );
+  const activeInspectorPair =
+    currentFlatIndex >= 0 ? flatBeatRefs[currentFlatIndex] : flatBeatRefs[0] || null;
+  const prevFlatPair = currentFlatIndex > 0 ? flatBeatRefs[currentFlatIndex - 1] : null;
+  const nextFlatPair =
+    currentFlatIndex >= 0 && currentFlatIndex < flatBeatRefs.length - 1
+      ? flatBeatRefs[currentFlatIndex + 1]
+      : null;
+
   const handleCopyAllPrompts = () => {
     const lines: string[] = [];
     normalizedScenes.forEach((scene) => {
@@ -385,6 +413,7 @@ export default function ResultsView({
     downloadAnchor.click();
     downloadAnchor.remove();
   };
+
   const downloadJsonExport = () => {
     setIsExportMenuOpen(false);
     const exportPayload = {
@@ -520,7 +549,6 @@ export default function ResultsView({
       md += `\n`;
     });
 
-    // Append Cover Thumbnail Blueprint
     md += `## Production Cover & Hero Thumbnail\n\n`;
     md += `- **Aspect Ratio**: ${activeThumbnail.aspectRatio}\n`;
     md += `- **Curiosity Hook**: "${activeThumbnail.hookText}"\n`;
@@ -528,7 +556,6 @@ export default function ResultsView({
     md += `### Production Thumbnail Prompt (With Typography)\n\`\`\`text\n${activeThumbnail.compiledPrompt}\n\`\`\`\n\n`;
     md += `### Clean Plate Prompt (Background Only)\n\`\`\`text\n${activeThumbnail.cleanPlatePrompt}\n\`\`\`\n\n`;
 
-    // Append Call-to-Action Outro Visual Prompt
     md += `## Story-Adaptive Call-to-Action Outro Prompt\n\n`;
     md += `- **Platform**: ${activeCta.platform}\n`;
     md += `- **Modality**: ${activeCta.modality === 'video' ? 'Text to Video Loop (~3s)' : 'Text to Image Freeze Frame'}\n`;
@@ -549,17 +576,17 @@ export default function ResultsView({
   const allExpanded = Object.values(expandedScenes).every(Boolean);
 
   return (
-    <div className="w-full max-w-5xl mx-auto space-y-4 sm:space-y-6 font-narrative text-[#F5F5F0]">
-      {/* Sleek, Compact Top Navigation & Action Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-white/10">
-        <div className="flex items-center space-x-2.5 flex-wrap text-xs">
+    <div className="w-full space-y-5 font-narrative text-[#F5F5F0]">
+      {/* Decluttered Top Bar */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-4 border-b border-white/10">
+        <div className="flex items-center gap-3 flex-wrap text-sm">
           <button
             type="button"
             id="back-to-edit-button"
             onClick={onBackToEdit}
-            className="inline-flex items-center text-[#A0A09A] hover:text-white transition-colors py-1 font-display"
+            className="inline-flex items-center text-[#A0A09A] hover:text-white transition-colors py-1 font-display cursor-pointer"
           >
-            <ArrowLeft size={13} className="mr-1.5 shrink-0" />
+            <ArrowLeft size={14} className="mr-1.5 shrink-0" />
             Edit Story
           </button>
           <span className="text-white/20">/</span>
@@ -567,115 +594,88 @@ export default function ResultsView({
             type="button"
             id="start-new-button"
             onClick={onReset}
-            className="inline-flex items-center text-[#A0A09A] hover:text-white transition-colors py-1 font-display"
+            className="inline-flex items-center text-[#A0A09A] hover:text-white transition-colors py-1 font-display cursor-pointer"
           >
             New Story
           </button>
-          <span className="text-white/20">·</span>
-          <span className="text-[11px] text-[#8C8C86] font-editorial-meta">
-            {normalizedScenes.length} SCENES · {totalBeatsCount} BEATS · ~{formatSecondsToMinutes(effectiveTotalDuration)} ({platform})
+          <span className="text-white/20 hidden sm:inline">/</span>
+          <span className="text-xs font-mono text-[#9C9C96] tabular-nums">
+            {normalizedScenes.length} Scenes · {totalBeatsCount} Beats · ~{formatSecondsToMinutes(effectiveTotalDuration)} · {platform}
+            {isVideoMode ? ` · ${result.targetVideoDuration || 5}s Video Clips` : ' · Image Mode'}
           </span>
         </div>
 
-        {/* Compact Utility Actions Row */}
-        <div className="flex items-center gap-1.5 self-start sm:self-auto flex-wrap">
-          {/* Batch Copy Prompts */}
+        {/* Clean Action Controls (Max 1 Primary + Essential Tools) */}
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             type="button"
             id="batch-copy-prompts-btn"
             onClick={handleCopyAllPrompts}
-            className="inline-flex items-center px-2.5 py-1 bg-white text-black hover:bg-neutral-200 text-[11px] font-display font-medium transition-colors rounded shadow-sm min-h-[28px]"
-            title="Copy all beat prompts"
+            className="inline-flex items-center px-3.5 py-2 bg-white text-black hover:bg-[#EAEAE5] text-xs font-display font-semibold transition-colors rounded-[3px] shadow-sm cursor-pointer"
           >
             {copiedIndex === 'all-prompts' ? (
               <>
-                <Check size={11} className="mr-1 text-black" />
-                <span>Copied All</span>
+                <Check size={13} className="mr-1.5 text-black" />
+                <span>Copied All Prompts</span>
               </>
             ) : (
               <>
-                <Copy size={11} className="mr-1 text-black" />
+                <Copy size={13} className="mr-1.5 text-black" />
                 <span>Copy All Prompts</span>
               </>
             )}
           </button>
 
-          {/* Character Reference Packets Modal Button */}
-          {result.characterSheet && Object.keys(result.characterSheet).length > 0 && (
+          {(result.styleProfile || characterEntries.length > 0) && (
+            <button
+              type="button"
+              id="open-style-cast-btn"
+              onClick={() => setIsStyleModalOpen(true)}
+              className="inline-flex items-center px-3 py-2 bg-[#161614] hover:bg-[#20201e] text-[#D4D4D0] hover:text-white border border-white/15 text-xs font-display transition-colors rounded-[3px] cursor-pointer"
+            >
+              <Layers size={13} className="mr-1.5 text-[#9C9C96]" />
+              <span>Style &amp; Cast</span>
+            </button>
+          )}
+
+          {characterEntries.length > 0 && (
             <button
               type="button"
               id="open-ref-packets-header-btn"
               onClick={() => setIsRefModalOpen(true)}
-              className="inline-flex items-center px-2.5 py-1 bg-[#161614] hover:bg-[#20201e] text-[#D4D4D0] hover:text-white border border-white/15 text-[11px] font-display transition-colors rounded min-h-[28px]"
-              title="Open multi-angle reference prompts for Midjourney / Kling"
+              className="inline-flex items-center px-3 py-2 bg-[#161614] hover:bg-[#20201e] text-[#D4D4D0] hover:text-white border border-white/15 text-xs font-display transition-colors rounded-[3px] cursor-pointer"
             >
-              <Users size={11} className="mr-1 text-[#9C9C96]" />
+              <Users size={13} className="mr-1.5 text-[#9C9C96]" />
               <span>Character Packets</span>
             </button>
           )}
 
-          {/* Series Roadmap Modal Button */}
           {result.seriesRoadmap && result.seriesRoadmap.length > 0 && (
             <button
               type="button"
               id="open-series-roadmap-header-btn"
               onClick={() => setIsRoadmapModalOpen(true)}
-              className="inline-flex items-center px-2.5 py-1 bg-[#161614] hover:bg-[#20201e] text-[#D4D4D0] hover:text-white border border-white/15 text-[11px] font-display transition-colors rounded min-h-[28px]"
-              title="Open 11-Episode Series Continuity Roadmap"
+              className="inline-flex items-center px-3 py-2 bg-[#161614] hover:bg-[#20201e] text-[#D4D4D0] hover:text-white border border-white/15 text-xs font-display transition-colors rounded-[3px] cursor-pointer"
             >
-              <Film size={11} className="mr-1 text-amber-400" />
-              <span>Series Roadmap ({result.seriesRoadmap.length} Ep)</span>
+              <Film size={13} className="mr-1.5 text-amber-400" />
+              <span>Series Roadmap ({result.seriesRoadmap.length})</span>
             </button>
           )}
 
-          {/* Jump to Cover Thumbnail */}
-          <button
-            type="button"
-            id="jump-to-thumbnail-btn"
-            onClick={() => {
-              setIsThumbnailExpanded(true);
-              const el = document.getElementById('thumbnail-cover-panel');
-              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }}
-            className="inline-flex items-center px-2.5 py-1 bg-[#161614] hover:bg-[#20201e] text-[#D4D4D0] hover:text-white border border-white/15 text-[11px] font-display transition-colors rounded min-h-[28px]"
-            title="Jump to Cover & Thumbnail Blueprint"
-          >
-            <ImageIcon size={11} className="mr-1 text-amber-400" />
-            <span>Thumbnail</span>
-          </button>
-
-          {/* Jump to CTA Outro */}
-          <button
-            type="button"
-            id="jump-to-cta-btn"
-            onClick={() => {
-              setIsCtaExpanded(true);
-              const el = document.getElementById('cta-outro-panel');
-              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }}
-            className="inline-flex items-center px-2.5 py-1 bg-[#161614] hover:bg-[#20201e] text-[#D4D4D0] hover:text-white border border-white/15 text-[11px] font-display transition-colors rounded min-h-[28px]"
-            title="Jump to Call-to-Action Outro Visual Prompt"
-          >
-            <Zap size={11} className="mr-1 text-amber-400" />
-            <span>CTA Outro</span>
-          </button>
-
-          {/* Quick Expand/Collapse Scenes Toggle */}
           <button
             type="button"
             id="toggle-all-scenes-btn"
             onClick={() => setAllScenesExpanded(!allExpanded)}
-            className="inline-flex items-center px-2 py-1 bg-[#161614] hover:bg-[#20201e] text-[#A0A09A] hover:text-white border border-white/10 text-[11px] font-display transition-colors rounded min-h-[28px]"
-            title={allExpanded ? 'Collapse all scenes' : 'Expand all scenes'}
+            className="inline-flex items-center px-3 py-2 bg-[#161614] hover:bg-[#20201e] text-[#A0A09A] hover:text-white border border-white/15 text-xs font-display transition-colors rounded-[3px] cursor-pointer"
           >
-            <ChevronsUpDown size={11} className="mr-1 text-[#9C9C96]" />
-            <span>{allExpanded ? 'Collapse All' : 'Expand All'}</span>
+            <ChevronsUpDown size={13} className="mr-1.5 text-[#9C9C96]" />
+            <span>{allExpanded ? 'Collapse Scenes' : 'Expand Scenes'}</span>
           </button>
         </div>
       </div>
 
-      {/* Slim 1-Line Scene Jump Bar */}
-      <div className="flex items-center w-full h-6 bg-[#0E0E0D] border border-white/10 rounded overflow-hidden p-0.5 gap-1">
+      {/* Readable Scene & Section Jump Strip */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
         {sceneTimelineRanges.map((range) => {
           const roman = toRomanNumeral(range.sceneIndex);
           return (
@@ -683,952 +683,1144 @@ export default function ResultsView({
               key={range.sceneIndex}
               type="button"
               onClick={() => scrollToScene(range.sceneIndex)}
-              className="h-full flex-1 group bg-[#181816] hover:bg-[#282824] active:bg-[#32322e] rounded-[2px] transition-colors flex items-center justify-center px-1"
-              title={`Jump to Scene ${range.sceneIndex} (SC ${roman}) • ${formatTimecode(range.startSec)} - ${formatTimecode(range.endSec)}`}
+              className="px-3 py-1.5 bg-[#121211] hover:bg-[#1E1E1C] border border-white/15 hover:border-white/30 rounded-[3px] transition-colors text-xs font-mono text-[#C4C4BE] hover:text-white whitespace-nowrap shrink-0 tabular-nums cursor-pointer"
+              title={`Jump to Scene ${roman} (${formatTimecode(range.startSec)} - ${formatTimecode(range.endSec)})`}
             >
-              <span className="font-editorial-meta text-[9px] text-[#A0A09A] group-hover:text-white truncate">
-                SC {roman} {typeof range.estimatedSeconds === 'number' && `(~${range.estimatedSeconds}s)`}
-              </span>
+              Scene {roman} (~{range.estimatedSeconds}s)
             </button>
           );
         })}
+        <button
+          type="button"
+          id="jump-to-thumbnail-btn"
+          onClick={() => {
+            setIsThumbnailExpanded(true);
+            const el = document.getElementById('thumbnail-cover-panel');
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }}
+          className="px-3 py-1.5 bg-[#121211] hover:bg-[#1E1E1C] border border-white/15 hover:border-amber-400/50 rounded-[3px] transition-colors text-xs font-display text-[#C4C4BE] hover:text-white whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 cursor-pointer"
+        >
+          <ImageIcon size={12} className="text-amber-400" />
+          <span>Thumbnail</span>
+        </button>
+        <button
+          type="button"
+          id="jump-to-cta-btn"
+          onClick={() => {
+            setIsCtaExpanded(true);
+            const el = document.getElementById('cta-outro-panel');
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }}
+          className="px-3 py-1.5 bg-[#121211] hover:bg-[#1E1E1C] border border-white/15 hover:border-amber-400/50 rounded-[3px] transition-colors text-xs font-display text-[#C4C4BE] hover:text-white whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 cursor-pointer"
+        >
+          <Zap size={12} className="text-amber-400" />
+          <span>CTA Outro</span>
+        </button>
       </div>
 
-      {/* STORYBOARD CARDS VIEW */}
-      <div className="space-y-5 sm:space-y-8" id="scene-cards-container">
-        {normalizedScenes.map((scene) => {
-          const isCopiedNarration = copiedIndex === `narration-${scene.index}`;
-          const beats = scene.beats || [];
-          const isExpanded = expandedScenes[scene.index] ?? true;
-          const romanScene = toRomanNumeral(scene.index);
+      {/* Main 2-Column Workspace on Desktop: Left Scenes (7/12) + Right Sticky Beat Inspector (5/12) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* LEFT COLUMN (7/12 on lg, full width below lg): Storyboard Scenes + Thumbnail + CTA + Script */}
+        <div className="lg:col-span-7 space-y-6">
+          <div className="space-y-5" id="scene-cards-container">
+            {normalizedScenes.map((scene) => {
+              const isCopiedNarration = copiedIndex === `narration-${scene.index}`;
+              const beats = scene.beats || [];
+              const isExpanded = expandedScenes[scene.index] ?? true;
+              const romanScene = toRomanNumeral(scene.index);
+              const scenePacing = calculatePacing(scene.narratorLine, scene.estimatedSeconds);
 
-          return (
-            <div
-              key={scene.index}
-              id={`scene-card-${scene.index}`}
-              className="bg-[#121211] border border-white/10 overflow-hidden transition-all shadow-lg"
-            >
-              {/* Scene Header (Clickable Accordion) with Generous Breathing Room */}
-              <div
-                onClick={() => toggleSceneExpand(scene.index)}
-                className="w-full flex items-center justify-between p-3.5 sm:p-5 bg-[#161614] hover:bg-[#1a1a18] cursor-pointer transition-colors border-b border-white/10 select-none"
-              >
-                <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-wrap">
-                  <Film size={14} className="text-white shrink-0 sm:w-4 sm:h-4" />
-                  <span className="font-display text-xs sm:text-base font-medium tracking-tight text-white truncate">
-                    Scene {romanScene}
-                  </span>
-                  <span className="stamp-chip text-[9px] sm:text-[10px]">
-                    {beats.length} {beats.length === 1 ? 'Beat' : 'Beats'}
-                  </span>
-                  <span className="font-editorial-meta text-[9px] sm:text-[10px] text-[#9C9C96] shrink-0">
-                    ~{scene.estimatedSeconds}s
-                  </span>
-                  {(() => {
-                    const scenePacing = calculatePacing(scene.narratorLine, scene.estimatedSeconds);
-                    return (
+              return (
+                <div
+                  key={scene.index}
+                  id={`scene-card-${scene.index}`}
+                  className="bg-[#121211] border border-white/15 rounded-[3px] overflow-hidden"
+                >
+                  {/* Scene Header */}
+                  <div
+                    onClick={() => toggleSceneExpand(scene.index)}
+                    className="w-full flex items-center justify-between px-4 sm:px-5 py-3.5 bg-[#161614] hover:bg-[#1b1b19] cursor-pointer transition-colors border-b border-white/10 select-none gap-2"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0 flex-wrap">
+                      <Film size={15} className="text-white shrink-0" />
+                      <span className="font-display text-sm sm:text-base font-medium text-white">
+                        Scene {romanScene}
+                      </span>
+                      <span className="stamp-chip text-[10px]">
+                        {beats.length} {beats.length === 1 ? 'Beat' : 'Beats'}
+                      </span>
+                      <span className="font-mono text-xs text-[#9C9C96] tabular-nums">
+                        ~{scene.estimatedSeconds}s
+                      </span>
                       <span
-                        className={`stamp-chip text-[8px] sm:text-[9px] hidden sm:inline-flex ${
+                        className={`stamp-chip text-[9px] hidden sm:inline-flex ${
                           scenePacing.status === 'rushed'
-                            ? 'bg-amber-950/70 text-amber-300 border-amber-800/80 font-semibold'
+                            ? 'bg-amber-950/70 text-amber-300 border-amber-700/80 font-semibold'
                             : 'text-[#8C8C86]'
                         }`}
                         title={`Speaking rate: ~${scenePacing.wordsPerMinute} WPM (ideal is ~140 WPM)`}
                       >
                         {scenePacing.status === 'rushed'
                           ? `Pacing: Rushed (~${scenePacing.wordsPerMinute} WPM)`
-                          : `Pacing: ~${scenePacing.wordsPerMinute} WPM`}
+                          : `~${scenePacing.wordsPerMinute} WPM`}
                       </span>
-                    );
-                  })()}
-                </div>
-
-                <div className="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      copyToClipboard(scene.narratorLine, `narration-${scene.index}`);
-                    }}
-                    className="inline-flex items-center font-editorial-meta text-[9px] sm:text-[10px] px-2 sm:px-2.5 py-1 text-[#D4D4D0] hover:text-white bg-[#1f1f1d] hover:bg-[#2a2a27] border border-white/15 transition-colors whitespace-nowrap min-h-[28px] sm:min-h-[30px] rounded-[2px]"
-                    title="Copy full scene narrator line"
-                  >
-                    {isCopiedNarration ? (
-                      <>
-                        <Check size={10} className="mr-1 text-white sm:w-3 sm:h-3" />
-                        <span>Copied</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy size={10} className="mr-1 sm:w-3 sm:h-3" />
-                        <span>Copy Line</span>
-                      </>
-                    )}
-                  </button>
-
-                  <div className="p-1 text-[#9C9C96] hover:text-white">
-                    {isExpanded ? <ChevronUp size={14} className="sm:w-4 sm:h-4" /> : <ChevronDown size={14} className="sm:w-4 sm:h-4" />}
-                  </div>
-                </div>
-              </div>
-
-              {/* Scene Content (Expandable) with Editorial Spacing */}
-              {isExpanded && (
-                <div className="p-3.5 sm:p-6 md:p-8 space-y-5 sm:space-y-8">
-                  {/* Scene Narrator Line Styled as an Editorial Pulled Quote */}
-                  <div className="space-y-2">
-                    <span className="font-editorial-meta text-[9px] sm:text-[10px] text-[#9C9C96] block">
-                      SPOKEN NARRATION
-                    </span>
-                    <div className="bg-[#0A0A09] p-3.5 sm:p-6 border-l-2 border-white/40 border-y border-r border-white/5 relative">
-                      <p className="text-sm sm:text-base md:text-lg leading-relaxed text-[#F5F5F0] font-narrative italic selection:bg-white selection:text-black">
-                        &ldquo;{scene.narratorLine}&rdquo;
-                      </p>
                     </div>
-                  </div>
 
-                  {/* Beats Breakdown Section (Cinematography & Visual Beats in Image Mode / Cinematography & Video Beats in Video Mode) */}
-                  <div className="space-y-3.5 sm:space-y-4 pt-1 sm:pt-2">
-                    <div className="flex items-center justify-between border-t border-white/10 pt-3 sm:pt-4">
-                      <div className="flex items-center space-x-1.5 sm:space-x-2">
-                        {isVideoMode ? (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          copyToClipboard(scene.narratorLine, `narration-${scene.index}`);
+                        }}
+                        className="inline-flex items-center font-display text-xs px-2.5 py-1 text-[#D4D4D0] hover:text-white bg-[#1f1f1d] hover:bg-[#2a2a27] border border-white/15 rounded-[3px] transition-colors whitespace-nowrap cursor-pointer"
+                        title="Copy full scene narrator line"
+                      >
+                        {isCopiedNarration ? (
                           <>
-                            <Clapperboard size={12} className="text-amber-400 sm:w-3.5 sm:h-3.5" />
-                            <span className="font-editorial-meta text-[9px] sm:text-[10px] text-amber-300 font-medium">
-                              CINEMATOGRAPHY &amp; VIDEO BEATS
-                            </span>
+                            <Check size={11} className="mr-1 text-emerald-400" />
+                            <span>Copied</span>
                           </>
                         ) : (
                           <>
-                            <ImageIcon size={12} className="text-sky-400/60 sm:w-3.5 sm:h-3.5" />
-                            <span className="font-editorial-meta text-[9px] sm:text-[10px] text-sky-200/70 font-medium">
-                              CINEMATOGRAPHY &amp; VISUAL BEATS
-                            </span>
+                            <Copy size={11} className="mr-1" />
+                            <span>Copy Line</span>
                           </>
                         )}
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        {isVideoMode ? (
-                          <span className="stamp-chip bg-amber-950/70 text-amber-300 border-amber-800/80 text-[8px] sm:text-[9px]">
-                            {beats.length} VIDEO SHOTS (~{result.targetVideoDuration || scene.estimatedSeconds || 5}S TOTAL)
-                          </span>
-                        ) : (
-                          <span className="stamp-chip bg-sky-950/25 text-sky-200/70 border-sky-800/25 text-[8px] sm:text-[9px]">
-                            {beats.length} VISUAL SETUPS
-                          </span>
-                        )}
+                      </button>
 
+                      <div className="p-1 text-[#9C9C96] hover:text-white">
+                        {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                       </div>
                     </div>
+                  </div>
 
-                    {/* COMPACT VIEW: Dense Chips Matrix with Tap-to-View (Default & Sole Layout) */}
-                    <>
-                      {/* Mobile Filmstrip Row */}
-                      <div className="block sm:hidden space-y-2">
-                        <div className="flex overflow-x-auto pb-2.5 pt-1 gap-2.5 snap-x snap-mandatory scrollbar-thin overscroll-x-contain -mx-1 px-1">
-                          {beats.map((beat) => (
-                            <div
-                              key={beat.beatIndex}
-                              id={`mobile-beat-card-${scene.index}-${beat.beatIndex}`}
-                              onClick={() => handleBeatClick(scene.index, romanScene, beat, beats)}
-                              className={`flex-none w-[160px] xs:w-[175px] snap-start border active:bg-[#1E1E1C] p-2.5 flex flex-col justify-between min-h-[96px] cursor-pointer transition-all rounded-[2px] ${
-                                isVideoMode ? 'bg-[#141310] border-amber-900/30 active:border-amber-400/50' : 'bg-[#080D14] border-sky-900/15 active:border-sky-400/30'
-                              }`}
-                            >
-                              <div className="flex items-center justify-between gap-1 border-b border-white/5 pb-1">
-                                <span className={`stamp-chip font-bold text-[8px] ${isVideoMode ? 'bg-amber-950/70 text-amber-300 border-amber-800/80' : 'bg-sky-950/25 text-sky-200/70 border-sky-800/25'}`}>
-                                  B{String(beat.beatIndex).padStart(2, '0')}
-                                </span>
-                                {beat.overlayText && (
-                                  <span className="font-mono text-[8px] px-1 py-0.5 rounded-[2px] bg-amber-500/10 text-amber-300 border border-amber-500/20" title="Editor Overlay Text">
-                                    {beat.overlayText}
-                                  </span>
-                                )}
-                                <span className="font-editorial-meta text-[8px] text-emerald-400/90">
-                                  ~{beat.estimatedSeconds}s
-                                </span>
-                              </div>
-                              <div className="my-1.5 space-y-0.5">
-                                <div className="flex items-center gap-1 text-[8px] font-editorial-meta text-[#C4C4C0]">
-                                  <Camera size={8} className="text-[#9C9C96] shrink-0" />
-                                  <span className="truncate">{beat.shotType || 'Medium Shot'}</span>
-                                </div>
-                                {beat.cameraMovement && (
-                                  <div className="flex items-center gap-1 text-[8px] font-editorial-meta text-[#8C8C86]">
-                                    <Video size={8} className="text-[#7D7D76] shrink-0" />
-                                    <span className="truncate">{beat.cameraMovement}</span>
-                                  </div>
-                                )}
-                              </div>
-                              <div className="pt-1 border-t border-white/5">
-                                <p className="text-[10px] text-[#E6E6E1] italic font-narrative line-clamp-2 leading-tight">
-                                  &ldquo;{getPreviewText(beat.textSpan, 6)}&rdquo;
-                                </p>
-                              </div>
-                            </div>
-                          ))}
+                  {/* Scene Content */}
+                  {isExpanded && (
+                    <div className="p-4 sm:p-5 space-y-5">
+                      {/* Scene Narrator Line */}
+                      <div className="space-y-1.5">
+                        <span className="font-editorial-meta text-[10px] text-[#8C8C86] block">
+                          SPOKEN NARRATION
+                        </span>
+                        <div className="bg-[#0C0C0B] px-4 py-3.5 border-l-2 border-white/40 border-y border-r border-white/10 rounded-r-[3px]">
+                          <p className="text-sm sm:text-base leading-relaxed text-[#F5F5F0] font-narrative italic selection:bg-white selection:text-black">
+                            &ldquo;{scene.narratorLine}&rdquo;
+                          </p>
                         </div>
                       </div>
 
-                      {/* Desktop Compact Matrix */}
-                      <div className="hidden sm:grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-3">
-                        {beats.map((beat) => {
-                          const beatKey = `scene-${scene.index}-beat-${beat.beatIndex}`;
-                          return (
-                            <div
-                              key={beat.beatIndex}
-                              id={`desktop-beat-chip-${scene.index}-${beat.beatIndex}`}
-                              onClick={() => handleBeatClick(scene.index, romanScene, beat, beats)}
-                              className={`border p-3 flex flex-col justify-between min-h-[105px] cursor-pointer transition-all group select-none rounded-[2px] ${
-                                isVideoMode
-                                  ? 'bg-[#141310] border-amber-900/30 hover:border-amber-700/60 hover:bg-[#1A1813]'
-                                  : 'bg-[#080D14] border-sky-900/15 hover:border-sky-700/30 hover:bg-[#0C141F]'
-                              }`}
-                            >
-                              <div className="flex items-center justify-between gap-1 border-b border-white/5 pb-1.5">
-                                <span className={`stamp-chip font-bold text-[9px] ${isVideoMode ? 'bg-amber-950/70 text-amber-300 border-amber-800/80' : 'bg-sky-950/25 text-sky-200/70 border-sky-800/25'}`}>
-                                  Beat {String(beat.beatIndex).padStart(2, '0')}
+                      {/* Beats Section */}
+                      <div className="space-y-3 pt-1">
+                        <div className="flex items-center justify-between border-t border-white/10 pt-3">
+                          <div className="flex items-center gap-2">
+                            {isVideoMode ? (
+                              <>
+                                <Clapperboard size={13} className="text-amber-400" />
+                                <span className="font-editorial-meta text-[10px] text-amber-300 font-medium">
+                                  CINEMATOGRAPHY &amp; VIDEO BEATS
                                 </span>
-                                {beat.overlayText && (
-                                  <span className="font-mono text-[8px] px-1 py-0.5 rounded-[2px] bg-amber-500/10 text-amber-300 border border-amber-500/20" title="Editor Overlay Text">
-                                    {beat.overlayText}
+                              </>
+                            ) : (
+                              <>
+                                <ImageIcon size={13} className="text-[#C4C4BE]" />
+                                <span className="font-editorial-meta text-[10px] text-[#C4C4BE] font-medium">
+                                  CINEMATOGRAPHY &amp; VISUAL BEATS
+                                </span>
+                              </>
+                            )}
+                          </div>
+                          {isVideoMode ? (
+                            <span className="stamp-chip bg-amber-950/70 text-amber-300 border-amber-700/80 text-[9px]">
+                              {beats.length} SHOTS (~{result.targetVideoDuration || scene.estimatedSeconds || 5}S CLIP)
+                            </span>
+                          ) : (
+                            <span className="stamp-chip text-[9px]">
+                              {beats.length} VISUAL SETUPS
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Beat Cards Grid (Touch-friendly filmstrip on xs, grid on sm+) */}
+                        <div className="flex sm:grid sm:grid-cols-2 md:grid-cols-3 gap-2.5 sm:gap-3 overflow-x-auto sm:overflow-visible pb-2 sm:pb-0 snap-x snap-mandatory sm:snap-none">
+                          {beats.map((beat) => {
+                            const isSelectedDesktop =
+                              activeInspectorPair?.scene.index === scene.index &&
+                              activeInspectorPair?.beat.beatIndex === beat.beatIndex;
+
+                            return (
+                              <div
+                                key={beat.beatIndex}
+                                id={`desktop-beat-chip-${scene.index}-${beat.beatIndex}`}
+                                onClick={() => handleBeatClick(scene.index, romanScene, beat, beats)}
+                                className={`flex-none w-[200px] sm:w-auto snap-start border p-3.5 flex flex-col justify-between min-h-[116px] cursor-pointer transition-colors group select-none rounded-[3px] ${
+                                  isSelectedDesktop
+                                    ? isVideoMode
+                                      ? 'bg-[#1B1810] border-amber-400 lg:ring-1 lg:ring-amber-400/50'
+                                      : 'bg-[#1A1A18] border-white lg:ring-1 lg:ring-white/40'
+                                    : 'bg-[#151513] border-white/10 hover:border-white/30 hover:bg-[#191917]'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between gap-1.5 border-b border-white/10 pb-2">
+                                  <span
+                                    className={`stamp-chip font-bold text-[10px] ${
+                                      isVideoMode
+                                        ? 'bg-amber-950/70 text-amber-300 border-amber-700/80'
+                                        : 'bg-white/10 text-white border-white/25'
+                                    }`}
+                                  >
+                                    Beat {String(beat.beatIndex).padStart(2, '0')}
                                   </span>
-                                )}
-                                <span className="font-editorial-meta text-[9px] text-emerald-400/90">
-                                  ~{beat.estimatedSeconds}s
-                                </span>
-                              </div>
-                              <div className="my-1.5 space-y-0.5">
-                                <div className="flex items-center gap-1 text-[9px] font-editorial-meta text-[#C4C4C0]">
-                                  <Camera size={9} className="text-[#9C9C96] shrink-0" />
-                                  <span className="truncate">{beat.shotType || 'Medium Shot'}</span>
+                                  <span className="font-mono text-xs text-emerald-400/90 tabular-nums">
+                                    ~{beat.estimatedSeconds}s
+                                  </span>
                                 </div>
-                                {beat.cameraAngle && (
-                                  <div className="flex items-center gap-1 text-[8px] font-editorial-meta text-[#A0A098]">
-                                    <Video size={8} className="text-[#8C8C86] shrink-0" />
-                                    <span className="truncate">{beat.cameraAngle}</span>
+
+                                <div className="my-2 space-y-1">
+                                  <div className="flex items-center gap-1.5 text-xs font-display text-[#E6E6E1]">
+                                    <Camera size={11} className="text-[#9C9C96] shrink-0" />
+                                    <span className="truncate">{beat.shotType || 'Medium Shot'}</span>
                                   </div>
-                                )}
+                                  {beat.cameraAngle && (
+                                    <div className="flex items-center gap-1.5 text-[11px] font-narrative text-[#9C9C96]">
+                                      <Video size={10} className="text-[#7D7D76] shrink-0" />
+                                      <span className="truncate">{beat.cameraAngle}</span>
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="pt-2 border-t border-white/10 flex items-center justify-between gap-1.5">
+                                  <p className="text-xs text-[#E6E6E1] italic font-narrative truncate">
+                                    &ldquo;{getPreviewText(beat.textSpan, 7)}&rdquo;
+                                  </p>
+                                  <ChevronRight size={13} className="text-[#7D7D76] group-hover:text-white transition-colors shrink-0" />
+                                </div>
                               </div>
-                              <div className="pt-1.5 border-t border-white/5 flex items-center justify-between gap-1">
-                                <p className="text-[11px] text-[#E6E6E1] italic font-narrative truncate max-w-[85%]">
-                                  &ldquo;{getPreviewText(beat.textSpan, 6)}&rdquo;
-                                </p>
-                                <ChevronDown size={11} className="text-[#7D7D76] group-hover:text-white transition-colors shrink-0" />
-                              </div>
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
+                        </div>
                       </div>
-                    </>
-                  </div>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Production Cover & Thumbnail Blueprint (Collapsible) */}
-      <div
-        id="thumbnail-cover-panel"
-        className="bg-[#121211] border border-white/10 rounded-[2px] shadow-xl overflow-hidden transition-all"
-      >
-        {/* Clickable Accordion Header */}
-        <div
-          onClick={() => setIsThumbnailExpanded(!isThumbnailExpanded)}
-          className="w-full flex items-center justify-between p-3.5 sm:p-5 bg-[#161614] hover:bg-[#1a1a18] cursor-pointer transition-colors border-b border-white/10 select-none flex-wrap gap-2.5"
-        >
-          <div className="min-w-0 flex-1 pr-2">
-            <div className="flex items-center gap-2 mb-1 flex-wrap">
-              <span className="stamp-chip bg-amber-950/70 text-amber-300 border-amber-800/80 text-[8px] sm:text-[9px] font-bold">
-                COVER &amp; THUMBNAIL BLUEPRINT
-              </span>
-              <span className="font-editorial-meta text-[9px] sm:text-[10px] text-[#9C9C96]">
-                {activeThumbnail.aspectRatio} · {activeThumbnail.targetPlatform}
-              </span>
-              {!isThumbnailExpanded && (
-                <span className="text-[9px] font-mono text-amber-300/90 truncate max-w-xs">
-                  Hook: &ldquo;{activeThumbnail.hookText}&rdquo;
-                </span>
-              )}
-            </div>
-            <h3 className="text-base sm:text-xl font-normal font-display tracking-tight text-white flex items-center gap-2">
-              <span>Production Cover &amp; Hero Thumbnail</span>
-            </h3>
-            <p className="text-xs text-[#9C9C96] mt-0.5 font-narrative leading-relaxed">
-              High-CTR hero cover synthesized from the narrative conflict. Adapted to {activeThumbnail.targetPlatform} safe zones with locked character identity.
-            </p>
+              );
+            })}
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            {/* Quick Copy Button (always accessible) */}
-            <button
-              type="button"
-              id="copy-thumbnail-prompt-header-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                copyToClipboard(
-                  thumbnailPromptMode === 'full'
-                    ? activeThumbnail.compiledPrompt
-                    : activeThumbnail.cleanPlatePrompt,
-                  `thumbnail-${thumbnailPromptMode}`
-                );
-              }}
-              className="inline-flex items-center justify-center px-2.5 sm:px-3 py-1 bg-white text-black hover:bg-neutral-200 active:bg-neutral-300 text-[9px] sm:text-[10px] font-editorial-meta font-semibold transition-colors whitespace-nowrap min-h-[28px] sm:min-h-[30px] rounded-[2px] shadow-sm cursor-pointer"
-              title="Copy thumbnail prompt"
+          {/* Production Cover & Thumbnail Blueprint */}
+          <div
+            id="thumbnail-cover-panel"
+            className="bg-[#121211] border border-white/15 rounded-[3px] overflow-hidden"
+          >
+            <div
+              onClick={() => setIsThumbnailExpanded(!isThumbnailExpanded)}
+              className="w-full flex items-center justify-between p-4 sm:p-5 bg-[#161614] hover:bg-[#1a1a18] cursor-pointer transition-colors border-b border-white/10 select-none flex-wrap gap-3"
             >
-              {copiedIndex === `thumbnail-${thumbnailPromptMode}` ? (
-                <>
-                  <Check size={10} className="mr-1 text-black shrink-0 sm:w-3 sm:h-3" />
-                  <span>Copied</span>
-                </>
-              ) : (
-                <>
-                  <Copy size={10} className="mr-1 text-black shrink-0 sm:w-3 sm:h-3" />
-                  <span>Copy Prompt</span>
-                </>
-              )}
-            </button>
-
-            {/* Collapse/Expand toggle button */}
-            <button
-              type="button"
-              id="toggle-thumbnail-panel-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsThumbnailExpanded(!isThumbnailExpanded);
-              }}
-              className="inline-flex items-center px-2.5 py-1 bg-[#1f1f1d] hover:bg-[#2a2a27] text-[#D4D4D0] hover:text-white border border-white/15 text-[10px] font-display transition-colors rounded-[2px] min-h-[28px] sm:min-h-[30px]"
-              aria-expanded={isThumbnailExpanded}
-              title={isThumbnailExpanded ? 'Collapse Thumbnail Blueprint' : 'Expand Thumbnail Blueprint'}
-            >
-              {isThumbnailExpanded ? (
-                <>
-                  <ChevronUp size={12} className="mr-1 text-[#9C9C96]" />
-                  <span>Collapse</span>
-                </>
-              ) : (
-                <>
-                  <ChevronDown size={12} className="mr-1 text-[#9C9C96]" />
-                  <span>Expand</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Collapsible Content */}
-        {isThumbnailExpanded && (
-          <div className="p-3.5 sm:p-6 md:p-8 space-y-4 bg-[#121211]">
-            {/* Mode Toggle Row */}
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <span className="font-editorial-meta text-[10px] text-[#8C8C86]">
-                Thumbnail Rendering Mode:
-              </span>
-              <div className="inline-flex p-0.5 bg-[#181816] border border-white/10 rounded-[2px]">
-                <button
-                  type="button"
-                  id="thumbnail-with-type-toggle"
-                  onClick={() => setThumbnailPromptMode('full')}
-                  className={`px-2.5 py-1 text-[9px] sm:text-[10px] font-editorial-meta rounded-[2px] transition-colors ${
-                    thumbnailPromptMode === 'full'
-                      ? 'bg-white text-black font-semibold shadow-xs'
-                      : 'text-[#8C8C86] hover:text-white'
-                  }`}
-                >
-                  With Typography
-                </button>
-                <button
-                  type="button"
-                  id="thumbnail-clean-plate-toggle"
-                  onClick={() => setThumbnailPromptMode('clean')}
-                  className={`px-2.5 py-1 text-[9px] sm:text-[10px] font-editorial-meta rounded-[2px] transition-colors ${
-                    thumbnailPromptMode === 'clean'
-                      ? 'bg-white text-black font-semibold shadow-xs'
-                      : 'text-[#8C8C86] hover:text-white'
-                  }`}
-                  title="Text-free background plate for Canva or Photoshop"
-                >
-                  Clean Plate
-                </button>
-              </div>
-            </div>
-
-            {/* Narrative Hook & Story-Adaptive Typography Card */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 sm:gap-3">
-              <div className="bg-[#0A0A09] p-3 border border-white/10 rounded-[2px] space-y-1 md:col-span-1">
-                <span className="font-editorial-meta text-[8px] sm:text-[9px] text-amber-300 uppercase tracking-widest block">
-                  Curiosity Hook Text
-                </span>
-                <div className="text-sm sm:text-base font-display font-bold text-white tracking-wide">
-                  &ldquo;{activeThumbnail.hookText}&rdquo;
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <span className="stamp-chip bg-amber-950/70 text-amber-300 border-amber-700/80 text-[9px] font-bold">
+                    COVER &amp; THUMBNAIL BLUEPRINT
+                  </span>
+                  <span className="font-mono text-xs text-[#9C9C96]">
+                    {activeThumbnail.aspectRatio} · {activeThumbnail.targetPlatform}
+                  </span>
                 </div>
-                {activeThumbnail.alternateHooks && activeThumbnail.alternateHooks.length > 0 && (
-                  <div className="pt-1 flex flex-wrap gap-1">
-                    {activeThumbnail.alternateHooks.map((alt, i) => (
-                      <span
-                        key={i}
-                        className="text-[8px] font-mono px-1 py-0.5 bg-white/5 border border-white/10 text-[#C4C4C0] rounded-[2px]"
-                      >
-                        Alt: &ldquo;{alt}&rdquo;
-                      </span>
-                    ))}
-                  </div>
+                <h3 className="text-base sm:text-lg font-medium font-display text-white">
+                  Production Cover &amp; Hero Thumbnail
+                </h3>
+                {!isThumbnailExpanded && (
+                  <p className="text-xs font-mono text-amber-300/90 mt-1 truncate">
+                    Hook: &ldquo;{activeThumbnail.hookText}&rdquo;
+                  </p>
                 )}
               </div>
 
-              <div className="bg-[#0A0A09] p-3 border border-white/10 rounded-[2px] space-y-1 md:col-span-1">
-                <span className="font-editorial-meta text-[8px] sm:text-[9px] text-[#9C9C96] uppercase tracking-widest block">
-                  Story-Adapted Typography
-                </span>
-                <p className="text-xs text-[#E8E8E2] font-narrative leading-relaxed capitalize">
-                  {activeThumbnail.fontStyle}
-                </p>
-              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  id="copy-thumbnail-prompt-header-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    copyToClipboard(
+                      thumbnailPromptMode === 'full'
+                        ? activeThumbnail.compiledPrompt
+                        : activeThumbnail.cleanPlatePrompt,
+                      `thumbnail-${thumbnailPromptMode}`
+                    );
+                  }}
+                  className="inline-flex items-center justify-center px-3 py-1.5 bg-white text-black hover:bg-[#EAEAE5] text-xs font-display font-semibold transition-colors rounded-[3px] cursor-pointer"
+                >
+                  {copiedIndex === `thumbnail-${thumbnailPromptMode}` ? (
+                    <>
+                      <Check size={12} className="mr-1.5 text-black" />
+                      <span>Copied</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy size={12} className="mr-1.5 text-black" />
+                      <span>Copy Prompt</span>
+                    </>
+                  )}
+                </button>
 
-              <div className="bg-[#0A0A09] p-3 border border-white/10 rounded-[2px] space-y-1 md:col-span-1">
-                <span className="font-editorial-meta text-[8px] sm:text-[9px] text-emerald-400 uppercase tracking-widest block">
-                  Platform Safe Zone Clearance
-                </span>
-                <p className="text-[10px] sm:text-xs text-[#A8A8A2] font-editorial-meta leading-tight">
-                  {activeThumbnail.aspectRatio === '16:9'
-                    ? 'Bottom-right 15% kept clear for YouTube duration badge; lower 10% clear for scrub bar.'
-                    : 'Top 12% clear for profile/header; bottom 25% clear for captions; right side clear for engagement icons.'}
-                </p>
-              </div>
-            </div>
-
-            {/* Compiled Prompt Text Block */}
-            <div className="bg-[#0A0A09] p-3.5 sm:p-5 border border-white/10 rounded-[2px] space-y-2 relative group">
-              <div className="flex items-center justify-between text-[9px] sm:text-[10px] font-editorial-meta text-[#8C8C86]">
-                <span>
-                  {thumbnailPromptMode === 'full'
-                    ? 'Production Prompt with Typography Overlay'
-                    : 'Clean Plate Prompt (Text-Free Background Plate)'}
-                </span>
-                <span className="font-mono text-white/50">{activeThumbnail.aspectRatio}</span>
-              </div>
-              <p className="text-xs sm:text-sm text-[#F5F5F0] leading-relaxed font-mono whitespace-pre-wrap selection:bg-white selection:text-black">
-                {thumbnailPromptMode === 'full'
-                  ? activeThumbnail.compiledPrompt
-                  : activeThumbnail.cleanPlatePrompt}
-              </p>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Story-Adaptive Call-to-Action Outro Visual Prompt (Collapsible) */}
-      <div
-        id="cta-outro-panel"
-        className="bg-[#121211] border border-white/10 rounded-[2px] shadow-xl overflow-hidden transition-all"
-      >
-        {/* Clickable Accordion Header */}
-        <div
-          onClick={() => setIsCtaExpanded(!isCtaExpanded)}
-          className="w-full flex items-center justify-between p-3.5 sm:p-5 bg-[#161614] hover:bg-[#1a1a18] cursor-pointer transition-colors border-b border-white/10 select-none flex-wrap gap-2.5"
-        >
-          <div className="min-w-0 flex-1 pr-2">
-            <div className="flex items-center gap-2 mb-1 flex-wrap">
-              <span className="stamp-chip bg-amber-950/70 text-amber-300 border-amber-800/80 text-[8px] sm:text-[9px] font-bold">
-                CALL-TO-ACTION OUTRO PROMPT
-              </span>
-              <span className="font-editorial-meta text-[9px] sm:text-[10px] text-[#9C9C96]">
-                {ctaPlatform === 'tiktok'
-                  ? 'TikTok 9:16'
-                  : ctaPlatform === 'youtube_shorts'
-                  ? 'YouTube Shorts 9:16'
-                  : 'General Platforms'} · {ctaModality === 'video' ? 'Video Loop (T2V)' : 'Static Image (T2I)'}
-              </span>
-              {!isCtaExpanded && (
-                <span className="text-[9px] font-mono text-emerald-300/90 truncate max-w-xs">
-                  &ldquo;{activeCta.questionText}&rdquo;
-                </span>
-              )}
-            </div>
-            <h3 className="text-base sm:text-xl font-normal font-display tracking-tight text-white flex items-center gap-2">
-              <span>Story-Adaptive Call-to-Action Outro</span>
-            </h3>
-            <p className="text-xs text-[#9C9C96] mt-0.5 font-narrative leading-relaxed">
-              High-retention closing beat engineered to ignite comments, debate, and follows. Adapted to platform UI safe zones.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            {/* Quick Copy Button */}
-            <button
-              type="button"
-              id="copy-cta-prompt-header-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                copyToClipboard(
-                  ctaPromptMode === 'full' ? activeCta.compiledPrompt : activeCta.cleanPlatePrompt,
-                  `cta-${ctaPromptMode}`
-                );
-              }}
-              className="inline-flex items-center justify-center px-2.5 sm:px-3 py-1 bg-white text-black hover:bg-neutral-200 active:bg-neutral-300 text-[9px] sm:text-[10px] font-editorial-meta font-semibold transition-colors whitespace-nowrap min-h-[28px] sm:min-h-[30px] rounded-[2px] shadow-sm cursor-pointer"
-              title="Copy CTA outro prompt"
-            >
-              {copiedIndex === `cta-${ctaPromptMode}` ? (
-                <>
-                  <Check size={10} className="mr-1 text-black shrink-0 sm:w-3 sm:h-3" />
-                  <span>Copied</span>
-                </>
-              ) : (
-                <>
-                  <Copy size={10} className="mr-1 text-black shrink-0 sm:w-3 sm:h-3" />
-                  <span>Copy CTA</span>
-                </>
-              )}
-            </button>
-
-            {/* Accordion Toggle */}
-            <button
-              type="button"
-              id="toggle-cta-panel-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsCtaExpanded(!isCtaExpanded);
-              }}
-              className="inline-flex items-center px-2.5 py-1 bg-[#1f1f1d] hover:bg-[#2a2a27] text-[#D4D4D0] hover:text-white border border-white/15 text-[10px] font-display transition-colors rounded-[2px] min-h-[28px] sm:min-h-[30px]"
-              aria-expanded={isCtaExpanded}
-              title={isCtaExpanded ? 'Collapse CTA Section' : 'Expand CTA Section'}
-            >
-              {isCtaExpanded ? (
-                <>
-                  <ChevronUp size={12} className="mr-1 text-[#9C9C96]" />
-                  <span>Collapse</span>
-                </>
-              ) : (
-                <>
-                  <ChevronDown size={12} className="mr-1 text-[#9C9C96]" />
-                  <span>Expand</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Collapsible Content */}
-        {isCtaExpanded && (
-          <div className="p-3.5 sm:p-6 md:p-8 space-y-4 bg-[#121211]">
-            {/* Interactive Configuration Controls Bar */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3 p-3 bg-[#0E0E0D] border border-white/10 rounded-[2px]">
-              {/* Platform Selector */}
-              <div className="space-y-1">
-                <label className="font-editorial-meta text-[9px] uppercase tracking-wider text-[#9C9C96] block">
-                  Platform Target
-                </label>
-                <div className="inline-flex w-full p-0.5 bg-[#181816] border border-white/10 rounded-[2px]">
-                  <button
-                    type="button"
-                    onClick={() => setCtaPlatform('tiktok')}
-                    className={`flex-1 py-1 text-[9px] sm:text-[10px] font-editorial-meta rounded-[2px] transition-colors ${
-                      ctaPlatform === 'tiktok'
-                        ? 'bg-white text-black font-semibold shadow-xs'
-                        : 'text-[#8C8C86] hover:text-white'
-                    }`}
-                  >
-                    TikTok
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCtaPlatform('youtube_shorts')}
-                    className={`flex-1 py-1 text-[9px] sm:text-[10px] font-editorial-meta rounded-[2px] transition-colors ${
-                      ctaPlatform === 'youtube_shorts'
-                        ? 'bg-white text-black font-semibold shadow-xs'
-                        : 'text-[#8C8C86] hover:text-white'
-                    }`}
-                  >
-                    Shorts
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCtaPlatform('general')}
-                    className={`flex-1 py-1 text-[9px] sm:text-[10px] font-editorial-meta rounded-[2px] transition-colors ${
-                      ctaPlatform === 'general'
-                        ? 'bg-white text-black font-semibold shadow-xs'
-                        : 'text-[#8C8C86] hover:text-white'
-                    }`}
-                  >
-                    General
-                  </button>
-                </div>
-              </div>
-
-              {/* Modality Selector */}
-              <div className="space-y-1">
-                <label className="font-editorial-meta text-[9px] uppercase tracking-wider text-[#9C9C96] block">
-                  Outro Modality
-                </label>
-                <div className="inline-flex w-full p-0.5 bg-[#181816] border border-white/10 rounded-[2px]">
-                  <button
-                    type="button"
-                    onClick={() => setCtaModality('video')}
-                    className={`flex-1 py-1 text-[9px] sm:text-[10px] font-editorial-meta rounded-[2px] transition-colors ${
-                      ctaModality === 'video'
-                        ? 'bg-white text-black font-semibold shadow-xs'
-                        : 'text-[#8C8C86] hover:text-white'
-                    }`}
-                  >
-                    Video Loop (T2V)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCtaModality('image')}
-                    className={`flex-1 py-1 text-[9px] sm:text-[10px] font-editorial-meta rounded-[2px] transition-colors ${
-                      ctaModality === 'image'
-                        ? 'bg-white text-black font-semibold shadow-xs'
-                        : 'text-[#8C8C86] hover:text-white'
-                    }`}
-                  >
-                    Freeze Frame (T2I)
-                  </button>
-                </div>
-              </div>
-
-              {/* Engagement Goal Selector */}
-              <div className="space-y-1">
-                <label className="font-editorial-meta text-[9px] uppercase tracking-wider text-[#9C9C96] block">
-                  Action Focus
-                </label>
-                <div className="inline-flex w-full p-0.5 bg-[#181816] border border-white/10 rounded-[2px]">
-                  <button
-                    type="button"
-                    onClick={() => setCtaEngagementType('question')}
-                    className={`flex-1 py-1 text-[9px] sm:text-[10px] font-editorial-meta rounded-[2px] transition-colors ${
-                      ctaEngagementType === 'question'
-                        ? 'bg-white text-black font-semibold shadow-xs'
-                        : 'text-[#8C8C86] hover:text-white'
-                    }`}
-                  >
-                    Question
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCtaEngagementType('follow_subscribe')}
-                    className={`flex-1 py-1 text-[9px] sm:text-[10px] font-editorial-meta rounded-[2px] transition-colors ${
-                      ctaEngagementType === 'follow_subscribe'
-                        ? 'bg-white text-black font-semibold shadow-xs'
-                        : 'text-[#8C8C86] hover:text-white'
-                    }`}
-                  >
-                    Follow
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCtaEngagementType('dilemma')}
-                    className={`flex-1 py-1 text-[9px] sm:text-[10px] font-editorial-meta rounded-[2px] transition-colors ${
-                      ctaEngagementType === 'dilemma'
-                        ? 'bg-white text-black font-semibold shadow-xs'
-                        : 'text-[#8C8C86] hover:text-white'
-                    }`}
-                  >
-                    Dilemma
-                  </button>
-                </div>
-              </div>
-
-              {/* Typography vs Clean Plate Toggle */}
-              <div className="space-y-1">
-                <label className="font-editorial-meta text-[9px] uppercase tracking-wider text-[#9C9C96] block">
-                  Overlay Type
-                </label>
-                <div className="inline-flex w-full p-0.5 bg-[#181816] border border-white/10 rounded-[2px]">
-                  <button
-                    type="button"
-                    onClick={() => setCtaPromptMode('full')}
-                    className={`flex-1 py-1 text-[9px] sm:text-[10px] font-editorial-meta rounded-[2px] transition-colors ${
-                      ctaPromptMode === 'full'
-                        ? 'bg-white text-black font-semibold shadow-xs'
-                        : 'text-[#8C8C86] hover:text-white'
-                    }`}
-                  >
-                    With Text Overlay
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCtaPromptMode('clean')}
-                    className={`flex-1 py-1 text-[9px] sm:text-[10px] font-editorial-meta rounded-[2px] transition-colors ${
-                      ctaPromptMode === 'clean'
-                        ? 'bg-white text-black font-semibold shadow-xs'
-                        : 'text-[#8C8C86] hover:text-white'
-                    }`}
-                    title="Clean background plate for CapCut, Premiere, or native editor text"
-                  >
-                    Clean Plate
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  id="toggle-thumbnail-panel-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsThumbnailExpanded(!isThumbnailExpanded);
+                  }}
+                  className="inline-flex items-center px-2.5 py-1.5 bg-[#1f1f1d] hover:bg-[#2a2a27] text-[#D4D4D0] hover:text-white border border-white/15 text-xs font-display transition-colors rounded-[3px] cursor-pointer"
+                  aria-expanded={isThumbnailExpanded}
+                >
+                  {isThumbnailExpanded ? (
+                    <>
+                      <ChevronUp size={13} className="mr-1" />
+                      <span>Collapse</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown size={13} className="mr-1" />
+                      <span>Expand</span>
+                    </>
+                  )}
+                </button>
               </div>
             </div>
 
-            {/* Question Formulation and Alternates Card */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 sm:gap-3">
-              <div className="bg-[#0A0A09] p-3 border border-white/10 rounded-[2px] space-y-2 md:col-span-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-editorial-meta text-[8px] sm:text-[9px] text-amber-300 uppercase tracking-widest block">
-                    Story-Adapted Intrigue Question
+            {isThumbnailExpanded && (
+              <div className="p-4 sm:p-5 space-y-4 bg-[#121211]">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <span className="font-display text-xs text-[#9C9C96]">
+                    Thumbnail Rendering Mode
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => setIsEditingQuestion(!isEditingQuestion)}
-                    className="text-[9px] font-editorial-meta text-[#9C9C96] hover:text-white underline cursor-pointer"
-                  >
-                    {isEditingQuestion ? 'Cancel Edit' : 'Edit Question'}
-                  </button>
+                  <div className="inline-flex p-0.5 bg-[#0C0C0B] border border-white/15 rounded-[3px]">
+                    <button
+                      type="button"
+                      id="thumbnail-with-type-toggle"
+                      onClick={() => setThumbnailPromptMode('full')}
+                      className={`px-3 py-1 text-xs font-display rounded-[2px] transition-colors cursor-pointer ${
+                        thumbnailPromptMode === 'full'
+                          ? 'bg-white text-black font-semibold'
+                          : 'text-[#8C8C86] hover:text-white'
+                      }`}
+                    >
+                      With Typography
+                    </button>
+                    <button
+                      type="button"
+                      id="thumbnail-clean-plate-toggle"
+                      onClick={() => setThumbnailPromptMode('clean')}
+                      className={`px-3 py-1 text-xs font-display rounded-[2px] transition-colors cursor-pointer ${
+                        thumbnailPromptMode === 'clean'
+                          ? 'bg-white text-black font-semibold'
+                          : 'text-[#8C8C86] hover:text-white'
+                      }`}
+                    >
+                      Clean Plate
+                    </button>
+                  </div>
                 </div>
 
-                {isEditingQuestion ? (
-                  <div className="space-y-2 pt-1">
-                    <input
-                      type="text"
-                      value={customCtaQuestion || activeCta.questionText}
-                      onChange={(e) => setCustomCtaQuestion(e.target.value)}
-                      placeholder="Type custom closing question..."
-                      className="w-full px-2.5 py-1.5 bg-[#161614] border border-white/20 rounded-[2px] text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-white/50"
-                    />
-                    <div className="flex items-center gap-2">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="bg-[#0C0C0B] p-3.5 border border-white/10 rounded-[3px] space-y-1.5">
+                    <span className="font-editorial-meta text-[9px] text-amber-300 uppercase tracking-widest block">
+                      Curiosity Hook Text
+                    </span>
+                    <div className="text-sm font-display font-bold text-white">
+                      &ldquo;{activeThumbnail.hookText}&rdquo;
+                    </div>
+                  </div>
+                  <div className="bg-[#0C0C0B] p-3.5 border border-white/10 rounded-[3px] space-y-1.5">
+                    <span className="font-editorial-meta text-[9px] text-[#9C9C96] uppercase tracking-widest block">
+                      Typography Style
+                    </span>
+                    <p className="text-xs text-[#E8E8E2] leading-relaxed capitalize">
+                      {activeThumbnail.fontStyle}
+                    </p>
+                  </div>
+                  <div className="bg-[#0C0C0B] p-3.5 border border-white/10 rounded-[3px] space-y-1.5">
+                    <span className="font-editorial-meta text-[9px] text-emerald-400 uppercase tracking-widest block">
+                      Safe Zone Clearance
+                    </span>
+                    <p className="text-xs text-[#A8A8A2] leading-relaxed">
+                      {activeThumbnail.aspectRatio === '16:9'
+                        ? 'Bottom-right 15% kept clear for duration badge.'
+                        : 'Top 12% and bottom 25% kept clear for overlay UI.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-[#0C0C0B] p-4 border border-white/10 rounded-[3px] space-y-2">
+                  <div className="flex items-center justify-between text-xs font-mono text-[#8C8C86]">
+                    <span>
+                      {thumbnailPromptMode === 'full'
+                        ? 'Production Prompt with Typography'
+                        : 'Clean Plate Prompt (Text-Free)'}
+                    </span>
+                    <span>{activeThumbnail.aspectRatio}</span>
+                  </div>
+                  <p className="text-xs sm:text-sm text-[#F5F5F0] leading-relaxed font-mono whitespace-pre-wrap selection:bg-white selection:text-black">
+                    {thumbnailPromptMode === 'full'
+                      ? activeThumbnail.compiledPrompt
+                      : activeThumbnail.cleanPlatePrompt}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Story-Adaptive Call-to-Action Outro */}
+          <div
+            id="cta-outro-panel"
+            className="bg-[#121211] border border-white/15 rounded-[3px] overflow-hidden"
+          >
+            <div
+              onClick={() => setIsCtaExpanded(!isCtaExpanded)}
+              className="w-full flex items-center justify-between p-4 sm:p-5 bg-[#161614] hover:bg-[#1a1a18] cursor-pointer transition-colors border-b border-white/10 select-none flex-wrap gap-3"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <span className="stamp-chip bg-amber-950/70 text-amber-300 border-amber-700/80 text-[9px] font-bold">
+                    CALL-TO-ACTION OUTRO
+                  </span>
+                  <span className="font-mono text-xs text-[#9C9C96]">
+                    {ctaPlatform === 'tiktok'
+                      ? 'TikTok 9:16'
+                      : ctaPlatform === 'youtube_shorts'
+                        ? 'YouTube Shorts 9:16'
+                        : 'General'} · {ctaModality === 'video' ? 'Video Loop' : 'Still Frame'}
+                  </span>
+                </div>
+                <h3 className="text-base sm:text-lg font-medium font-display text-white">
+                  Story-Adaptive Call-to-Action Outro
+                </h3>
+                {!isCtaExpanded && (
+                  <p className="text-xs font-mono text-emerald-300/90 mt-1 truncate">
+                    &ldquo;{activeCta.questionText}&rdquo;
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  id="copy-cta-prompt-header-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    copyToClipboard(
+                      ctaPromptMode === 'full' ? activeCta.compiledPrompt : activeCta.cleanPlatePrompt,
+                      `cta-${ctaPromptMode}`
+                    );
+                  }}
+                  className="inline-flex items-center justify-center px-3 py-1.5 bg-white text-black hover:bg-[#EAEAE5] text-xs font-display font-semibold transition-colors rounded-[3px] cursor-pointer"
+                >
+                  {copiedIndex === `cta-${ctaPromptMode}` ? (
+                    <>
+                      <Check size={12} className="mr-1.5 text-black" />
+                      <span>Copied</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy size={12} className="mr-1.5 text-black" />
+                      <span>Copy CTA</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  id="toggle-cta-panel-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsCtaExpanded(!isCtaExpanded);
+                  }}
+                  className="inline-flex items-center px-2.5 py-1.5 bg-[#1f1f1d] hover:bg-[#2a2a27] text-[#D4D4D0] hover:text-white border border-white/15 text-xs font-display transition-colors rounded-[3px] cursor-pointer"
+                  aria-expanded={isCtaExpanded}
+                >
+                  {isCtaExpanded ? (
+                    <>
+                      <ChevronUp size={13} className="mr-1" />
+                      <span>Collapse</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown size={13} className="mr-1" />
+                      <span>Expand</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {isCtaExpanded && (
+              <div className="p-4 sm:p-5 space-y-4 bg-[#121211]">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 bg-[#0C0C0B] border border-white/10 rounded-[3px]">
+                  <div className="space-y-1.5">
+                    <label className="font-display text-xs text-[#9C9C96] block">
+                      Platform Target
+                    </label>
+                    <div className="inline-flex w-full p-0.5 bg-[#161614] border border-white/10 rounded-[3px]">
                       <button
                         type="button"
-                        onClick={() => setIsEditingQuestion(false)}
-                        className="px-2 py-0.5 bg-white text-black text-[9px] font-editorial-meta font-medium rounded-[2px]"
+                        onClick={() => setCtaPlatform('tiktok')}
+                        className={`flex-1 py-1.5 text-xs font-display rounded-[2px] transition-colors cursor-pointer ${
+                          ctaPlatform === 'tiktok' ? 'bg-white text-black font-semibold' : 'text-[#8C8C86] hover:text-white'
+                        }`}
                       >
-                        Apply Question
+                        TikTok
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
-                          setCustomCtaQuestion('');
-                          setIsEditingQuestion(false);
-                        }}
-                        className="px-2 py-0.5 bg-[#181816] text-[#A0A09A] hover:text-white text-[9px] font-editorial-meta rounded-[2px] border border-white/10"
+                        onClick={() => setCtaPlatform('youtube_shorts')}
+                        className={`flex-1 py-1.5 text-xs font-display rounded-[2px] transition-colors cursor-pointer ${
+                          ctaPlatform === 'youtube_shorts' ? 'bg-white text-black font-semibold' : 'text-[#8C8C86] hover:text-white'
+                        }`}
                       >
-                        Reset to Story Default
+                        Shorts
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCtaPlatform('general')}
+                        className={`flex-1 py-1.5 text-xs font-display rounded-[2px] transition-colors cursor-pointer ${
+                          ctaPlatform === 'general' ? 'bg-white text-black font-semibold' : 'text-[#8C8C86] hover:text-white'
+                        }`}
+                      >
+                        General
                       </button>
                     </div>
                   </div>
-                ) : (
-                  <div className="text-sm sm:text-base font-display font-bold text-white tracking-wide">
-                    &ldquo;{activeCta.questionText}&rdquo;
-                  </div>
-                )}
 
-                {/* Alternates Quick Selection */}
-                {activeCta.alternateQuestions && activeCta.alternateQuestions.length > 0 && (
-                  <div className="pt-1.5 space-y-1">
-                    <span className="font-editorial-meta text-[8px] text-[#8C8C86] uppercase tracking-wider block">
-                      One-Click Narrative Alternates:
+                  <div className="space-y-1.5">
+                    <label className="font-display text-xs text-[#9C9C96] block">
+                      Outro Modality
+                    </label>
+                    <div className="inline-flex w-full p-0.5 bg-[#161614] border border-white/10 rounded-[3px]">
+                      <button
+                        type="button"
+                        onClick={() => setCtaModality('video')}
+                        className={`flex-1 py-1.5 text-xs font-display rounded-[2px] transition-colors cursor-pointer ${
+                          ctaModality === 'video' ? 'bg-white text-black font-semibold' : 'text-[#8C8C86] hover:text-white'
+                        }`}
+                      >
+                        Video Loop
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCtaModality('image')}
+                        className={`flex-1 py-1.5 text-xs font-display rounded-[2px] transition-colors cursor-pointer ${
+                          ctaModality === 'image' ? 'bg-white text-black font-semibold' : 'text-[#8C8C86] hover:text-white'
+                        }`}
+                      >
+                        Freeze Frame
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-display text-xs text-[#9C9C96] block">
+                      Action Focus
+                    </label>
+                    <div className="inline-flex w-full p-0.5 bg-[#161614] border border-white/10 rounded-[3px]">
+                      <button
+                        type="button"
+                        onClick={() => setCtaEngagementType('question')}
+                        className={`flex-1 py-1.5 text-xs font-display rounded-[2px] transition-colors cursor-pointer ${
+                          ctaEngagementType === 'question' ? 'bg-white text-black font-semibold' : 'text-[#8C8C86] hover:text-white'
+                        }`}
+                      >
+                        Question
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCtaEngagementType('follow_subscribe')}
+                        className={`flex-1 py-1.5 text-xs font-display rounded-[2px] transition-colors cursor-pointer ${
+                          ctaEngagementType === 'follow_subscribe' ? 'bg-white text-black font-semibold' : 'text-[#8C8C86] hover:text-white'
+                        }`}
+                      >
+                        Follow
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCtaEngagementType('dilemma')}
+                        className={`flex-1 py-1.5 text-xs font-display rounded-[2px] transition-colors cursor-pointer ${
+                          ctaEngagementType === 'dilemma' ? 'bg-white text-black font-semibold' : 'text-[#8C8C86] hover:text-white'
+                        }`}
+                      >
+                        Dilemma
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-display text-xs text-[#9C9C96] block">
+                      Overlay Type
+                    </label>
+                    <div className="inline-flex w-full p-0.5 bg-[#161614] border border-white/10 rounded-[3px]">
+                      <button
+                        type="button"
+                        onClick={() => setCtaPromptMode('full')}
+                        className={`flex-1 py-1.5 text-xs font-display rounded-[2px] transition-colors cursor-pointer ${
+                          ctaPromptMode === 'full' ? 'bg-white text-black font-semibold' : 'text-[#8C8C86] hover:text-white'
+                        }`}
+                      >
+                        With Overlay
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCtaPromptMode('clean')}
+                        className={`flex-1 py-1.5 text-xs font-display rounded-[2px] transition-colors cursor-pointer ${
+                          ctaPromptMode === 'clean' ? 'bg-white text-black font-semibold' : 'text-[#8C8C86] hover:text-white'
+                        }`}
+                      >
+                        Clean Plate
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="bg-[#0C0C0B] p-3.5 border border-white/10 rounded-[3px] space-y-2 md:col-span-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-editorial-meta text-[9px] text-amber-300 uppercase tracking-widest">
+                        Story-Adapted Question
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingQuestion(!isEditingQuestion)}
+                        className="text-xs font-display text-[#9C9C96] hover:text-white underline cursor-pointer"
+                      >
+                        {isEditingQuestion ? 'Cancel Edit' : 'Edit Question'}
+                      </button>
+                    </div>
+
+                    {isEditingQuestion ? (
+                      <div className="space-y-2">
+                        <input
+                          type="text"
+                          value={customCtaQuestion || activeCta.questionText}
+                          onChange={(e) => setCustomCtaQuestion(e.target.value)}
+                          placeholder="Type custom closing question..."
+                          className="w-full px-3 py-2 bg-[#161614] border border-white/20 rounded-[3px] text-xs text-white focus:outline-none focus:border-white/50"
+                        />
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setIsEditingQuestion(false)}
+                            className="px-3 py-1 bg-white text-black text-xs font-display font-medium rounded-[3px] cursor-pointer"
+                          >
+                            Apply
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCustomCtaQuestion('');
+                              setIsEditingQuestion(false);
+                            }}
+                            className="px-3 py-1 bg-[#181816] text-[#A0A09A] hover:text-white text-xs font-display rounded-[3px] border border-white/10 cursor-pointer"
+                          >
+                            Reset
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-sm font-display font-bold text-white">
+                        &ldquo;{activeCta.questionText}&rdquo;
+                      </div>
+                    )}
+
+                    {activeCta.alternateQuestions && activeCta.alternateQuestions.length > 0 && (
+                      <div className="pt-1 flex flex-wrap gap-1.5">
+                        {activeCta.alternateQuestions.map((alt, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => {
+                              setCustomCtaQuestion(alt);
+                              setIsEditingQuestion(false);
+                            }}
+                            className={`text-xs font-narrative px-2.5 py-1 border rounded-[3px] transition-colors text-left cursor-pointer ${
+                              customCtaQuestion === alt
+                                ? 'bg-amber-950/60 border-amber-500/50 text-amber-200'
+                                : 'bg-white/5 border-white/10 text-[#C4C4C0] hover:bg-white/10 hover:text-white'
+                            }`}
+                          >
+                            &ldquo;{alt}&rdquo;
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="bg-[#0C0C0B] p-3.5 border border-white/10 rounded-[3px] space-y-1.5">
+                    <span className="font-editorial-meta text-[9px] text-emerald-400 uppercase tracking-widest block">
+                      Platform Safe Zone
                     </span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {activeCta.alternateQuestions.map((alt, i) => (
+                    <p className="text-xs text-[#A8A8A2] leading-relaxed">
+                      {ctaPlatform === 'tiktok'
+                        ? 'Right 18% clear for reaction stack. Bottom 22% clear for captions. Center band (35%-65% height) safe.'
+                        : ctaPlatform === 'youtube_shorts'
+                          ? 'Bottom 20% clear for avatar and Subscribe button. Right 15% clear for action rail.'
+                          : 'Universal 10% perimeter clearance across all borders for cross-platform players.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-[#0C0C0B] p-4 border border-white/10 rounded-[3px] space-y-2">
+                  <div className="flex items-center justify-between text-xs font-mono text-[#8C8C86]">
+                    <span>
+                      {ctaPromptMode === 'full'
+                        ? `Production CTA Outro Prompt (${ctaModality === 'video' ? 'T2V 3s Loop' : 'T2I Frame'})`
+                        : `Clean Plate Outro Prompt (${ctaModality === 'video' ? 'T2V 3s Loop' : 'T2I Frame'})`}
+                    </span>
+                    <span>{activeCta.aspectRatio}</span>
+                  </div>
+                  <p className="text-xs sm:text-sm text-[#F5F5F0] leading-relaxed font-mono whitespace-pre-wrap selection:bg-white selection:text-black">
+                    {ctaPromptMode === 'full' ? activeCta.compiledPrompt : activeCta.cleanPlatePrompt}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Complete Narrator Script Panel */}
+          <div
+            id="full-script-panel"
+            className="bg-[#121211] border border-white/15 rounded-[3px] p-4 sm:p-5 space-y-3.5"
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-white/10 pb-3">
+              <div>
+                <h3 className="text-base sm:text-lg font-medium font-display text-white">
+                  Complete Narrator Script
+                </h3>
+                <p className="text-xs text-[#9C9C96] mt-0.5">
+                  Continuous voiceover script for audio recording and timing.
+                </p>
+              </div>
+              <button
+                type="button"
+                id="copy-clean-script-btn"
+                onClick={handleCopyCleanScript}
+                className="inline-flex items-center px-3 py-1.5 bg-white text-black hover:bg-[#EAEAE5] text-xs font-display font-semibold transition-colors rounded-[3px] shrink-0 cursor-pointer"
+              >
+                {copiedIndex === 'clean-script' ? (
+                  <>
+                    <Check size={12} className="mr-1.5 text-black" />
+                    <span>Copied</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy size={12} className="mr-1.5 text-black" />
+                    <span>Copy Script</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            <div className="bg-[#0C0C0B] p-4 border border-white/10 rounded-[3px]">
+              <p className="text-sm sm:text-base text-[#F5F5F0] leading-relaxed font-narrative whitespace-pre-wrap selection:bg-white selection:text-black">
+                {fullScript}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-xs text-[#8C8C86] tabular-nums">
+              <span>{fullScript.trim().split(/\s+/).filter(Boolean).length} Words</span>
+              <span>Estimated Pacing: ~{formatSecondsToMinutes(result.totalDurationSeconds)}</span>
+            </div>
+          </div>
+
+          {/* Bottom Export Strip */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 sm:p-5 bg-[#121211] border border-white/15 rounded-[3px]">
+            <div className="text-center sm:text-left">
+              <span className="text-sm font-medium font-display text-white block">
+                Production Export &amp; Shot Lists
+              </span>
+              <p className="text-xs text-[#9C9C96] mt-0.5">
+                Download EDL timeline, SRT subtitles, CSV shot list, Markdown, or JSON.
+              </p>
+            </div>
+
+            <div className="relative" ref={exportMenuRef}>
+              <button
+                type="button"
+                id="export-dropdown-btn"
+                onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-[#1C1C1A] hover:bg-[#262624] text-white border border-white/20 text-xs font-display font-medium transition-colors rounded-[3px] cursor-pointer"
+                aria-expanded={isExportMenuOpen}
+                aria-haspopup="true"
+              >
+                <Download size={14} className="text-[#9C9C96]" />
+                <span>Export Storyboard</span>
+                <ChevronDown
+                  size={13}
+                  className={`text-[#9C9C96] transition-transform duration-150 ${isExportMenuOpen ? 'rotate-180' : ''}`}
+                />
+              </button>
+
+              {isExportMenuOpen && (
+                <div className="absolute right-0 bottom-full mb-2 w-60 bg-[#161614] border border-white/20 rounded-[3px] shadow-2xl py-1.5 z-30 font-narrative">
+                  <button
+                    type="button"
+                    id="export-edl-opt"
+                    onClick={downloadEdlExport}
+                    className="w-full flex items-center gap-3 px-3.5 py-2.5 text-left text-xs text-[#F5F5F0] hover:bg-[#222220] transition-colors cursor-pointer"
+                  >
+                    <Film size={14} className="text-[#9C9C96] shrink-0" />
+                    <div>
+                      <div className="font-medium font-display text-sm">Timeline EDL (.edl)</div>
+                      <div className="text-[11px] text-[#8C8C86]">Premiere Pro &amp; DaVinci Resolve</div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    id="export-srt-opt"
+                    onClick={downloadSrtExport}
+                    className="w-full flex items-center gap-3 px-3.5 py-2.5 text-left text-xs text-[#F5F5F0] hover:bg-[#222220] transition-colors cursor-pointer"
+                  >
+                    <Clock size={14} className="text-[#9C9C96] shrink-0" />
+                    <div>
+                      <div className="font-medium font-display text-sm">Subtitles (.srt)</div>
+                      <div className="text-[11px] text-[#8C8C86]">Timed narrator dialogue</div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    id="export-csv-opt"
+                    onClick={downloadCsvExport}
+                    className="w-full flex items-center gap-3 px-3.5 py-2.5 text-left text-xs text-[#F5F5F0] hover:bg-[#222220] transition-colors cursor-pointer"
+                  >
+                    <Table size={14} className="text-[#9C9C96] shrink-0" />
+                    <div>
+                      <div className="font-medium font-display text-sm">Shot List (.csv)</div>
+                      <div className="text-[11px] text-[#8C8C86]">Spreadsheet production table</div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    id="export-md-opt"
+                    onClick={downloadMarkdownExport}
+                    className="w-full flex items-center gap-3 px-3.5 py-2.5 text-left text-xs text-[#F5F5F0] hover:bg-[#222220] transition-colors cursor-pointer"
+                  >
+                    <FileText size={14} className="text-[#9C9C96] shrink-0" />
+                    <div>
+                      <div className="font-medium font-display text-sm">Production Doc (.md)</div>
+                      <div className="text-[11px] text-[#8C8C86]">Formatted Markdown storyboard</div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    id="export-json-opt"
+                    onClick={downloadJsonExport}
+                    className="w-full flex items-center gap-3 px-3.5 py-2.5 text-left text-xs text-[#F5F5F0] hover:bg-[#222220] transition-colors cursor-pointer"
+                  >
+                    <FileCode size={14} className="text-[#9C9C96] shrink-0" />
+                    <div>
+                      <div className="font-medium font-display text-sm">Structured Data (.json)</div>
+                      <div className="text-[11px] text-[#8C8C86]">Full machine-readable JSON</div>
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT COLUMN (5/12 on lg+): Sticky Beat Inspector Panel */}
+        <aside className="hidden lg:block lg:col-span-5 lg:sticky lg:top-20">
+          {activeInspectorPair ? (
+            (() => {
+              const inspScene = activeInspectorPair.scene;
+              const inspBeat = activeInspectorPair.beat;
+              const inspRoman = toRomanNumeral(inspScene.index);
+              const beatKey = `scene-${inspScene.index}-beat-${inspBeat.beatIndex}`;
+              const isCopiedPrompt = copiedIndex === `prompt-${beatKey}`;
+              const isCopiedText = copiedIndex === `text-${beatKey}`;
+              const compiled = compileBeatPrompt(
+                inspBeat,
+                inspScene,
+                result.styleProfile,
+                'universal',
+                format,
+                result.generationMode
+              );
+
+              return (
+                <div
+                  id="desktop-beat-inspector"
+                  className="bg-[#121211] border border-white/15 rounded-[3px] overflow-hidden shadow-xl"
+                >
+                  {/* Inspector Header */}
+                  <div className="px-5 py-3.5 bg-[#161614] border-b border-white/10 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span
+                        className={`stamp-chip font-bold text-[10px] ${
+                          isVideoMode
+                            ? 'bg-amber-950/70 text-amber-300 border-amber-700/80'
+                            : 'bg-white/10 text-white border-white/25'
+                        }`}
+                      >
+                        BEAT {String(inspBeat.beatIndex).padStart(2, '0')}
+                      </span>
+                      <span className="font-display text-sm font-medium text-white truncate">
+                        Scene {inspRoman}
+                      </span>
+                      <span className="font-mono text-xs text-[#8C8C86] tabular-nums">
+                        ({currentFlatIndex + 1} / {flatBeatRefs.length})
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        disabled={!prevFlatPair}
+                        onClick={() =>
+                          prevFlatPair &&
+                          setDesktopSelection({
+                            sceneIndex: prevFlatPair.scene.index,
+                            beatIndex: prevFlatPair.beat.beatIndex,
+                          })
+                        }
+                        className="p-1.5 bg-[#1E1E1C] hover:bg-[#282825] border border-white/15 rounded-[3px] text-[#C4C4BE] hover:text-white disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer"
+                        title="Previous Beat"
+                        aria-label="Previous beat"
+                      >
+                        <ChevronLeft size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!nextFlatPair}
+                        onClick={() =>
+                          nextFlatPair &&
+                          setDesktopSelection({
+                            sceneIndex: nextFlatPair.scene.index,
+                            beatIndex: nextFlatPair.beat.beatIndex,
+                          })
+                        }
+                        className="p-1.5 bg-[#1E1E1C] hover:bg-[#282825] border border-white/15 rounded-[3px] text-[#C4C4BE] hover:text-white disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer"
+                        title="Next Beat"
+                        aria-label="Next beat"
+                      >
+                        <ChevronRight size={14} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Camera Metadata Strip */}
+                  <div className="px-5 py-2.5 bg-[#0E0E0D] border-b border-white/10 flex items-center gap-2 flex-wrap">
+                    {inspBeat.shotType && (
+                      <span className="stamp-chip text-[10px]">
+                        <Camera size={10} className="mr-1 text-[#9C9C96]" />
+                        {inspBeat.shotType}
+                      </span>
+                    )}
+                    {inspBeat.cameraAngle && (
+                      <span className="stamp-chip text-[10px]">{inspBeat.cameraAngle}</span>
+                    )}
+                    {inspBeat.cameraMovement && (
+                      <span className="stamp-chip text-[10px]">{inspBeat.cameraMovement}</span>
+                    )}
+                    <span className="font-mono text-xs text-emerald-400/90 ml-auto tabular-nums">
+                      ~{inspBeat.estimatedSeconds}s
+                    </span>
+                  </div>
+
+                  {/* Inspector Body */}
+                  <div className="p-5 space-y-4 max-h-[calc(100vh-14rem)] overflow-y-auto">
+                    {/* Spoken Phrase */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-display text-xs text-[#9C9C96] font-medium">
+                          Spoken Phrase
+                        </span>
                         <button
-                          key={i}
                           type="button"
-                          onClick={() => {
-                            setCustomCtaQuestion(alt);
-                            setIsEditingQuestion(false);
-                          }}
-                          className={`text-[9px] font-narrative px-2 py-1 border transition-colors rounded-[2px] text-left ${
-                            customCtaQuestion === alt
-                              ? 'bg-amber-950/60 border-amber-500/50 text-amber-200'
-                              : 'bg-white/5 border-white/10 text-[#C4C4C0] hover:bg-white/10 hover:text-white'
+                          onClick={() => copyToClipboard(inspBeat.textSpan, `text-${beatKey}`)}
+                          className="font-display text-xs text-[#9C9C96] hover:text-white inline-flex items-center gap-1 cursor-pointer"
+                        >
+                          {isCopiedText ? (
+                            <>
+                              <Check size={11} className="text-emerald-400" />
+                              <span className="text-emerald-400">Copied</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy size={11} />
+                              <span>Copy Phrase</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                      <div className="p-3 bg-[#0C0C0B] border border-white/10 rounded-[3px] text-sm text-[#F5F5F0] italic leading-relaxed">
+                        {inspBeat.textSpan && inspBeat.textSpan.trim().length > 0 ? (
+                          <>&ldquo;{inspBeat.textSpan}&rdquo;</>
+                        ) : (
+                          <span className="not-italic font-mono text-xs text-amber-400">
+                            [Silent Reaction / Action Beat]
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {inspBeat.visualSoundEffect && (
+                      <div className="p-3 bg-[#171510] border border-amber-700/40 rounded-[3px] flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Zap size={14} className="text-amber-400 shrink-0" />
+                          <div>
+                            <span className="font-editorial-meta text-[9px] text-amber-300 block">
+                              VISUAL SOUND EFFECT
+                            </span>
+                            <span className="text-xs font-bold text-amber-100">
+                              {inspBeat.visualSoundEffect}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="text-[11px] font-mono text-amber-300/80">On-frame text</span>
+                      </div>
+                    )}
+
+                    {inspBeat.overlayText && (
+                      <div className="p-3 bg-[#15140F] border border-amber-700/40 rounded-[3px] flex items-center justify-between gap-2">
+                        <span className="font-editorial-meta text-[9px] text-amber-300">
+                          EDITOR OVERLAY TEXT
+                        </span>
+                        <span className="text-xs font-mono text-white">{inspBeat.overlayText}</span>
+                      </div>
+                    )}
+
+                    {inspBeat.transitionHint && (
+                      <div className="p-3 bg-amber-950/20 border border-amber-800/40 rounded-[3px] space-y-1">
+                        <span className="font-editorial-meta text-[9px] text-amber-300 flex items-center gap-1.5">
+                          <Scissors size={11} className="text-amber-400" />
+                          <span>EDITING TRANSITION NOTE</span>
+                        </span>
+                        <p className="text-xs text-amber-100/90 leading-relaxed">
+                          {inspBeat.transitionHint}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Beat Prompt */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-display text-xs font-medium text-white flex items-center gap-1.5">
+                          {isVideoMode ? (
+                            <>
+                              <Clapperboard size={13} className="text-amber-400" />
+                              <span className="text-amber-300">Beat Shot Prompt</span>
+                            </>
+                          ) : (
+                            <>
+                              <ImageIcon size={13} className="text-[#C4C4BE]" />
+                              <span>Structured Image Prompt</span>
+                            </>
+                          )}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(compiled.promptText, `prompt-${beatKey}`)}
+                          className={`font-display text-xs px-3 py-1.5 rounded-[3px] transition-colors flex items-center gap-1.5 font-semibold cursor-pointer ${
+                            isVideoMode
+                              ? 'bg-amber-400 text-black hover:bg-amber-300'
+                              : 'bg-white text-black hover:bg-[#EAEAE5]'
                           }`}
                         >
-                          &ldquo;{alt}&rdquo;
+                          {isCopiedPrompt ? (
+                            <>
+                              <Check size={12} className="text-black" />
+                              <span>Copied</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy size={12} className="text-black" />
+                              <span>Copy Prompt</span>
+                            </>
+                          )}
                         </button>
-                      ))}
+                      </div>
+                      <div
+                        className={`text-xs leading-relaxed p-3.5 border rounded-[3px] font-mono selection:bg-white selection:text-black ${
+                          isVideoMode
+                            ? 'bg-[#0C0C0B] border-amber-700/40 text-[#F0EFEA]'
+                            : 'bg-[#0C0C0B] border-white/15 text-[#E8E8E2]'
+                        }`}
+                      >
+                        {compiled.promptText}
+                      </div>
                     </div>
+
+                    {/* Scene 8-Part Video Prompt & Start Keyframe (Video Mode Only) */}
+                    {isVideoMode && inspScene.videoPrompt && (
+                      <div className="pt-3 border-t border-white/10 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="font-display text-xs font-medium text-amber-300">
+                            Scene {inspRoman} Video Prompt ({result.targetVideoDuration || 5}s Clip)
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(inspScene.videoPrompt || '', `video-prompt-${inspScene.index}`)}
+                            className="font-display text-xs px-2.5 py-1 bg-amber-400/15 hover:bg-amber-400/25 text-amber-200 border border-amber-500/40 rounded-[3px] inline-flex items-center gap-1 cursor-pointer"
+                          >
+                            {copiedIndex === `video-prompt-${inspScene.index}` ? (
+                              <>
+                                <Check size={11} />
+                                <span>Copied</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy size={11} />
+                                <span>Copy Clip Prompt</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                        <div className="p-3 bg-[#0C0C0B] border border-amber-700/35 rounded-[3px] font-mono text-xs text-[#F0EFEA] leading-relaxed">
+                          {inspScene.videoPrompt}
+                        </div>
+                      </div>
+                    )}
+
+                    {isVideoMode && inspScene.startFramePrompt && (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="font-display text-xs font-medium text-[#C4C4BE]">
+                            Start Frame Keyframe (I2V Anchor)
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(inspScene.startFramePrompt || '', `start-frame-${inspScene.index}`)}
+                            className="font-display text-xs px-2.5 py-1 bg-white/5 hover:bg-white/15 text-[#E6E6E1] border border-white/15 rounded-[3px] inline-flex items-center gap-1 cursor-pointer"
+                          >
+                            {copiedIndex === `start-frame-${inspScene.index}` ? (
+                              <>
+                                <Check size={11} className="text-emerald-400" />
+                                <span>Copied</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy size={11} />
+                                <span>Copy Frame</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                        <div className="p-3 bg-[#0C0C0B] border border-white/10 rounded-[3px] font-mono text-xs text-[#D4D4D0] leading-relaxed">
+                          {inspScene.startFramePrompt}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-
-              {/* Safe Zone Clearance Summary */}
-              <div className="bg-[#0A0A09] p-3 border border-white/10 rounded-[2px] space-y-2 md:col-span-1">
-                <span className="font-editorial-meta text-[8px] sm:text-[9px] text-emerald-400 uppercase tracking-widest block">
-                  Platform Safe Zone Clearance
-                </span>
-                <p className="text-[10px] sm:text-xs text-[#A8A8A2] font-editorial-meta leading-relaxed">
-                  {ctaPlatform === 'tiktok'
-                    ? 'Right 18% strictly clear for like, comment, bookmark, and share icon stack. Bottom 22% clear for caption marquee and sound disc. Center band (35%–65% height) safe.'
-                    : ctaPlatform === 'youtube_shorts'
-                    ? 'Bottom 20% strictly clear of text and faces for channel avatar and red Subscribe button. Right 15% clear of thumbs-up rail.'
-                    : 'Universal 10% perimeter clearance across all borders. Balanced composition compatible with Instagram Reels, X video, web embeds, and horizontal players.'}
-                </p>
-                <div className="pt-1 border-t border-white/5 font-editorial-meta text-[9px] text-[#8C8C86]">
-                  Action cue: {ctaEngagementType === 'question' ? 'Comments driver' : ctaEngagementType === 'follow_subscribe' ? 'Follow / Subscribe badge' : 'A/B dilemma poll'}
                 </div>
-              </div>
-            </div>
-
-            {/* Compiled Monospace CTA Prompt Block */}
-            <div className="bg-[#0A0A09] p-3.5 sm:p-5 border border-white/10 rounded-[2px] space-y-2 relative group">
-              <div className="flex items-center justify-between text-[9px] sm:text-[10px] font-editorial-meta text-[#8C8C86]">
-                <span>
-                  {ctaPromptMode === 'full'
-                    ? `Production CTA Outro Prompt (${ctaModality === 'video' ? 'T2V 3-Second Loop' : 'T2I Still Frame'})`
-                    : `Clean Plate Outro Prompt (${ctaModality === 'video' ? 'T2V 3-Second Loop' : 'T2I Still Frame'} Text-Free)`}
-                </span>
-                <span className="font-mono text-white/50">{activeCta.aspectRatio}</span>
-              </div>
-              <p className="text-xs sm:text-sm text-[#F5F5F0] leading-relaxed font-mono whitespace-pre-wrap selection:bg-white selection:text-black">
-                {ctaPromptMode === 'full' ? activeCta.compiledPrompt : activeCta.cleanPlatePrompt}
-              </p>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Full Script Summary Panel */}
-      <div
-        id="full-script-panel"
-        className="bg-[#121211] border border-white/10 p-3.5 sm:p-6 md:p-8 space-y-3.5 sm:space-y-4 shadow-xl"
-      >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 border-b border-white/10 pb-3 sm:pb-4">
-          <div className="min-w-0 flex-1 pr-0 sm:pr-4">
-            <h3 className="text-base sm:text-xl font-normal font-display tracking-tight text-white">
-              Complete Narrator Script
-            </h3>
-            <p className="text-xs text-[#9C9C96] mt-0.5 sm:mt-1 font-narrative leading-relaxed">
-              Continuous voiceover script for audio recording and dialogue timing.
-            </p>
-          </div>
-
-          <div className="flex items-center self-start sm:self-auto shrink-0">
-            <button
-              type="button"
-              id="copy-clean-script-btn"
-              onClick={handleCopyCleanScript}
-              className="inline-flex items-center justify-center px-2 sm:px-3.5 py-1 sm:py-1.5 bg-white text-black hover:bg-neutral-200 active:bg-neutral-300 text-[9px] sm:text-[10px] font-editorial-meta font-semibold transition-colors whitespace-nowrap min-h-[28px] sm:min-h-[32px] rounded-[2px] shadow-sm"
-              title="Copy the complete continuous voiceover script"
-            >
-              {copiedIndex === 'clean-script' ? (
-                <>
-                  <Check size={10} className="mr-1 text-black shrink-0 sm:w-3 sm:h-3" />
-                  <span>Copied</span>
-                </>
-              ) : (
-                <>
-                  <Copy size={10} className="mr-1 text-black shrink-0 sm:w-3 sm:h-3" />
-                  <span className="sm:hidden">Copy Script</span>
-                  <span className="hidden sm:inline">Copy Clean Script</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-
-        <div className="bg-[#0A0A09] p-3.5 sm:p-6 border border-white/10 rounded-[2px]">
-          <p className="text-xs sm:text-base text-[#F5F5F0] leading-relaxed font-narrative whitespace-pre-wrap selection:bg-white selection:text-black">
-            {fullScript}
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-2 font-editorial-meta text-[9px] sm:text-[10px] text-[#9C9C96] pt-0.5 sm:pt-1">
-          <span>Total Words: {fullScript.trim().split(/\s+/).filter(Boolean).length} Words</span>
-          <span>Estimated Pacing: ~{formatSecondsToMinutes(result.totalDurationSeconds)}</span>
-        </div>
-      </div>
-
-      {/* Bottom Production Export Section with Compact Dropdown Menu */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 sm:p-5 bg-[#121211] border border-white/10 rounded-[2px]">
-        <div className="text-center sm:text-left">
-          <span className="text-xs sm:text-sm font-medium font-display tracking-tight text-white block">
-            Production Export &amp; Shot Lists
-          </span>
-          <p className="text-[10px] sm:text-xs text-[#9C9C96] mt-0.5 font-narrative">
-            Download your full breakdown in EDL, Subtitles, CSV, Markdown, or JSON formats.
-          </p>
-        </div>
-
-        {/* Compact Export Dropdown */}
-        <div className="relative" ref={exportMenuRef}>
-          <button
-            type="button"
-            id="export-dropdown-btn"
-            onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
-            className="inline-flex items-center space-x-1.5 sm:space-x-2 px-3 sm:px-3.5 py-1.5 sm:py-2 bg-[#1C1C1A] hover:bg-[#262624] text-white border border-white/20 text-[10px] sm:text-xs font-editorial-meta transition-colors min-h-[34px] sm:min-h-[38px] rounded-[2px]"
-            aria-expanded={isExportMenuOpen}
-            aria-haspopup="true"
-          >
-            <Download size={12} className="text-[#9C9C96] sm:w-3.5 sm:h-3.5" />
-            <span>Export Storyboard</span>
-            <ChevronDown size={12} className={`text-[#9C9C96] transition-transform duration-200 ${isExportMenuOpen ? 'rotate-180' : ''}`} />
-          </button>
-
-          {/* Dropdown Menu Items */}
-          {isExportMenuOpen && (
-            <div className="absolute right-0 bottom-full mb-2 w-56 sm:w-60 bg-[#161614] border border-white/20 shadow-2xl py-1.5 z-30 animate-in fade-in slide-in-from-bottom-2 duration-150 font-narrative">
-              <button
-                type="button"
-                id="export-edl-opt"
-                onClick={downloadEdlExport}
-                className="w-full flex items-center space-x-2.5 sm:space-x-3 px-3 sm:px-3.5 py-2 sm:py-2.5 text-left text-xs sm:text-sm text-[#F5F5F0] hover:text-white hover:bg-[#222220] transition-colors"
-              >
-                <Film size={13} className="text-[#9C9C96] shrink-0 sm:w-3.5 sm:h-3.5" />
-                <div>
-                  <div className="font-medium font-display text-xs sm:text-sm">Timeline EDL (.edl)</div>
-                  <div className="font-editorial-meta text-[9px] text-[#9C9C96]">CMX 3600 for Premiere &amp; DaVinci</div>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                id="export-srt-opt"
-                onClick={downloadSrtExport}
-                className="w-full flex items-center space-x-2.5 sm:space-x-3 px-3 sm:px-3.5 py-2 sm:py-2.5 text-left text-xs sm:text-sm text-[#F5F5F0] hover:text-white hover:bg-[#222220] transition-colors"
-              >
-                <Clock size={13} className="text-[#9C9C96] shrink-0 sm:w-3.5 sm:h-3.5" />
-                <div>
-                  <div className="font-medium font-display text-xs sm:text-sm">Subtitles (.srt)</div>
-                  <div className="font-editorial-meta text-[9px] text-[#9C9C96]">Timed narrator dialogue track</div>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                id="export-csv-opt"
-                onClick={downloadCsvExport}
-                className="w-full flex items-center space-x-2.5 sm:space-x-3 px-3 sm:px-3.5 py-2 sm:py-2.5 text-left text-xs sm:text-sm text-[#F5F5F0] hover:text-white hover:bg-[#222220] transition-colors"
-              >
-                <Table size={13} className="text-[#9C9C96] shrink-0 sm:w-3.5 sm:h-3.5" />
-                <div>
-                  <div className="font-medium font-display text-xs sm:text-sm">Shot List (.csv)</div>
-                  <div className="font-editorial-meta text-[9px] text-[#9C9C96]">Spreadsheet production table</div>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                id="export-md-opt"
-                onClick={downloadMarkdownExport}
-                className="w-full flex items-center space-x-2.5 sm:space-x-3 px-3 sm:px-3.5 py-2 sm:py-2.5 text-left text-xs sm:text-sm text-[#F5F5F0] hover:text-white hover:bg-[#222220] transition-colors"
-              >
-                <FileText size={13} className="text-[#9C9C96] shrink-0 sm:w-3.5 sm:h-3.5" />
-                <div>
-                  <div className="font-medium font-display text-xs sm:text-sm">Production Storyboard (.md)</div>
-                  <div className="font-editorial-meta text-[9px] text-[#9C9C96]">Formatted documentation</div>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                id="export-json-opt"
-                onClick={downloadJsonExport}
-                className="w-full flex items-center space-x-2.5 sm:space-x-3 px-3 sm:px-3.5 py-2 sm:py-2.5 text-left text-xs sm:text-sm text-[#F5F5F0] hover:text-white hover:bg-[#222220] transition-colors"
-              >
-                <FileCode size={13} className="text-[#9C9C96] shrink-0 sm:w-3.5 sm:h-3.5" />
-                <div>
-                  <div className="font-medium font-display text-xs sm:text-sm">Structured Schema (.json)</div>
-                  <div className="font-editorial-meta text-[9px] text-[#9C9C96]">Machine-readable JSON data</div>
-                </div>
-              </button>
+              );
+            })()
+          ) : (
+            <div className="bg-[#121211] border border-white/15 rounded-[3px] p-6 text-center text-sm text-[#8C8C86]">
+              Select any beat card on the left to inspect its camera direction and visual prompt.
             </div>
           )}
-        </div>
+        </aside>
       </div>
 
-      {/* Mobile Beat Expansion Bottom Sheet */}
+      {/* Mobile & Tablet Beat Expansion Bottom Sheet (< lg) */}
       <BeatBottomSheet
         isOpen={Boolean(mobileActiveBeat)}
         onClose={() => setMobileActiveBeat(null)}
@@ -1651,6 +1843,54 @@ export default function ResultsView({
         format={format}
       />
 
+      {/* Style & Continuity Modal */}
+      {isStyleModalOpen &&
+        createPortal(
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Visual Style and Character Continuity"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setIsStyleModalOpen(false);
+            }}
+          >
+            <div className="w-full max-w-3xl max-h-[88vh] bg-[#121210] border border-white/20 rounded-[4px] shadow-2xl flex flex-col overflow-hidden text-[#F5F5F0]">
+              <div className="flex items-center justify-between px-5 py-3.5 bg-[#161614] border-b border-white/10 shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <Layers size={16} className="text-white" />
+                  <h2 className="font-display text-base font-medium text-white">
+                    Style Profile &amp; Continuity Sheets
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsStyleModalOpen(false)}
+                  className="p-1.5 text-[#9C9C96] hover:text-white hover:bg-white/10 rounded-[3px] transition-colors cursor-pointer"
+                  aria-label="Close style and cast sheets"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="p-5 overflow-y-auto">
+                <StyleAndCharactersSection
+                  styleProfile={result.styleProfile}
+                  characterSheet={result.characterSheet}
+                  locationSheet={result.locationSheet}
+                  copiedIndex={copiedIndex}
+                  onCopy={copyToClipboard}
+                  isModal
+                  onOpenReferencePacket={() => {
+                    setIsStyleModalOpen(false);
+                    setIsRefModalOpen(true);
+                  }}
+                />
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
       {/* Multi-Angle Character Reference Packet Modal */}
       <CharacterReferenceModal
         isOpen={isRefModalOpen}
@@ -1660,11 +1900,11 @@ export default function ResultsView({
         format={format}
       />
 
-      {/* 11-Episode Series Continuity Roadmap Modal */}
+      {/* Series Continuity Roadmap Modal */}
       <SeriesRoadmapModal
         isOpen={isRoadmapModalOpen}
         onClose={() => setIsRoadmapModalOpen(false)}
-        seriesTitle={result.title || "Series Roadmap"}
+        seriesTitle={result.title || 'Series Roadmap'}
         roadmap={result.seriesRoadmap}
         onSelectEpisodeForGeneration={handleSelectEpisodeForDraft}
         onSaveContinuity={handleManualSaveContinuity}

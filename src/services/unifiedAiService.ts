@@ -37,6 +37,12 @@ export function sanitizeGenericErrorMessage(errorText: string, apiKey: string, p
 2. If your key has HTTP referrer restrictions, ensure this application domain is permitted or remove the referrer restriction.
 3. If using an AI Studio key, ensure it is active at https://aistudio.google.com/app/apikey.`;
   }
+  if (lower.includes('404') || lower.includes('not_found') || lower.includes('is not found')) {
+    return 'The requested Gemini model is unavailable or unsupported (404). Please verify your selected Gemini model.';
+  }
+  if (lower.includes('api_key_invalid') || lower.includes('api key not valid')) {
+    return 'Your Gemini API key appears invalid (400). Please check your key in Model & API Settings.';
+  }
   if (lower.includes('503') || lower.includes('overloaded') || lower.includes('service unavailable')) {
     return 'Google Gemini servers are temporarily busy. Please wait a moment and click Retry Breakdown.';
   }
@@ -45,6 +51,25 @@ export function sanitizeGenericErrorMessage(errorText: string, apiKey: string, p
 Please wait a moment before trying again, or check your quotas at https://aistudio.google.com/.`;
   }
   return cleaned;
+}
+
+/**
+ * Extracts generated text from Gemini candidates while skipping internal thinking parts.
+ */
+export function extractGeminiResponseText(resJson: any): string {
+  const parts = resJson?.candidates?.[0]?.content?.parts;
+  if (!Array.isArray(parts)) return '';
+  const nonThoughtText = parts
+    .filter((p: any) => p && !p.thought && typeof p.text === 'string')
+    .map((p: any) => p.text)
+    .join('')
+    .trim();
+  if (nonThoughtText) return nonThoughtText;
+  return parts
+    .filter((p: any) => p && typeof p.text === 'string')
+    .map((p: any) => p.text)
+    .join('')
+    .trim();
 }
 
 /**
@@ -115,8 +140,22 @@ export async function executeJsonLlmCall<T = any>(params: UnifiedJsonRequest): P
   }
 
   // Provider: GEMINI (Google Generative Language API)
-  const targetModel = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-3.8-flash';
+  const targetModel = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-4-hydrogen';
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${trimmedKey}`;
+
+  const generationConfig: Record<string, any> = {
+    responseMimeType: 'application/json',
+  };
+
+  // Gemini 4 models (gemini-4-hydrogen) do not accept deprecated sampling parameters
+  if (targetModel !== 'gemini-4-hydrogen') {
+    generationConfig.temperature = temperature;
+    generationConfig.topP = topP;
+  }
+
+  if (typeof maxTokens === 'number' && maxTokens > 0) {
+    generationConfig.maxOutputTokens = maxTokens;
+  }
 
   const payload: Record<string, any> = {
     contents: [
@@ -125,16 +164,8 @@ export async function executeJsonLlmCall<T = any>(params: UnifiedJsonRequest): P
         parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
       },
     ],
-    generationConfig: {
-      temperature,
-      topP,
-      responseMimeType: 'application/json',
-    },
+    generationConfig,
   };
-
-  if (typeof maxTokens === 'number' && maxTokens > 0) {
-    payload.generationConfig.maxOutputTokens = maxTokens;
-  }
 
   try {
     const resp = await fetchWithExponentialBackoff(
@@ -161,7 +192,7 @@ export async function executeJsonLlmCall<T = any>(params: UnifiedJsonRequest): P
     }
 
     const resJson = await resp.json();
-    const contentCandidate = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;
+    const contentCandidate = extractGeminiResponseText(resJson);
     if (!contentCandidate) {
       throw new Error('Empty response from model');
     }

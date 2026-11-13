@@ -26,17 +26,17 @@ export default function SeriesRoadmapModal({
   if (!isOpen) return null;
 
   const defaultRoadmap: SeriesEpisode[] = roadmap.length > 0 ? roadmap : [
-    { episodeNumber: 1, title: 'Episode 1 — Twelve Suspects', description: 'Introduce the prize, rules, contestants’ paranoia, and first-vote cliffhanger.', status: 'completed' },
-    { episodeNumber: 2, title: 'Episode 2 — The First Name', description: 'Reveal the first eliminated contestant and show how the vote creates alliances.', status: 'planned' },
-    { episodeNumber: 3, title: 'Episode 3 — The Perfect Act', description: 'A confident contestant becomes the new target after a suspicious conversation.', status: 'planned' },
-    { episodeNumber: 4, title: 'Episode 4 — The Private Interviews', description: 'Conflicting confessions make the contestants doubt their own theories.', status: 'planned' },
-    { episodeNumber: 5, title: 'Episode 5 — The Alliance', description: 'Several contestants agree to protect one another, but one secretly breaks the deal.', status: 'planned' },
-    { episodeNumber: 6, title: 'Episode 6 — The Wrong Suspect', description: 'The group eliminates someone they are certain is the outsider.', status: 'planned' },
-    { episodeNumber: 7, title: 'Episode 7 — The Pattern', description: 'A contestant notices that everyone seems to be hiding the same kind of fear.', status: 'planned' },
-    { episodeNumber: 8, title: 'Episode 8 — The House Turns', description: 'An argument fractures the remaining alliances, and the vote becomes personal.', status: 'planned' },
-    { episodeNumber: 9, title: 'Episode 9 — No One Trusts Anyone', description: 'The contestants are close to the final two, but their theories contradict one another.', status: 'planned' },
-    { episodeNumber: 10, title: 'Episode 10 — Two Remain', description: 'The final vote leaves two contestants facing the prize briefcase.', status: 'planned' },
-    { episodeNumber: 11, title: 'Episode 11 — The Real Twist', description: 'The host reveals that every contestant believed he was the outsider. The real trick was that there was no actual outsider among them; the contestants had misunderstood the premise and projected their own fears onto one another.', status: 'planned' },
+    { episodeNumber: 1, title: 'Episode 1 - Twelve Suspects', description: 'Introduce the prize, rules, contestants\' paranoia, and first-vote cliffhanger.', status: 'completed' },
+    { episodeNumber: 2, title: 'Episode 2 - The First Name', description: 'Reveal the first eliminated contestant and show how the vote creates alliances.', status: 'planned' },
+    { episodeNumber: 3, title: 'Episode 3 - The Perfect Act', description: 'A confident contestant becomes the new target after a suspicious conversation.', status: 'planned' },
+    { episodeNumber: 4, title: 'Episode 4 - The Private Interviews', description: 'Conflicting confessions make the contestants doubt their own theories.', status: 'planned' },
+    { episodeNumber: 5, title: 'Episode 5 - The Alliance', description: 'Several contestants agree to protect one another, but one secretly breaks the deal.', status: 'planned' },
+    { episodeNumber: 6, title: 'Episode 6 - The Wrong Suspect', description: 'The group eliminates someone they are certain is the outsider.', status: 'planned' },
+    { episodeNumber: 7, title: 'Episode 7 - The Pattern', description: 'A contestant notices that everyone seems to be hiding the same kind of fear.', status: 'planned' },
+    { episodeNumber: 8, title: 'Episode 8 - The House Turns', description: 'An argument fractures the remaining alliances, and the vote becomes personal.', status: 'planned' },
+    { episodeNumber: 9, title: 'Episode 9 - No One Trusts Anyone', description: 'The contestants are close to the final two, but their theories contradict one another.', status: 'planned' },
+    { episodeNumber: 10, title: 'Episode 10 - Two Remain', description: 'The final vote leaves two contestants facing the prize briefcase.', status: 'planned' },
+    { episodeNumber: 11, title: 'Episode 11 - The Real Twist', description: 'The host reveals that every contestant believed he was the outsider. The real trick was that there was no actual outsider among them; the contestants had misunderstood the premise and projected their own fears onto one another.', status: 'planned' },
   ];
 
   const handleCopyEpisode = (index: number, text: string) => {

@@ -9,12 +9,140 @@ import {
   splitPhraseIntoSubBeats,
 } from './beatSplitting';
 import { executeJsonLlmCall } from './unifiedAiService';
+import { updateVideoPromptDuration } from './videoSuitability';
 
-// Option A: Visual-Event Pacing ceilings (~1.5s - 3.0s per visual event)
+// Dynamic Visual-Event Pacing (~1.5s - 3.0s default) + Selective Rapid Montage (~0.7s - 1.2s)
 export const VISUAL_EVENT_MAX_SECONDS = 3.1;
 export const VISUAL_EVENT_MAX_WORDS = 15;
 export const FILLER_FRAGMENT_MAX_WORDS = 4;
 export const FILLER_FRAGMENT_MAX_SECONDS = 1.25;
+export const MONTAGE_MIN_SECONDS = 0.7;
+
+/**
+ * Detects infancy or childhood flashback beats (e.g. "you since birth", crib scenes)
+ * where adult clothing and present-day adult bedrooms must NOT be force-injected.
+ */
+export function isInfancyOrChildhoodFlashback(textSpan: string, imagePrompt: string = ''): boolean {
+  const combined = `${textSpan || ''} ${imagePrompt || ''}`;
+  return /\b(?:since\s+birth|infant|newborn|baby|cradle|crib|nursery|swaddled|as\s+a\s+child|in\s+childhood|toddler)\b/i.test(
+    combined
+  );
+}
+
+/**
+ * Classifies deliberate rapid-montage, semantic-anchor, negation, or climax sub-beats
+ * so shared character/lighting boilerplate does not cause Pass 2 auto-merging or Pass 3 fallback overwrites.
+ */
+export function extractMontageFocalCategory(textSpan: string, imagePrompt: string = ''): string | null {
+  const span = (textSpan || '').trim().toLowerCase();
+  const prompt = (imagePrompt || '').trim().toLowerCase();
+
+  if (/\b(?:every\s+blink|blinking|eyelid)\b/i.test(span) || (/\bblink\b/i.test(span) && span.split(/\s+/).length <= 6)) {
+    return 'montage-blink';
+  }
+  if (/\b(?:every\s+breath|breathing|exhale)\b/i.test(span) || (/\bbreath\b/i.test(span) && span.split(/\s+/).length <= 6)) {
+    return 'montage-breath';
+  }
+  if (/\b(?:every\s+move|every\s+step|every\s+turn)\b/i.test(span) || (/\bmove\b/i.test(span) && span.split(/\s+/).length <= 5)) {
+    return 'montage-move';
+  }
+  if (isInfancyOrChildhoodFlashback(span, prompt)) {
+    return 'flashback-crib';
+  }
+  if (/\b(?:that\s+has\s+studied|has\s+studied|studied\s+you|watching\s+from\s+behind)\b/i.test(span)) {
+    return 'semantic-studied';
+  }
+  if (/^\s*(?:it'?s\s+an\s+entity|it\s+is\s+an\s+entity|an\s+entity)\b/i.test(span)) {
+    return 'semantic-entity';
+  }
+  if (/\bnever\s+reach\s+out\b/i.test(span)) {
+    return 'negation-reach';
+  }
+  if (/\bnever\s+cross\b/i.test(span)) {
+    return 'negation-cross';
+  }
+  if (/\bhalf[- ]second\s+late\b/i.test(span)) {
+    return 'climax-lag';
+  }
+  if (/\bnow\s+it'?s\s+smiling\b/i.test(span)) {
+    return 'climax-smile';
+  }
+  if (/\bnever\s+smiled\b/i.test(span)) {
+    return 'climax-unsmiling';
+  }
+
+  // General parallel list cue ("every X", "each X") in rapid montage beats
+  const everyMatch = span.match(/\b(?:every|each)\s+([a-z]{3,})\b/i);
+  if (everyMatch && everyMatch[1] && !/^(?:day|night|time|single|one)$/.test(everyMatch[1])) {
+    return `montage-parallel-${everyMatch[1]}`;
+  }
+
+  return null;
+}
+
+export function isIntentionalMontageOrSemanticBeat(beat: Beat): boolean {
+  return extractMontageFocalCategory(beat.textSpan || '', beat.imagePrompt || '') !== null;
+}
+
+export function hasDistinctMontageFocalSubject(beatA: Beat, beatB: Beat): boolean {
+  const catA = extractMontageFocalCategory(beatA.textSpan || '', beatA.imagePrompt || '');
+  const catB = extractMontageFocalCategory(beatB.textSpan || '', beatB.imagePrompt || '');
+  if (catA && catB && catA !== catB) {
+    return true;
+  }
+  // Also preserve distinct rapid montage pairs where one explicitly has a focal category and prompts are below clone threshold
+  if ((catA || catB) && (beatA.textSpan || '').trim().toLowerCase() !== (beatB.textSpan || '').trim().toLowerCase()) {
+    const tokensA = new Set((beatA.textSpan || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter((w) => w.length > 2));
+    const tokensB = new Set((beatB.textSpan || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter((w) => w.length > 2));
+    let shared = 0;
+    for (const t of tokensA) {
+      if (tokensB.has(t)) shared++;
+    }
+    if (shared === 0 && (catA || catB)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Flags short (7-14 word) multi-concept or parallel-list beats that were previously skipped
+ * by the 15-word ceiling check so Phase-2 repair splits them cleanly.
+ */
+export function detectUnsplitDenseBeatPattern(textSpan: string): string | null {
+  const span = (textSpan || '').trim();
+  if (!span) return null;
+
+  // 1. Repeated parallel "every X, every Y" or 3+ serialized comma action items
+  if (/(?:\bevery\s+[a-z]+[^,;]*[,;]\s*){1,}\bevery\s+[a-z]+/i.test(span)) {
+    return 'Contains unsplit serialized "every X, every Y" montage actions that should be split into distinct rapid visual cuts (0.7s-1.2s each)';
+  }
+  const commaParts = span.split(/,+/).map((p) => p.trim()).filter((p) => p.length > 0);
+  if (commaParts.length >= 3 && getWordCount(span) >= 6) {
+    return 'Contains 3 or more comma-separated clauses/items packed into one beat; split into distinct montage cuts';
+  }
+
+  // 2. Combined Entity + Observation + Temporal Origin Flashback ("It's an entity that has studied you since birth")
+  if (
+    /\b(?:entity|creature|shadow|mimic|warden)\b/i.test(span) &&
+    /\b(?:since\s+birth|as\s+a\s+baby|from\s+childhood|inside\s+a\s+crib)\b/i.test(span)
+  ) {
+    return 'Combines an entity introduction/observation with a birth/childhood temporal flashback; decompose into distinct beats (Entity -> Watching Behind -> Crib Flashback)';
+  }
+
+  // 3. Combined repeated negations ("You never reach out. You never cross.")
+  if (/\bnever\s+[a-z]+[^.!?]*[.!?]\s*(?:you\s+)?never\s+[a-z]+/i.test(span)) {
+    return 'Packs multiple distinct rhetorical negation beats into one frame; split each negation into its own visual beat';
+  }
+
+  // 4. Combined climax timing-lag and smile reveal ("half-second late. Now it's smiling.")
+  if (/\b(?:half[- ]second\s+late|delayed|lags?\s+behind)\b.*\b(?:smiling|smile|grin)\b/i.test(span)) {
+    return 'Merges the delayed reflection reveal and the smiling reveal into one beat; split into separate climax beats';
+  }
+
+  return null;
+}
+
 
 const STOP_WORDS = new Set(
   'a an the of in on at to with and or as by for from is are was were its it this that his her their into over under across just than then composition vertical portrait widescreen cinematic visual style lighting optics shot framing'.split(
@@ -143,13 +271,195 @@ export function computeVisualPromptSimilarity(a: string, b: string): number {
 }
 
 /**
- * Option A: Builds a compact, high-signal 14-18 word visual identity + outfit/gear anchor
- * from a potentially long characterSheet entry so every character beat stays visually consistent
- * in stateless diffusion models without bloating prompt token budgets.
+ * Strips transient facial expressions, temporary poses, and conflicting props from
+ * permanent character descriptions so identities never clash with beat-specific emotions or actions.
  */
-export function buildCompactCharacterAnchor(fullDesc: string, maxWords: number = 18): string {
+export function stripTransientExpressionsAndPoses(desc: string): string {
+  if (!desc || typeof desc !== 'string') return '';
+  let cleaned = normalizeUnicodeAndDashes(desc)
+    .replace(/\bwith\s+eyes\s+wide(?:\s+and\s+mouth\s+open)?/gi, '')
+    .replace(/,?\s*\beyes\s+(?:wide|narrowed|shut|closed|unblinking|blinking)\b/gi, '')
+    .replace(/,?\s*\b(?:neutral|blank|horrified|terrified|stoic|expressionless|intense|calm|fearful|shocked)\s+expression\b/gi, '')
+    .replace(/,?\s*\bmouth\s+(?:open|closed|shut|agape|pressed)\b/gi, '')
+    .replace(/,?\s*\b(?:smiling|grinning|frowning|scowling|sneering|crying|whispering|listening(?:\s+to\s+[^,.;]+)?)\b/gi, '')
+    .replace(/,?\s*\b(?:standing|sitting|kneeling|leaning|crouching)\s+(?:in|on|near|beside)\s+[^,.;]+/gi, '')
+    .replace(/\s+,/g, ',')
+    .replace(/,\s*,+/g, ',')
+    .replace(/^,\s*|,\s*$/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  return cleaned;
+}
+
+/**
+ * Checks whether the story's visual style is strictly monochrome / black-and-white ink.
+ */
+export function isMonochromeStyle(styleProfile?: StyleProfile): boolean {
+  if (!styleProfile) return false;
+  const combined = `${styleProfile.artStyle || ''} ${styleProfile.colorPalette || ''}`.toLowerCase();
+  const hasMono = /\b(?:black\s+and\s+white|black-and-white|black-white|monochrome|monochromatic|greyscale|grayscale|no\s+gray\s+gradients|b&w)\b/i.test(
+    combined
+  );
+  if (!hasMono) return false;
+  // If user explicitly asked for an accent color in palette (e.g. Sin City red highlight), preserve only if stated
+  if (/\b(?:contrasted\s+with\s+(?:red|crimson|neon)|selective\s+color)\b/i.test(combined)) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Strips chromatic Kelvin and color-light descriptors ("3200K warm tungsten", "cold 5400K",
+ * "cold cyan rim light") when generating monochrome / black-and-white manga prompts.
+ */
+export function sanitizeMonochromeLighting(text: string, styleProfile?: StyleProfile): string {
+  if (!text || typeof text !== 'string' || !isMonochromeStyle(styleProfile)) {
+    return text;
+  }
+
+  let cleaned = normalizeUnicodeAndDashes(text)
+    .replace(
+      /\b(?:dim\s+candlelit\s+key\s+light\s+at\s+\d{4}K\s+(?:warm\s+|cool\s+|cold\s+)?(?:tungsten|daylight)?)/gi,
+      'stark chiaroscuro candlelit key light'
+    )
+    .replace(/\b(?:at\s+)?\d{4}K\s+(?:warm\s+|cool\s+|cold\s+)?(?:tungsten|daylight|balanced\s+daylight)?/gi, '')
+    .replace(/\b(?:intense\s+)?(?:cold\s+|cool\s+|electric\s+)?cyan\s+(?:rim\s+)?light(?:ing)?/gi, 'stark white-edge rim highlight')
+    .replace(/\b(?:cold\s+|cool\s+|electric\s+)?cyan(?:\s+(?:accents?|tints?|glow|highlights?))?/gi, 'stark white accents')
+    .replace(/\b(?:warm\s+(?:tungsten|amber|golden)|cool\s+(?:daylight|fluorescent|blue)|cold\s+(?:blue|5400K))\b/gi, 'stark high-contrast')
+    .replace(/\b(?:amber|crimson|ruby\s+red|neon\s+cyan|emerald|cobalt)\s+(?:rim\s+|key\s+|glow|light(?:ing)?|highlight|accents?)/gi, 'stark monochrome $1')
+    .replace(/\bwith\s+stark\s+white\s+accents\s+accents/gi, 'with stark white highlights')
+    .replace(/\b(?:stark high-contrast\s+){2,}/gi, 'stark high-contrast ')
+    .replace(/\s+,/g, ',')
+    .replace(/,\s*,+/g, ',')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  return cleaned;
+}
+
+/**
+ * Replaces raw CamelCase sheet variable keys ("DarkRoom", "Protagonist", "CastleCourtyard")
+ * with natural descriptive prose so image generators never receive unexpanded variable tokens.
+ */
+export function expandEntityKeysInPrompt(
+  prompt: string,
+  characterSheet?: Record<string, string>,
+  locationSheet?: Record<string, string>
+): string {
+  if (!prompt || typeof prompt !== 'string') return '';
+  let cleaned = normalizeUnicodeAndDashes(prompt).replace(/,([^\s0-9])/g, ', $1');
+
+  // Handle location keys (expand multi-word CamelCase tokens like DarkRoom or strip redundant key prefix)
+  if (locationSheet) {
+    for (const [locKey, locDesc] of Object.entries(locationSheet)) {
+      const escaped = locKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const isCamelCaseVar = /^[A-Z][a-z]+[A-Z][a-zA-Z0-9]+$/.test(locKey);
+      if (!isCamelCaseVar) continue;
+
+      const conciseLoc = stripTransientExpressionsAndPoses(locDesc).split('.')[0].trim();
+      const shortLoc = buildCompactCharacterAnchor(conciseLoc, 14) || locKey.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
+
+      // Pattern 1: "DarkRoom (description)" -> "description" or "cramped dark room (description)"
+      cleaned = cleaned.replace(
+        new RegExp(`\\b${escaped}\\s*\\(([^)]+)\\)`, 'gi'),
+        (_m, inner) => inner.trim()
+      );
+      // Pattern 2: "DarkRoom, cramped dim bedroom" -> "cramped dim bedroom"
+      cleaned = cleaned.replace(
+        new RegExp(`\\b${escaped},\\s*`, 'gi'),
+        ''
+      );
+      // Pattern 3: bare "DarkRoom" -> readable description
+      cleaned = cleaned.replace(
+        new RegExp(`\\bin\\s+the\\s+cramped\\s+${escaped}\\b`, 'gi'),
+        `inside a ${shortLoc}`
+      );
+      cleaned = cleaned.replace(
+        new RegExp(`\\b${escaped}\\b`, 'g'),
+        shortLoc
+      );
+    }
+  }
+
+  // Replace generic role placeholder key "Protagonist" with natural prose
+  cleaned = cleaned.replace(/\bProtagonist\s*\(([^)]+)\)/g, 'the protagonist ($1)');
+  cleaned = cleaned.replace(/\bon\s+Protagonist\b/gi, 'on the protagonist');
+  cleaned = cleaned.replace(/\bProtagonist\b/g, 'the protagonist');
+
+  return cleaned.replace(/\s{2,}/g, ' ').trim();
+}
+
+/**
+ * Removes residual Video-mode camera motion phrases in Image mode, deduplicates focal lengths ("35mm 35mm"),
+ * fixes double periods (".."), and ensures a valid lens prescription is present for Image mode.
+ */
+export function sanitizeStillImageMotionAndOptics(
+  prompt: string,
+  shotType: string,
+  isVideoMode: boolean
+): string {
+  let cleaned = prompt || '';
+
+  // Deduplicate repeated focal lengths (e.g. "35mm 35mm f/2.8" -> "35mm f/2.8")
+  cleaned = cleaned.replace(/\b(\d{2,3}mm)\s+\1\b/gi, '$1');
+
+  if (!isVideoMode) {
+    // Strip kinetic camera tracking directives that induce motion blur in Text-to-Image renders
+    cleaned = cleaned
+      .replace(/\btracking\s+(?:left|right|upward|downward|forward|back)\s+to\s+reveal\b/gi, 'revealing')
+      .replace(/\btracking\s+(?:left|right|upward|downward|forward|back)\s+as\b/gi, 'as')
+      .replace(/\btracking\s+(?:left|right|upward|downward|across|subject)\b/gi, '')
+      .replace(/\bstatic\s+frame\s+of\b/gi, 'of')
+      .replace(/\b(?:eye-level|low-angle|high-angle)\s+static\s+frame\s+showing\b/gi, '$1 showing')
+      .replace(/\bpanning\s+(?:left|right|across)\s+(?:to|over)\b/gi, 'across')
+      .replace(/\blistening\s+to\s+an\s+unseen\s+whisper,?\s*/gi, 'standing tense in silence, ');
+  }
+
+  // Fix double periods (".." -> ".") and duplicate commas
+  cleaned = cleaned
+    .replace(/\.{2,}/g, '.')
+    .replace(/,\s*,+/g, ',')
+    .replace(/\s+([,.;!?])/g, '$1')
+    .replace(/,([^\s0-9])/g, ', $1')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  // Ensure lens/optics prescription in Image Mode when missing
+  if (!isVideoMode && !/\b\d{2,3}mm\b/i.test(cleaned) && !/\bmacro\s+lens\b/i.test(cleaned)) {
+    const lowerShot = (shotType || '').toLowerCase();
+    const defaultLens = lowerShot.includes('extreme close') || lowerShot.includes('close-up')
+      ? 'Shot on 85mm f/1.4 portrait prime lens, shallow depth of field'
+      : lowerShot.includes('wide')
+        ? 'Shot on 24mm f/4 wide lens, deep focus'
+        : 'Shot on 50mm f/2.0 prime lens, balanced depth of field';
+
+    const styleIdx = cleaned.search(/\bVisual Style:/i);
+    if (styleIdx > 0) {
+      const before = cleaned.slice(0, styleIdx).replace(/[.,\s]+$/, '');
+      const after = cleaned.slice(styleIdx);
+      cleaned = `${before}, ${defaultLens}. ${after}`;
+    } else {
+      const arIdx = cleaned.search(/\s*--ar\b/i);
+      if (arIdx > 0) {
+        const before = cleaned.slice(0, arIdx).replace(/[.,\s]+$/, '');
+        const after = cleaned.slice(arIdx);
+        cleaned = `${before}, ${defaultLens}.${after}`;
+      } else {
+        cleaned = `${cleaned.replace(/[.,\s]+$/, '')}, ${defaultLens}.`;
+      }
+    }
+  }
+
+  return cleaned.replace(/\s{2,}/g, ' ').trim();
+}
+
+/**
+ * Option A: Builds a compact, high-signal 14-20 word visual identity + outfit/gear anchor
+ * breaking strictly at complete comma/clause boundaries so descriptions never truncate mid-phrase.
+ */
+export function buildCompactCharacterAnchor(fullDesc: string, maxWords: number = 20): string {
   if (!fullDesc || typeof fullDesc !== 'string') return '';
-  let clean = normalizeUnicodeAndDashes(fullDesc)
+  let clean = stripTransientExpressionsAndPoses(fullDesc)
     .replace(/^(?:[A-Z][a-zA-Z0-9_-]*)\s+(?:has|is|wears|wearing)\s+/i, '')
     .replace(/\bAll fabrics show[^.]*\.?/gi, '')
     .replace(/\bHis\s+/gi, '')
@@ -161,29 +471,32 @@ export function buildCompactCharacterAnchor(fullDesc: string, maxWords: number =
     .replace(/\bThe rifle is a\b/gi, 'with')
     .trim();
 
-  // Split by sentences/clauses and pick high-value visual identity tokens
-  const clauses = clean
-    .split(/[.;]+/)
+  // Split by sentences/commas so we keep only whole semantic traits (no broken endings like "neutral)")
+  const phrases = clean
+    .split(/[.;,]+/)
     .map((c) => c.trim())
     .filter(Boolean);
 
-  const selectedWords: string[] = [];
-  for (const clause of clauses) {
-    const words = clause.split(/\s+/).filter(Boolean);
-    if (selectedWords.length + words.length <= maxWords) {
-      selectedWords.push(...words);
+  const selectedPhrases: string[] = [];
+  let runningWords = 0;
+
+  for (const phrase of phrases) {
+    const words = phrase.split(/\s+/).filter(Boolean);
+    if (runningWords + words.length <= maxWords) {
+      selectedPhrases.push(phrase);
+      runningWords += words.length;
+    } else if (selectedPhrases.length === 0) {
+      // First phrase alone exceeds maxWords: take crisp prefix cleanly
+      selectedPhrases.push(words.slice(0, maxWords).join(' '));
+      break;
     } else {
-      const remaining = maxWords - selectedWords.length;
-      if (remaining >= 4) {
-        selectedWords.push(...words.slice(0, remaining));
-      }
       break;
     }
   }
 
-  let summary = selectedWords.join(' ').replace(/[,:;]+$/, '').trim();
+  let summary = selectedPhrases.join(', ').replace(/[,:;.\s]+$/, '').trim();
   if (!summary) {
-    summary = clean.split(/\s+/).slice(0, maxWords).join(' ').replace(/[,:;]+$/, '').trim();
+    summary = clean.split(/\s+/).slice(0, maxWords).join(' ').replace(/[,:;.\s]+$/, '').trim();
   }
   return summary;
 }
@@ -230,6 +543,7 @@ export function injectCompactCharacterLocks(
     return prompt;
   }
 
+  const isFlashback = isInfancyOrChildhoodFlashback(textSpan, prompt);
   let updated = prompt;
   const charEntries = Object.entries(characterSheet);
   const singleLeadChar = charEntries.length === 1 ? charEntries[0] : null;
@@ -237,6 +551,15 @@ export function injectCompactCharacterLocks(
 
   for (const [charName, fullDesc] of charEntries) {
     if (!fullDesc || fullDesc.trim().length < 6) continue;
+
+    // Protect infancy/childhood flashback beats (e.g. baby protagonist in crib) from adult wardrobe/age locks
+    const isEntityKey = /\b(?:entity|creature|mimic|shadow|warden|monster|stalker|doppelganger)\b/i.test(
+      `${charName} ${fullDesc}`
+    );
+    if (isFlashback && !isEntityKey) {
+      continue;
+    }
+
     const escapedName = charName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const nameRegex = new RegExp(`\\b${escapedName}(?:'s)?\\b`, 'i');
 
@@ -336,20 +659,55 @@ export function stripLeadingOrientationPrefixes(prompt: string): string {
 }
 
 /**
- * Extracts explicit shot type and camera angle written in the opening of prompt prose
- * and synchronizes table metadata (`shotType`, `cameraAngle`, `cameraMovement`) with prose
- * so metadata and visual prompt NEVER contradict each other.
+ * Extracts explicit shot type and vertical camera angle written in the opening of prompt prose
+ * and synchronizes table metadata (`shotType`, `cameraAngle`, `cameraMovement`) cleanly so:
+ * 1) `over-the-shoulder` / `POV` stay strictly in `shotType` and NEVER enter `cameraAngle`.
+ * 2) `Medium Close-Up` takes precedence over `Close-Up` so table badges match opening text 1-for-1.
  */
 export function synchronizeBeatMetadataWithPrompt(beat: Beat): Beat {
   const withoutOrientation = stripLeadingOrientationPrefixes(beat.imagePrompt || '');
-  const openingWindow = withoutOrientation.slice(0, 90).toLowerCase();
+  const openingWindow = withoutOrientation.slice(0, 100).toLowerCase();
 
-  let syncedShotType = (beat.shotType || '').trim();
-  let syncedAngle = (beat.cameraAngle || '').trim();
+  let syncedShotType = '';
+  let syncedAngle = '';
   let syncedMovement = (beat.cameraMovement || '').trim();
 
-  // Detect shot size explicitly present in prompt opening
-  if (/\b(?:extreme[-\s]*close[-\s]*up|macro\s+(?:insert|detail|shot|view))\b/i.test(openingWindow)) {
+  // Normalize existing beat.shotType casing first as fallback
+  const normalizeRawShot = (raw: string): string => {
+    const r = raw.trim().toLowerCase();
+    if (!r) return '';
+    if (r === 'extreme-wide' || r.includes('extreme wide')) return 'Extreme Wide Shot';
+    if (r === 'wide' || r.includes('wide establishing')) return 'Wide Establishing Shot';
+    if (r === 'medium close-up' || r === 'medium-close-up' || r.includes('medium close')) return 'Medium Close-Up';
+    if (r === 'extreme-close-up' || r.includes('extreme close')) return 'Extreme Close-Up';
+    if (r === 'close-up' || r.includes('close-up') || r === 'closeup') return 'Close-Up';
+    if (r.includes('over-the-shoulder') || r === 'ots') return 'Over-the-Shoulder (OTS)';
+    if (r.includes('point-of-view') || r === 'pov') return 'Point-of-View (POV)';
+    if (r === 'medium' || r.includes('medium shot')) return 'Medium Shot';
+    if (r.includes('low-angle')) return 'Low-Angle Hero Shot';
+    return raw.trim();
+  };
+
+  // Detect shot size explicitly present in prompt opening (honoring leading explicit shotType first, then specific compound patterns!)
+  const leadingMatch = openingWindow.match(
+    /^(?:(medium\s+close[-\s]*up)|(extreme[-\s]*close[-\s]*up)|(close[-\s]*up)|(extreme[-\s]*wide)|(wide\s+(?:establishing\s+)?shot)|(medium\s+shot)|(over[-\s]*the[-\s]*shoulder|ots)|(point[-\s]*of[-\s]*view|pov))/i
+  );
+  if (leadingMatch) {
+    if (leadingMatch[1]) syncedShotType = 'Medium Close-Up';
+    else if (leadingMatch[2]) syncedShotType = 'Extreme Close-Up';
+    else if (leadingMatch[3]) syncedShotType = 'Close-Up';
+    else if (leadingMatch[4]) syncedShotType = 'Extreme Wide Shot';
+    else if (leadingMatch[5]) syncedShotType = 'Wide Establishing Shot';
+    else if (leadingMatch[6]) syncedShotType = 'Medium Shot';
+    else if (leadingMatch[7]) syncedShotType = 'Over-the-Shoulder (OTS)';
+    else if (leadingMatch[8]) syncedShotType = 'Point-of-View (POV)';
+  } else if (/\b(?:over[-\s]*the[-\s]*shoulder|ots)\b/i.test(openingWindow)) {
+    syncedShotType = 'Over-the-Shoulder (OTS)';
+  } else if (/\b(?:point[-\s]*of[-\s]*view|first[-\s]*person|pov)\b/i.test(openingWindow)) {
+    syncedShotType = 'Point-of-View (POV)';
+  } else if (/\bmedium\s+close[-\s]*up\b/i.test(openingWindow)) {
+    syncedShotType = 'Medium Close-Up';
+  } else if (/\b(?:extreme[-\s]*close[-\s]*up|macro\s+(?:insert|detail|shot|view))\b/i.test(openingWindow)) {
     syncedShotType = 'Extreme Close-Up';
   } else if (/\bclose[-\s]*up\b/i.test(openingWindow)) {
     syncedShotType = 'Close-Up';
@@ -357,17 +715,26 @@ export function synchronizeBeatMetadataWithPrompt(beat: Beat): Beat {
     syncedShotType = 'Extreme Wide Shot';
   } else if (/\bwide\b/i.test(openingWindow)) {
     syncedShotType = 'Wide Establishing Shot';
-  } else if (/\b(?:over[-\s]*the[-\s]*shoulder|ots)\b/i.test(openingWindow)) {
-    syncedShotType = 'Over-the-Shoulder (OTS)';
-  } else if (/\b(?:point[-\s]*of[-\s]*view|first[-\s]*person|pov)\b/i.test(openingWindow)) {
-    syncedShotType = 'Point-of-View (POV)';
-  } else if (/\bmedium\s+close[-\s]*up\b/i.test(openingWindow)) {
-    syncedShotType = 'Medium Close-Up';
   } else if (/\bmedium\b/i.test(openingWindow)) {
     syncedShotType = 'Medium Shot';
+  } else {
+    syncedShotType = normalizeRawShot(beat.shotType || '');
   }
 
-  // Detect camera angle explicitly present in prompt opening
+  // Detect ONLY valid vertical/tilt camera angles in prompt opening (never OTS or POV)
+  const normalizeValidAngle = (raw: string): string => {
+    const r = raw.trim().toLowerCase();
+    if (r === 'birds-eye' || r === 'worms-eye' || r === 'low-angle' || r === 'high-angle' || r === 'dutch-tilt' || r === 'eye-level') {
+      return r;
+    }
+    if (r.includes('bird') || r.includes('overhead') || r.includes('top-down')) return 'birds-eye';
+    if (r.includes('worm') || r.includes('ground')) return 'worms-eye';
+    if (r.includes('low')) return 'low-angle';
+    if (r.includes('high') || r.includes('elevated')) return 'high-angle';
+    if (r.includes('dutch') || r.includes('canted')) return 'dutch-tilt';
+    return 'eye-level';
+  };
+
   if (/\b(?:birds?[-\s]*eye|overhead|top[-\s]*down)\b/i.test(openingWindow)) {
     syncedAngle = 'birds-eye';
   } else if (/\b(?:worms?[-\s]*eye|ground[-\s]*level)\b/i.test(openingWindow)) {
@@ -380,9 +747,10 @@ export function synchronizeBeatMetadataWithPrompt(beat: Beat): Beat {
     syncedAngle = 'dutch-tilt';
   } else if (/\b(?:eye[-\s]*level|straight[-\s]*on)\b/i.test(openingWindow)) {
     syncedAngle = 'eye-level';
+  } else {
+    syncedAngle = normalizeValidAngle(beat.cameraAngle || 'eye-level');
   }
 
-  // Fallbacks if missing
   if (!syncedShotType) {
     const lowerFull = withoutOrientation.toLowerCase();
     if (lowerFull.includes('face') || lowerFull.includes('eyes') || lowerFull.includes('forearm') || lowerFull.includes('trigger')) {
@@ -393,11 +761,8 @@ export function synchronizeBeatMetadataWithPrompt(beat: Beat): Beat {
       syncedShotType = 'Medium Shot';
     }
   }
-  if (!syncedAngle) {
-    syncedAngle = 'eye-level';
-  }
   if (!syncedMovement) {
-    syncedMovement = 'Slow Push-In';
+    syncedMovement = 'Static Frame';
   }
 
   return {
@@ -410,12 +775,18 @@ export function synchronizeBeatMetadataWithPrompt(beat: Beat): Beat {
 
 /**
  * Formats a beat prompt with a single clean orientation declaration, synchronized framing opening
- * when none is present in the prose, cleaned punctuation, and exact --ar parameter flag.
+ * when none is present in the prose, expanded entity keys, monochrome-safe lighting, still-image
+ * motion filtering, cleaned punctuation, and exact --ar parameter flag.
  */
 export function formatFinalBeatPrompt(
   beat: Beat,
   isLongForm: boolean,
-  isVideoMode: boolean
+  isVideoMode: boolean,
+  options?: {
+    styleProfile?: StyleProfile;
+    characterSheet?: Record<string, string>;
+    locationSheet?: Record<string, string>;
+  }
 ): Beat {
   const synced = synchronizeBeatMetadataWithPrompt(beat);
   let body = stripLeadingOrientationPrefixes(synced.imagePrompt || '');
@@ -426,6 +797,25 @@ export function formatFinalBeatPrompt(
     .replace(/,\s*ar\s+[0-9:]+[.,]?/gi, '')
     .replace(/\bar\s+[0-9:]+[.,]?/gi, '')
     .trim();
+
+  // Scrub footwear contradictions if character sheet declares barefoot
+  if (options?.characterSheet) {
+    const charText = Object.values(options.characterSheet).join(' ').toLowerCase();
+    if (/\bbarefoot\b/.test(charText) && !/\bboots?\b/.test(charText)) {
+      body = body.replace(/\b(?:both|weight balanced on|planted on)\s+(?:both\s+)?boots\b/gi, 'weight balanced on bare feet');
+    }
+  }
+
+  // Expand CamelCase entity/location variable names & fix monochrome lighting if monochrome style
+  if (options?.characterSheet || options?.locationSheet) {
+    body = expandEntityKeysInPrompt(body, options.characterSheet, options.locationSheet);
+  }
+  if (options?.styleProfile) {
+    body = sanitizeMonochromeLighting(body, options.styleProfile);
+  }
+
+  // Clean video tracking verbs & duplicated optics in Text-to-Image mode
+  body = sanitizeStillImageMotionAndOptics(body, synced.shotType || 'Medium Shot', isVideoMode);
 
   // Check if prose already opens with shot framing; if not in Image mode, prepend synchronized shotType & cameraAngle
   const hasOpeningFraming =
@@ -441,8 +831,15 @@ export function formatFinalBeatPrompt(
     body = `${synced.shotType}${angleLabel}${connector}${lowerFirst}`;
   }
 
-  // Ensure uppercase first letter of body and clean trailing period
-  body = body.replace(/\s+([,.;!?])/g, '$1').replace(/\s{2,}/g, ' ').trim();
+  // Final punctuation & spacing cleanup
+  body = body
+    .replace(/\.{2,}/g, '.')
+    .replace(/,\s*,+/g, ',')
+    .replace(/\s+([,.;!?])/g, '$1')
+    .replace(/,([^\s0-9])/g, ', $1')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
   if (body.length > 0) {
     body = body.charAt(0).toUpperCase() + body.slice(1);
     if (!/[.!?]$/.test(body)) {
@@ -543,8 +940,18 @@ export function verifyAndRepairSceneNarrationCoverage(
     const missingWordCount = getWordCount(missingText);
     const lastBeat = currentBeats[currentBeats.length - 1];
 
-    // If only 1-3 trailing words were dropped and last beat has room under Option A pacing, append cleanly
-    if (lastBeat && missingWordCount <= 3 && getWordCount(lastBeat.textSpan) + missingWordCount <= VISUAL_EVENT_MAX_WORDS) {
+    // If only 1-3 plain non-montage trailing words were dropped and last beat has room under Option A pacing, append cleanly
+    const missingHasDistinctVisualCue =
+      extractMontageFocalCategory(missingText) !== null ||
+      extractTemporalAnchor(missingText) !== null ||
+      extractGeographicAnchor(missingText) !== null;
+
+    if (
+      lastBeat &&
+      !missingHasDistinctVisualCue &&
+      missingWordCount <= 3 &&
+      getWordCount(lastBeat.textSpan) + missingWordCount <= VISUAL_EVENT_MAX_WORDS
+    ) {
       lastBeat.textSpan = `${lastBeat.textSpan.trim()} ${missingText}`.trim();
       lastBeat.estimatedSeconds = Math.min(
         VISUAL_EVENT_MAX_SECONDS,
@@ -556,7 +963,7 @@ export function verifyAndRepairSceneNarrationCoverage(
       };
     }
 
-    // Partition longer missing narration into visual-event chunks (~6-11 words per beat under Option A)
+    // Partition longer missing narration into visual-event chunks (~6-11 words per beat under Option A), keeping montage/flashback cues distinct
     const missingChunks = splitPhraseIntoSubBeats(missingText, 11);
     const mergedMissingChunks: string[] = [];
     for (const chunk of missingChunks) {
@@ -564,7 +971,8 @@ export function verifyAndRepairSceneNarrationCoverage(
         mergedMissingChunks.length > 0 &&
         (getWordCount(chunk) <= 4 || getWordCount(mergedMissingChunks[mergedMissingChunks.length - 1]) + getWordCount(chunk) <= 11) &&
         !extractGeographicAnchor(chunk) &&
-        !extractTemporalAnchor(chunk)
+        !extractTemporalAnchor(chunk) &&
+        extractMontageFocalCategory(chunk) === null
       ) {
         mergedMissingChunks[mergedMissingChunks.length - 1] = `${mergedMissingChunks[mergedMissingChunks.length - 1]} ${chunk}`.trim();
       } else {
@@ -573,30 +981,62 @@ export function verifyAndRepairSceneNarrationCoverage(
     }
 
     const leadCharEntry = Object.entries(characterSheet)[0];
+    const leadCharLabel = leadCharEntry
+      ? (/^(?:protagonist|narrator|subject|character)$/i.test(leadCharEntry[0]) ? 'the protagonist' : leadCharEntry[0])
+      : 'the solitary protagonist';
     const leadCharClause = leadCharEntry
-      ? `${leadCharEntry[0]} (${buildCompactCharacterAnchor(leadCharEntry[1], 18)})`
-      : 'the solitary protagonist in period-accurate battle gear';
+      ? `${leadCharLabel} (${buildCompactCharacterAnchor(leadCharEntry[1], 18)})`
+      : 'the solitary protagonist';
+
     const locEntry = Object.entries(locationSheet)[0];
     const activeLocDesc = locEntry
-      ? `${locEntry[0]} (${buildCompactCharacterAnchor(locEntry[1], 16)})`
-      : styleProfile.eraAndSetting || 'weathered stone ramparts under turbulent twilight skies';
+      ? `${buildCompactCharacterAnchor(locEntry[1], 16) || locEntry[0]}`
+      : styleProfile.eraAndSetting || 'a dimly lit interior room';
+
+    const cleanLighting = sanitizeMonochromeLighting(styleProfile.lighting, styleProfile);
 
     const shotProgression = [
-      { shotType: 'Close-Up', angle: 'low-angle', move: 'Slow Push-In', lens: '85mm f/1.8 prime lens' },
-      { shotType: 'Over-the-Shoulder (OTS)', angle: 'eye-level', move: 'Tracking Subject', lens: '50mm f/2.0 lens' },
-      { shotType: 'Wide Establishing Shot', angle: 'high-angle', move: 'Smooth Pan', lens: '35mm f/4 wide lens' },
+      { shotType: 'Close-Up', angle: 'eye-level', move: 'Static Frame', lens: '85mm f/1.8 portrait prime lens' },
+      { shotType: 'Over-the-Shoulder (OTS)', angle: 'eye-level', move: 'Static Frame', lens: '50mm f/2.0 prime lens' },
+      { shotType: 'Medium Close-Up', angle: 'low-angle', move: 'Static Frame', lens: '50mm f/2.0 prime lens' },
     ];
 
     mergedMissingChunks.forEach((span, idx) => {
       const framing = shotProgression[(currentBeats.length + idx) % shotProgression.length];
       const wordCnt = getWordCount(span);
-      const sec = Math.max(1.5, Math.min(VISUAL_EVENT_MAX_SECONDS, Math.round((wordCnt / 2.2) * 10) / 10));
-      const cleanActionFocus = span.replace(/["'.,;:!?]+/g, ' ').replace(/\s+/g, ' ').trim();
+      const isMontageBeat = extractMontageFocalCategory(span) !== null;
+      const minSecFloor = isMontageBeat ? MONTAGE_MIN_SECONDS : 1.4;
+      const sec = Math.max(minSecFloor, Math.min(VISUAL_EVENT_MAX_SECONDS, Math.round((wordCnt / 2.3) * 10) / 10));
+      const lowerSpan = span.toLowerCase();
 
-      const rawContinuationPrompt =
-        idx % 2 === 0
-          ? `${framing.shotType}, ${framing.angle} focusing on ${leadCharClause} confronting the escalating stakes of ${cleanActionFocus}, set within ${activeLocDesc}, dramatic ${styleProfile.lighting}, ${styleProfile.colorPalette} palette, ${framing.lens}, Visual Style: ${styleProfile.artStyle}.`
-          : `${framing.shotType}, ${framing.angle} capturing the physical aftermath and environmental tension of ${cleanActionFocus} across ${activeLocDesc}, ${leadCharClause} positioned in taut readiness, ${styleProfile.lighting}, ${framing.lens}, Visual Style: ${styleProfile.artStyle}.`;
+      let visualMomentDesc = '';
+      if (isInfancyOrChildhoodFlashback(lowerSpan)) {
+        visualMomentDesc = `Medium Shot, high-angle framing of a tiny infant protagonist swaddled inside a wooden nursery crib, while a dark gaunt entity lurks silently in deep shadow behind the crib slats watching`;
+      } else if (/\b(?:never\s+smiled|smiling|smile|grin)\b/i.test(lowerSpan)) {
+        visualMomentDesc = `${framing.shotType}, ${framing.angle} of ${leadCharClause} standing stone-faced with a completely motionless, unsmiling mouth inside ${activeLocDesc}, while the mirror surface behind frames an eerie contrasting reflection smiling unnaturally wide`;
+      } else if (/\bnever\s+reach\s+out\b/i.test(lowerSpan)) {
+        visualMomentDesc = `Medium Close-Up, eye-level of ${leadCharClause} with both hands resting completely still at their sides inside ${activeLocDesc}, keeping cold mirror glass untouched`;
+      } else if (/\bnever\s+cross\b/i.test(lowerSpan)) {
+        visualMomentDesc = `Medium Shot, low-angle of ${leadCharClause} halting motionless behind the threshold of the standing ebony mirror frame inside ${activeLocDesc}, barrier unbroken`;
+      } else if (/\b(?:every\s+blink|blink)\b/i.test(lowerSpan)) {
+        visualMomentDesc = `Extreme Close-Up, eye-level macro framing of eyelids lowered mid-blink in exact 1:1 mirror symmetry inside ${activeLocDesc}`;
+      } else if (/\b(?:every\s+breath|breath)\b/i.test(lowerSpan)) {
+        visualMomentDesc = `Extreme Close-Up, eye-level macro view of faint condensation breath mist blooming across cold mirror glass beside parted lips in exact 1:1 synchrony`;
+      } else if (/\b(?:every\s+move|move)\b/i.test(lowerSpan)) {
+        visualMomentDesc = `Medium Shot, eye-level of ${leadCharClause} with tilted shoulder and raised hand synchronized 1:1 with an unsmiling reflection inside ${activeLocDesc}`;
+      } else if (/\b(?:reflection|mirror)\b/i.test(lowerSpan)) {
+        visualMomentDesc = `${framing.shotType}, ${framing.angle} of ${leadCharClause} staring straight into a cold glass mirror inside ${activeLocDesc}, locked eye-to-eye with an unblinking neutral double inside the shadowed glass`;
+      } else if (/\b(?:ammunition|bullet|magazine|empty|running out)\b/i.test(lowerSpan)) {
+        visualMomentDesc = `${framing.shotType}, ${framing.angle} focusing on ${leadCharClause} gazing down at nearly empty supplies with tense stillness inside ${activeLocDesc}`;
+      } else if (/\b(?:guarding|warden|wall|behind|cross)\b/i.test(lowerSpan)) {
+        visualMomentDesc = `${framing.shotType}, ${framing.angle} revealing deep impenetrable shadows coiled behind the threshold of ${activeLocDesc} beyond ${leadCharClause}`;
+      } else if (idx % 2 === 0) {
+        visualMomentDesc = `${framing.shotType}, ${framing.angle} framing ${leadCharClause} frozen in sudden quiet realization inside ${activeLocDesc}, shoulders taut and gaze locked forward`;
+      } else {
+        visualMomentDesc = `${framing.shotType}, ${framing.angle} capturing stillness across ${activeLocDesc}, subtle environmental shadow depth behind ${leadCharClause}`;
+      }
+
+      const rawContinuationPrompt = `${visualMomentDesc}, ${cleanLighting}, ${styleProfile.colorPalette} palette, ${framing.lens}, Visual Style: ${styleProfile.artStyle}.`;
 
       currentBeats.push(
         formatFinalBeatPrompt(
@@ -610,7 +1050,8 @@ export function verifyAndRepairSceneNarrationCoverage(
             estimatedSeconds: sec,
           },
           options.isLongForm,
-          options.isVideoMode
+          options.isVideoMode,
+          { styleProfile, characterSheet, locationSheet }
         )
       );
     });
@@ -679,6 +1120,9 @@ export function sanitizeEraBleedAcrossScenes(
  * "target for kings", "him live.") rather than a standalone visual event or cartographic/temporal anchor.
  */
 function isShortConnectiveFragment(beat: Beat): boolean {
+  if (isIntentionalMontageOrSemanticBeat(beat)) {
+    return false;
+  }
   const words = getWordCount(beat.textSpan);
   const secs = beat.estimatedSeconds || 1.5;
   if (words > FILLER_FRAGMENT_MAX_WORDS && secs > FILLER_FRAGMENT_MAX_SECONDS) {
@@ -707,62 +1151,124 @@ function buildContextPreservingProgressionBeat(
 ): Beat {
   const charEntries = Object.entries(characterSheet);
   const leadChar = charEntries[0];
+  const charLabel = leadChar
+    ? (/^(?:protagonist|narrator|subject|character)$/i.test(leadChar[0]) ? 'the protagonist' : leadChar[0])
+    : 'the protagonist';
   const charPhrase = leadChar
-    ? `${leadChar[0]} (${buildCompactCharacterAnchor(leadChar[1], 18)})`
-    : 'the armored soldier';
+    ? `${charLabel} (${buildCompactCharacterAnchor(leadChar[1], 18)})`
+    : 'the protagonist';
+
   const locEntries = Object.entries(locationSheet);
   const locPhrase = locEntries[0]
-    ? `${locEntries[0]}`
-    : styleProfile.eraAndSetting || 'the battleground';
+    ? buildCompactCharacterAnchor(locEntries[0][1], 14) || locEntries[0][0]
+    : styleProfile.eraAndSetting || 'the surrounding room';
+
+  const isBarefoot = leadChar ? /\bbarefoot\b/i.test(leadChar[1]) : false;
+  const stanceNote = isBarefoot ? 'bare feet planted firmly on the floor' : 'stance planted steadily on the ground';
 
   const lowerSpan = (beat.textSpan || '').toLowerCase();
-  const focusClause = (beat.textSpan || scene.narratorLine)
-    .replace(/["'.,;:!?]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  // Select contrasting shot & subject angle based on semantic cues in textSpan & duplicate index
   const variant = duplicateIdxInScene % 4;
   let shotType = 'Close-Up';
   let cameraAngle = 'low-angle';
-  let cameraMovement = 'Slow Push-In';
+  let cameraMovement = 'Static Frame';
   let actionDescription = '';
 
-  if (/\b(?:target|kings|crown|royal|own him|enemy|army|knights)\b/i.test(lowerSpan)) {
+  if (isInfancyOrChildhoodFlashback(lowerSpan)) {
+    shotType = 'Medium Shot';
+    cameraAngle = 'high-angle';
+    cameraMovement = isVideoMode ? 'Slow Push-In' : 'Static Frame';
+    actionDescription =
+      'flashback view inside a dimly lit shadowed nursery room showing an infant protagonist swaddled safely inside a wooden crib while a dark gaunt entity lurks silently behind the crib slats watching';
+  } else if (/\b(?:that\s+has\s+studied|studied|watching\s+from\s+behind)\b/i.test(lowerSpan)) {
     shotType = 'Over-the-Shoulder (OTS)';
     cameraAngle = 'high-angle';
-    cameraMovement = 'Tracking Subject';
-    actionDescription = `over-the-shoulder perspective looking past ${charPhrase} toward rival royal banners and advancing armed ranks near ${locPhrase}, warlords watching intently from a raised stone vantage as tension tightens around ${focusClause}`;
+    cameraMovement = isVideoMode ? 'Slow Push-In' : 'Static Frame';
+    actionDescription = `${charPhrase} facing forward completely unaware inside ${locPhrase}, while a towering unsmiling dark entity looms silently out of focus directly behind in deep shadow watching`;
+  } else if (/^\s*(?:it'?s\s+an\s+entity|it\s+is\s+an\s+entity|an\s+entity)\b/i.test(lowerSpan)) {
+    shotType = 'Medium Close-Up';
+    cameraAngle = 'low-angle';
+    cameraMovement = 'Static Frame';
+    actionDescription = `stark looming reveal of a gaunt shadowy entity with hollow unblinking eyes and completely unsmiling features materializing in ${locPhrase}`;
+  } else if (/\b(?:every\s+blink|blink)\b/i.test(lowerSpan)) {
+    shotType = 'Extreme Close-Up';
+    cameraAngle = 'eye-level';
+    cameraMovement = 'Static Frame';
+    actionDescription = `tight macro framing of pale eyes and dark lashes frozen mid-blink in exact 1:1 mirror symmetry inside ${locPhrase}`;
+  } else if (/\b(?:every\s+breath|breath)\b/i.test(lowerSpan)) {
+    shotType = 'Extreme Close-Up';
+    cameraAngle = 'eye-level';
+    cameraMovement = 'Static Frame';
+    actionDescription = `tight macro detail of faint frozen condensation breath mist blooming against cold mirror glass beside parted lips in exact 1:1 synchrony`;
+  } else if (/\b(?:every\s+move|move)\b/i.test(lowerSpan)) {
+    shotType = 'Medium Shot';
+    cameraAngle = 'eye-level';
+    cameraMovement = isVideoMode ? 'Tracking Subject' : 'Static Frame';
+    actionDescription = `symmetrical framing of ${charPhrase} with raised shoulder and hand posture mirrored 1:1 by an unsmiling reflection inside ${locPhrase}`;
+  } else if (/\bnever\s+reach\s+out\b/i.test(lowerSpan)) {
+    shotType = 'Medium Close-Up';
+    cameraAngle = 'eye-level';
+    cameraMovement = 'Static Frame';
+    actionDescription = `${charPhrase} standing with hands kept strictly motionless at their sides inside ${locPhrase}, leaving the cold glass completely untouched`;
+  } else if (/\bnever\s+cross\b/i.test(lowerSpan)) {
+    shotType = 'Medium Shot';
+    cameraAngle = 'low-angle';
+    cameraMovement = 'Static Frame';
+    actionDescription = `${charPhrase} with ${stanceNote} halted back from the dark ebony mirror frame inside ${locPhrase}, barrier unbroken`;
+  } else if (/\bhalf[- ]second\s+late\b/i.test(lowerSpan)) {
+    shotType = 'Medium Close-Up';
+    cameraAngle = 'eye-level';
+    cameraMovement = 'Static Frame';
+    actionDescription = `${charPhrase} turning slightly beside the glass inside ${locPhrase} while the unsmiling reflection remains noticeably frozen in the prior posture`;
+  } else if (/\bnow\s+it'?s\s+smiling\b/i.test(lowerSpan)) {
+    shotType = 'Extreme Close-Up';
+    cameraAngle = 'low-angle';
+    cameraMovement = 'Static Frame';
+    actionDescription = `chilling close view inside the mirror glass showing the reflection's stretched, unnaturally wide smile etched in stark high-contrast shadow`;
+  } else if (/\bnever\s+smiled\b/i.test(lowerSpan)) {
+    shotType = 'Close-Up';
+    cameraAngle = 'eye-level';
+    cameraMovement = 'Static Frame';
+    actionDescription = `tight facial close-up on ${charPhrase} inside ${locPhrase} standing stone-faced with a completely motionless, unsmiling mouth and quiet dread in the eyes`;
+  } else if (/\b(?:target|kings|crown|royal|own him|enemy|army|knights)\b/i.test(lowerSpan)) {
+    shotType = 'Over-the-Shoulder (OTS)';
+    cameraAngle = 'high-angle';
+    cameraMovement = isVideoMode ? 'Tracking Subject' : 'Static Frame';
+    actionDescription = `over-the-shoulder vantage looking past ${charPhrase} toward rival armed banners and advancing ranks across ${locPhrase}, tension palpable along the foreground ridge`;
+  } else if (/\b(?:guarding|warden|wall|mirror|reflection|entity|mimic)\b/i.test(lowerSpan)) {
+    shotType = 'Extreme Close-Up';
+    cameraAngle = 'low-angle';
+    cameraMovement = 'Static Frame';
+    actionDescription = `tight architectural detail along the heavy shadowed border of the glass in ${locPhrase}, dark looming stillness obstructing what lies beyond while ${charPhrase} remains dimly reflected in silhouette`;
   } else if (/\b(?:let him live|defeat|future|history|survive|last|takes everything|problem)\b/i.test(lowerSpan)) {
     shotType = 'Close-Up';
     cameraAngle = 'eye-level';
-    cameraMovement = 'Slow Push-In';
-    actionDescription = `tight character study on ${charPhrase}, dust smudged across weathered armor and brow creased in grim calculation as ${focusClause} weighs on his stance, shallow focus with ${locPhrase} blurred behind`;
+    cameraMovement = isVideoMode ? 'Slow Push-In' : 'Static Frame';
+    actionDescription = `tight facial study on ${charPhrase}, brow furrowed in grim calculation with shallow background focus blurring ${locPhrase}`;
   } else if (/\b(?:endless wars|swords|castles|battle|fire|ammo|bullet|weapon)\b/i.test(lowerSpan)) {
     shotType = 'Low-Angle Hero Shot';
     cameraAngle = 'low-angle';
-    cameraMovement = 'Slow Tilt Up';
-    actionDescription = `low-angle composition framing ${charPhrase} planted in a wide battle stance amid raised steel blades and smoke drift across ${locPhrase}, capturing the scale and peril of ${focusClause}`;
+    cameraMovement = isVideoMode ? 'Slow Tilt Up' : 'Static Frame';
+    actionDescription = `low-angle framing on ${charPhrase} with ${stanceNote} amid raised steel blades and smoke drift across ${locPhrase}`;
   } else if (variant === 0) {
     shotType = 'Close-Up';
     cameraAngle = 'eye-level';
-    cameraMovement = 'Slow Push-In';
-    actionDescription = `tight reaction framing on ${charPhrase} inside ${locPhrase}, taut posture and focused gaze reacting directly to the turning point of ${focusClause}`;
+    cameraMovement = isVideoMode ? 'Slow Push-In' : 'Static Frame';
+    actionDescription = `tight portrait study framing ${charPhrase} inside ${locPhrase}, tense stillness in shoulders and eyes fixed intently forward`;
   } else if (variant === 1) {
     shotType = 'Low-Angle Hero Shot';
     cameraAngle = 'low-angle';
-    cameraMovement = 'Tracking Subject';
-    actionDescription = `low-angle perspective following ${charPhrase} through ${locPhrase}, dramatic sky and looming stone architecture emphasizing the consequence of ${focusClause}`;
+    cameraMovement = isVideoMode ? 'Tracking Subject' : 'Static Frame';
+    actionDescription = `low-angle perspective framing ${charPhrase} within ${locPhrase} with ${stanceNote}, towering shadows stretching across the background surfaces`;
   } else if (variant === 2) {
     shotType = 'Over-the-Shoulder (OTS)';
     cameraAngle = 'high-angle';
-    cameraMovement = 'Smooth Pan';
-    actionDescription = `elevated over-the-shoulder vantage across ${locPhrase}, revealing surrounding terrain, tactical obstacles, and approaching figures tied to ${focusClause} while keeping ${charPhrase} in foreground`;
+    cameraMovement = isVideoMode ? 'Smooth Pan' : 'Static Frame';
+    actionDescription = `over-the-shoulder angle across ${locPhrase}, revealing surrounding depth, structural details, and shadows ahead of ${charPhrase}`;
   } else {
     shotType = 'Medium Close-Up';
     cameraAngle = 'dutch-tilt';
-    cameraMovement = 'Handheld Cinematic Drift';
-    actionDescription = `canted medium close-up capturing ${charPhrase} bracing in rugged terrain near ${locPhrase}, dust motes catching dramatic key light during ${focusClause}`;
+    cameraMovement = isVideoMode ? 'Handheld Cinematic Drift' : 'Static Frame';
+    actionDescription = `canted medium close-up capturing ${charPhrase} bracing in quiet unease inside ${locPhrase}, stark directional contrast across facial contours`;
   }
 
   const optics =
@@ -770,7 +1276,8 @@ function buildContextPreservingProgressionBeat(
       ? 'Shot on 85mm f/1.8 portrait prime lens with shallow depth of field'
       : 'Shot on 35mm f/4 cinema lens with atmospheric depth';
 
-  const fullBody = `${actionDescription}, ${styleProfile.lighting}, ${styleProfile.colorPalette} palette, ${optics}, Visual Style: ${styleProfile.artStyle}.`;
+  const cleanLighting = sanitizeMonochromeLighting(styleProfile.lighting, styleProfile);
+  const fullBody = `${actionDescription}, ${cleanLighting}, ${styleProfile.colorPalette} palette, ${optics}, Visual Style: ${styleProfile.artStyle}.`;
 
   return formatFinalBeatPrompt(
     {
@@ -781,7 +1288,8 @@ function buildContextPreservingProgressionBeat(
       imagePrompt: fullBody,
     },
     isLongForm,
-    isVideoMode
+    isVideoMode,
+    { styleProfile, characterSheet, locationSheet }
   );
 }
 
@@ -872,10 +1380,12 @@ export function deduplicateAndProgressSceneBeats(
 
     const currIsTinyConnector = isShortConnectiveFragment(curr);
     const prevIsTinyConnector = isShortConnectiveFragment(prev);
+    const distinctMontageSubjects = hasDistinctMontageFocalSubject(prev, curr);
 
     const shouldMergeAdjacent =
       combinedSeconds <= maxMergeSeconds &&
       combinedWords <= VISUAL_EVENT_MAX_WORDS &&
+      !(distinctMontageSubjects && sim < 0.68) &&
       (sim >= 0.46 || currIsTinyConnector || prevIsTinyConnector);
 
     if (shouldMergeAdjacent) {
@@ -909,7 +1419,9 @@ export function deduplicateAndProgressSceneBeats(
     let hasDuplicateInScene = false;
     for (let j = 0; j < finalized.length; j++) {
       const sim = computeVisualPromptSimilarity(finalized[j].imagePrompt, beat.imagePrompt);
-      if (sim >= 0.48) {
+      const distinctMontage = hasDistinctMontageFocalSubject(finalized[j], beat);
+      const cloneThreshold = distinctMontage ? 0.68 : 0.48;
+      if (sim >= cloneThreshold) {
         hasDuplicateInScene = true;
         break;
       }
@@ -940,13 +1452,15 @@ export function deduplicateAndProgressSceneBeats(
 /**
  * Inspects all scenes to find any structural defects requiring Phase-2 LLM Beat Progression Repair:
  * - Intra-scene duplicate or near-duplicate beats (including non-adjacent A-B-A-B clones)
- * - Oversized multi-clause beats (> 15 words or > 3.2s in image mode) that need multi-beat progression
+ * - Oversized multi-clause beats (> 15 words or > 3.1s in image mode) OR dense 7-14 word patterns
+ *   (unsplit action triplets, entity+birth flashbacks, repeated negations, lag+smile climax merges)
  * - Era/location bleed across chronological shifts
  */
 export function auditScenesForRepair(
   scenes: Scene[],
   styleProfile: StyleProfile,
-  isVideoMode: boolean
+  isVideoMode: boolean,
+  targetVideoDuration?: number
 ): Array<{ sceneIndex: number; reasons: string[] }> {
   const flagged: Array<{ sceneIndex: number; reasons: string[] }> = [];
   let enteredHistoricalPast = false;
@@ -960,20 +1474,26 @@ export function auditScenesForRepair(
       enteredHistoricalPast = true;
     }
 
-    // 1. Check all pairs (i, j) within scene for clones
+    // 1. Check all pairs (i, j) within scene for clones (raising ceiling when distinct montage subjects apply)
     for (let i = 0; i < beats.length; i++) {
       for (let j = i + 1; j < beats.length; j++) {
         const sim = computeVisualPromptSimilarity(beats[i].imagePrompt, beats[j].imagePrompt);
-        if (sim >= 0.50) {
+        const cloneThreshold = hasDistinctMontageFocalSubject(beats[i], beats[j]) ? 0.68 : 0.50;
+        if (sim >= cloneThreshold) {
           reasons.push(`Beats ${i + 1} and ${j + 1} have near-identical visual prompts (${Math.round(sim * 100)}% overlap)`);
         }
       }
 
-      // 2. Check oversized beat needing multi-beat progression
+      // 2. Check oversized beat OR dense multi-concept 7-14 word patterns needing montage/semantic split
       const wc = getWordCount(beats[i].textSpan);
       const sec = beats[i].estimatedSeconds || 2;
       if (!isVideoMode && (wc > VISUAL_EVENT_MAX_WORDS || sec > VISUAL_EVENT_MAX_SECONDS)) {
         reasons.push(`Beat ${i + 1} ("${beats[i].textSpan}") spans ${wc} words / ${sec}s and needs progression into 2-3 distinct visual beats`);
+      } else if (!isVideoMode || beats.length === 1) {
+        const densePatternIssue = detectUnsplitDenseBeatPattern(beats[i].textSpan || '');
+        if (densePatternIssue) {
+          reasons.push(`Beat ${i + 1} ("${beats[i].textSpan}"): ${densePatternIssue}`);
+        }
       }
 
       // 3. Check era bleed
@@ -983,6 +1503,10 @@ export function auditScenesForRepair(
       ) {
         reasons.push(`Beat ${i + 1} leaks modern/futuristic scenery into historical past setting`);
       }
+    }
+
+    if (isVideoMode && targetVideoDuration && targetVideoDuration > 0 && beats.length === 1) {
+      reasons.push(`Single-beat Video Mode clip must be broken into 2-3 cohesive visual progressions summing to ${targetVideoDuration}s`);
     }
 
     if (reasons.length > 0) {
@@ -996,6 +1520,54 @@ export function auditScenesForRepair(
   return flagged;
 }
 
+/**
+ * Proportionally scales beat durations inside a Text-to-Video scene so their exact sum
+ * matches targetDuration (e.g., 4.0s clip = 2.0s + 2.0s or 1.4s + 1.3s + 1.3s).
+ */
+export function scaleBeatsToTargetDuration(beats: Beat[], targetDuration: number): Beat[] {
+  if (!Array.isArray(beats) || beats.length === 0 || !targetDuration || targetDuration <= 0) {
+    return beats;
+  }
+
+  const roundedTarget = Math.round(targetDuration * 10) / 10;
+  const minPerBeat = Math.min(0.6, Math.round((roundedTarget / beats.length) * 10) / 10);
+
+  const weights = beats.map((b) => {
+    const wc = getWordCount(b.textSpan || '');
+    const rawSec = typeof b.estimatedSeconds === 'number' && b.estimatedSeconds > 0 ? b.estimatedSeconds : Math.max(0.8, wc / 2.2);
+    return Math.max(0.5, rawSec);
+  });
+  const totalWeight = weights.reduce((acc, w) => acc + w, 0) || beats.length;
+
+  const scaled = beats.map((b, idx) => {
+    const share = Math.round(((weights[idx] / totalWeight) * roundedTarget) * 10) / 10;
+    return {
+      ...b,
+      estimatedSeconds: Math.max(minPerBeat, share),
+    };
+  });
+
+  // Absorb any rounding delta cleanly onto the longest beat so total equals roundedTarget exactly
+  const currentSum = Math.round(scaled.reduce((acc, b) => acc + (b.estimatedSeconds || 0), 0) * 10) / 10;
+  const delta = Math.round((roundedTarget - currentSum) * 10) / 10;
+  if (delta !== 0) {
+    let targetIdx = scaled.length - 1;
+    let bestWeight = -1;
+    for (let i = 0; i < scaled.length; i++) {
+      if ((scaled[i].estimatedSeconds || 0) > bestWeight && (scaled[i].estimatedSeconds || 0) + delta >= minPerBeat) {
+        bestWeight = scaled[i].estimatedSeconds || 0;
+        targetIdx = i;
+      }
+    }
+    const adjusted = Math.round(((scaled[targetIdx].estimatedSeconds || minPerBeat) + delta) * 10) / 10;
+    if (adjusted >= 0.4) {
+      scaled[targetIdx] = { ...scaled[targetIdx], estimatedSeconds: adjusted };
+    }
+  }
+
+  return scaled;
+}
+
 export interface TwoPhaseProgressionParams {
   scenes: Scene[];
   styleProfile: StyleProfile;
@@ -1003,6 +1575,7 @@ export interface TwoPhaseProgressionParams {
   locationSheet: Record<string, string>;
   isLongForm: boolean;
   isVideoMode: boolean;
+  targetVideoDuration?: number;
   apiKey?: string;
   aiProvider?: AiProvider;
   modelQuality?: 'standard' | 'high';
@@ -1024,6 +1597,7 @@ export async function runTwoPhaseProgressionAndRepair(
     locationSheet,
     isLongForm,
     isVideoMode,
+    targetVideoDuration,
     apiKey,
     aiProvider = 'gemini',
     modelQuality,
@@ -1059,7 +1633,7 @@ export async function runTwoPhaseProgressionAndRepair(
   );
 
   // Step 4: Audit scenes for clones, oversized run-on beats, or era bleed
-  const flaggedScenes = auditScenesForRepair(workingScenes, styleProfile, isVideoMode);
+  const flaggedScenes = auditScenesForRepair(workingScenes, styleProfile, isVideoMode, targetVideoDuration);
 
   const hasLiveApiKey =
     typeof apiKey === 'string' &&
@@ -1084,6 +1658,10 @@ export async function runTwoPhaseProgressionAndRepair(
         ? 'Cinematic 16:9 widescreen composition'
         : 'Vertical 9:16 portrait composition';
       const arFlag = isLongForm ? '--ar 16:9' : '--ar 9:16';
+      const videoClipBudgetNote =
+        isVideoMode && targetVideoDuration && targetVideoDuration > 0
+          ? `\n- VIDEO CLIP DURATION LOCK: Each scene represents ONE continuous ${targetVideoDuration}-second AI video clip. Keep ${targetVideoDuration <= 5 ? '2 to 3' : '3 to 4'} cohesive sub-beats whose "estimatedSeconds" values sum cleanly to ${targetVideoDuration}.0s (avoid cramming 5-6 unrelated scene jumps into one short clip).`
+          : '';
 
       const repairSystemPrompt = `You are a senior film director and storyboard continuity supervisor performing a targeted second-pass beat progression repair.
 You will receive specific scenes from a storyboard whose beats had visual repetition, missing narration coverage, oversized beats, or setting bleed.
@@ -1092,22 +1670,32 @@ GLOBAL PRODUCTION LOCKS:
 - Art Style: ${styleProfile.artStyle}
 - Color Palette: ${styleProfile.colorPalette}
 - Lighting: ${styleProfile.lighting}
-- Era & Setting: ${styleProfile.eraAndSetting}
+- Era & Setting: ${styleProfile.eraAndSetting}${videoClipBudgetNote}
 ${compactCastSummary ? `\nLOCKED CHARACTERS (Compact Identity Anchors - MUST include in every beat where character appears):\n${compactCastSummary}` : ''}
 ${compactLocSummary ? `\nLOCKED LOCATIONS:\n${compactLocSummary}` : ''}
 
 STRICT REPAIR RULES:
 1. 100% NARRATION WORD COVERAGE: Every word in the scene's "narratorLine" MUST appear in exact sequential order across its "beats[].textSpan". Never drop or truncate trailing clauses.
-2. VISUAL-EVENT PACING (~1.5s to 3.0s per beat, max ~14 words per beat):
-   - Cut to a new beat ONLY when a genuine physical action, object state transition, camera vantage shift, or reveal occurs.
-   - NEVER isolate short non-visual filler fragments (like "But he has one problem:", "target for kings", "him live.") into standalone beats! Merge short connective fragments with the action clause they belong to.
-   - If a sentence is long (16+ words with multiple distinct actions/events), divide it into 2 to 4 progressive visual-event beats, each showing a completely different visual action, camera distance, or perspective.
-3. ZERO DUPLICATE OR CLONE PROMPTS: Every beat within a scene MUST depict a distinct physical moment, object state, or camera angle. Never repeat the same scene description across beats.
-4. SYNCHRONIZED SHOT METADATA & OPENING:
+2. DYNAMIC VISUAL-EVENT & SELECTIVE MONTAGE PACING:
+   - Default baseline (~1.5s to 3.0s per beat): Cut on genuine physical actions, object state transitions, camera vantage shifts, or reveals. NEVER isolate plain grammar connectors ("But he has one problem:", "him live.") into stub beats.
+   - EXCEPTION A - ACTION-TRIPLET / PARALLEL-LIST MONTAGE (~0.7s to 1.2s per beat): Whenever narration lists 2-3+ parallel actions/sensory items (e.g. "every blink, every breath, every move"), split EVERY item into its own rapid beat with a RADICALLY DIFFERENT shot scale and focal noun ("every blink" -> Extreme Close-Up macro on eyelids in 1:1 mirror symmetry; "every breath" -> Extreme Close-Up macro on frozen condensation mist on glass near parted lips; "every move" -> Medium Shot on raised shoulder and hand posture). Keep exact 1:1 synchrony unless lag is reached.
+   - EXCEPTION B - SEMANTIC-ANCHOR & TEMPORAL FLASHBACK DECOMPOSITION (~0.8s to 1.3s per beat): When a clause packs an Entity + Observation + Time-Origin Flashback (e.g. "It's an entity that has studied you since birth"), decompose cleanly into:
+     * Entity beat ("It's an entity") -> stylized reveal of the unsmiling entity.
+     * Stalking/verb beat ("that has studied") -> protagonist facing forward completely unaware in sharp focus while the dark entity looms behind in deep shadow watching.
+     * Origin flashback beat ("you since birth") -> infant protagonist swaddled INSIDE a wooden crib while the shadowy entity hides behind/outside the crib slats watching. Strictly NO adult turtleneck/jeans wardrobe on the baby, NO modern bedroom traits, and NO etched date timelines on glass!
+   - EXCEPTION C - REPEATED NEGATIONS & CLIMAX TURNS: Split repeated rhetorical negations ("You never reach out." hands still at sides -> "You never cross." feet halted before frame) and separate timing-lag beats from smile-reveal beats ("half-second late." -> "Now it's smiling." -> "And you never smiled.").
+3. CHRONOLOGICAL TWIST PROTECTION & ZERO SPOILERS:
+   - Never reveal late-story horror twists early (if reflection only smiles at the end, keep it unsmiling earlier; if Scene 3 says "perfectly mimicking", show 1:1 synchrony with zero delay).
+   - Never contradict negation beats, never quote spoken words inside visual prompts, and never invent unseen whispers.
+4. MONOCHROME & ENTITY CONSISTENCY:
+   - ${isMonochromeStyle(styleProfile) ? 'STRICT MONOCHROME INK STYLE ACTIVE: NEVER include color Kelvin temperatures (3200K warm, 5400K, cyan, amber, crimson). Use pure monochrome contrast and chiaroscuro ink shadow lighting only.' : 'Keep lighting and color palette aligned with Style Profile.'}
+   - NEVER output raw JSON keys like "DarkRoom" or "Protagonist" inside imagePrompt; use natural English environmental phrases and consistent footwear/clothing (except infant flashbacks where baby wears crib blankets).
+5. SYNCHRONIZED SHOT METADATA & OPENING:
    - Each beat MUST specify "shotType", "cameraAngle", and "cameraMovement".
+   - NEVER place framing terms like "over-the-shoulder" or "pov" inside "cameraAngle"! Only vertical/tilt angles are allowed in cameraAngle.
    - Begin "imagePrompt" with: "${orientationText}, <shotType>, <cameraAngle>, <Art Style> - <Subject with compact locked identity> <concrete action/state>, <setting>, <lighting & lens> ${arFlag}"
    - Ensure shotType and cameraAngle in metadata match the opening of imagePrompt 1-for-1.
-5. NATURAL BIOMECHANICS & CHRONOLOGY:
+6. NATURAL BIOMECHANICS & CHRONOLOGY:
    - NEVER write degree angles or body-weight percentages (e.g. "70% weight", "15 degrees"). Describe posture, weight, grip, and gaze in natural language.
    - Strictly respect chronological setting progression (do not leak earlier modern/sci-fi rooms into later historical/past scenes).
    - Do NOT use em dashes or non-breaking hyphens. Return ONLY raw JSON:
@@ -1177,7 +1765,13 @@ STRICT REPAIR RULES:
                 estimatedSeconds:
                   typeof b.estimatedSeconds === 'number' && b.estimatedSeconds > 0
                     ? Math.round(b.estimatedSeconds * 10) / 10
-                    : Math.max(1.5, Math.min(3.0, Math.round((getWordCount(b.textSpan) / 2.2) * 10) / 10)),
+                    : (() => {
+                        const wc = getWordCount(b.textSpan);
+                        const isMontage = extractMontageFocalCategory(b.textSpan || '') !== null;
+                        return isMontage
+                          ? Math.max(MONTAGE_MIN_SECONDS, Math.min(1.3, Math.round((wc / 2.3) * 10) / 10))
+                          : Math.max(1.4, Math.min(3.0, Math.round((wc / 2.3) * 10) / 10));
+                      })(),
               }));
 
             if (cleanedRepairedBeats.length > 0) {
@@ -1242,7 +1836,12 @@ STRICT REPAIR RULES:
           imagePrompt: withCharLocks,
         },
         isLongForm,
-        isVideoMode
+        isVideoMode,
+        {
+          styleProfile,
+          characterSheet,
+          locationSheet,
+        }
       );
 
       return {
@@ -1254,6 +1853,21 @@ STRICT REPAIR RULES:
     const totalBeatSeconds = Math.round(
       formattedBeats.reduce((sum, b) => sum + (b.estimatedSeconds || 1.5), 0) * 10
     ) / 10;
+
+    if (isVideoMode && targetVideoDuration && targetVideoDuration > 0) {
+      const scaledBeats = scaleBeatsToTargetDuration(formattedBeats, targetVideoDuration);
+      const spokenSeconds = Math.round((getWordCount(scene.narratorLine || '') / 2.2) * 10) / 10;
+      const syncedVideoPrompt = scene.videoPrompt
+        ? updateVideoPromptDuration(scene.videoPrompt, targetVideoDuration, spokenSeconds)
+        : scene.videoPrompt;
+
+      return {
+        ...scene,
+        estimatedSeconds: targetVideoDuration,
+        videoPrompt: syncedVideoPrompt,
+        beats: scaledBeats,
+      };
+    }
 
     return {
       ...scene,
@@ -1332,7 +1946,12 @@ export function normalizeStoryboardForDisplay(
           beatIndex: idx + 1,
         },
         options.isLongForm,
-        options.isVideoMode
+        options.isVideoMode,
+        {
+          styleProfile,
+          characterSheet: options.characterSheet,
+          locationSheet: options.locationSheet,
+        }
       );
 
       return {
@@ -1345,12 +1964,20 @@ export function normalizeStoryboardForDisplay(
       formatted.reduce((acc, b) => acc + (b.estimatedSeconds || 1.5), 0) * 10
     ) / 10;
 
+    if (options.isVideoMode) {
+      const clipSeconds = options.targetVideoDuration || scene.estimatedSeconds || 5;
+      return {
+        ...scene,
+        narratorLine: cleanNarration,
+        estimatedSeconds: clipSeconds,
+        beats: scaleBeatsToTargetDuration(formatted, clipSeconds),
+      };
+    }
+
     return {
       ...scene,
       narratorLine: cleanNarration,
-      estimatedSeconds: options.isVideoMode
-        ? (options.targetVideoDuration || scene.estimatedSeconds || 5)
-        : (sumSec > 0 ? sumSec : scene.estimatedSeconds),
+      estimatedSeconds: sumSec > 0 ? sumSec : scene.estimatedSeconds,
       beats: formatted,
     };
   });

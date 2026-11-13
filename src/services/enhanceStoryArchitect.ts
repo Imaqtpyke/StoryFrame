@@ -12,8 +12,12 @@ import {
   extractTemporalAnchor,
 } from './beatSplitting';
 import {
+  expandEntityKeysInPrompt,
+  isMonochromeStyle,
   normalizeUnicodeAndDashes,
   runTwoPhaseProgressionAndRepair,
+  sanitizeMonochromeLighting,
+  sanitizeStillImageMotionAndOptics,
 } from './beatProgressionEngine';
 import { updateVideoPromptDuration } from './videoSuitability';
 import { cleanAndDeduplicatePrompt, assembleCleanPrompt, sanitizeCharacterIdentitySheet } from './geminiClient';
@@ -237,13 +241,16 @@ You MUST take their raw premise, question, draft, or concept and perform compreh
      : `- Speech runs at ~2 words per second. Every scene's "narratorLine" must be a natural spoken sentence, and "estimatedSeconds" must reflect spoken pacing accurately (~1 second per 2 words).
    - If a target duration is set (${durationSeconds ? durationSeconds + 's' : 'automatic'}), pace the script length so all scenes combined match this target closely.`}
 
-6. VISUAL-EVENT MULTI-BEAT BREAKDOWN & 100% NARRATION COVERAGE:
+6. DYNAMIC VISUAL-EVENT & SELECTIVE MONTAGE BREAKDOWN & 100% NARRATION COVERAGE:
    ${isVideoMode
      ? `- MANDATORY MULTI-BEAT RULE: A single beat spanning an entire ${targetVideoDuration}-second video clip is STRICTLY FORBIDDEN.
-   - Every ${targetVideoDuration}-second scene MUST be subdivided into 2 to 3 sequential visual-event micro-beats (${targetVideoDuration <= 6 ? '2 to 3 beats of ~1.5s to 2.5s each' : '3 to 4 beats of ~1.5s to 3.0s each'}).
-   - Each beat covers a meaningful action phrase or visual event from the narratorLine and presents a distinct visual camera shot, angle, and movement progression (Beat 1: establishing/starting action, Beat 2: dynamic reaction or shift, Beat 3: immediate consequence or visual punchline).`
-     : `- VISUAL-EVENT PACING RULE (~1.5s to 3.0s PER BEAT): Partition each scene's spoken sentence across 2 to 4 progressive visual-event beats (~1.5s to 3.0s / ~5 to 14 spoken words per beat). Cut to a new beat when a distinct physical action, reaction, object state change, perspective shift, or reveal occurs.
-   - MERGE SHORT CONNECTOR FRAGMENTS: Do NOT slice tiny 1-to-4 word connective filler phrases (e.g. "But he has one problem:", "target for kings", "him live.") into isolated duplicate beats. Combine connectors naturally with the visual action or reaction beat they belong to (unless it is a standalone geographic location/year callout like "In 1896," or "Swedish").
+   - Every ${targetVideoDuration}-second scene MUST be subdivided into ${targetVideoDuration <= 5 ? '2 to 3' : '3 to 4'} cohesive visual-event micro-beats whose "estimatedSeconds" add up cleanly to ${targetVideoDuration}.0s.
+   - If a line stacks a semantic-anchor origin flashback ("It's an entity that has studied you since birth" with infant inside wooden crib) AND an action triplet ("every blink, every breath, every move"), repeated negations, or climax turns, SPILL across consecutive ${targetVideoDuration}-second clips (max <=${maxSpokenWordsPerScene} spoken words and <=3 cuts per clip) instead of cramming 5-6 cuts into one ${targetVideoDuration}s AI video clip.`
+     : `- DYNAMIC VISUAL-EVENT PACING RULE (~1.5s to 3.0s default + ~0.7s to 1.2s selective rapid montage): Partition each scene into progressive visual beats. Keep plain clauses at ~1.5s-3.0s and MERGE tiny grammar glue ("But he has one problem:", "him live.").
+   - SELECTIVE RAPID MONTAGE TRIGGERS (apply even on 7-14 word lines!):
+     * ACTION-TRIPLET / PARALLEL LISTS ("every blink, every breath, every move."): Split each item into its own rapid 0.7s-1.2s beat with distinct shot scale & focal noun (Extreme Close-Up eyelids mid-blink -> Extreme Close-Up condensation frost mist on glass -> Medium Shot raised shoulder/hand posture, all in exact 1:1 synchrony).
+     * SEMANTIC-ANCHOR + ORIGIN FLASHBACK ("It's an entity that has studied you since birth"): Split into (1) Entity showcase (unsmiling stylized silhouette), (2) Watching from behind (protagonist facing forward unaware in crisp foreground focus while entity looms behind in deep shadow), and (3) Origin flashback (INFANT protagonist swaddled INSIDE a wooden crib while shadowy entity hides behind crib slats watching; zero adult clothing, zero modern bedroom traits, zero etched mirror dates!).
+     * REPEATED NEGATIONS & CLIMAX TURNS: Split repeated negatives ("You never reach out." hands motionless -> "You never cross." feet halted before glass threshold) and separate reflection lag from smile reveal ("half-second late." -> "Now it's smiling." -> "And you never smiled.").
    - 100% SPOKEN NARRATION COVERAGE (ZERO DROPPED WORDS): Every single word of scene.narratorLine MUST appear across scene.beats[].textSpan in exact sequential order from start to finish. NEVER truncate or drop trailing clauses!`}
 
 7. BIOMECHANICAL ANATOMY, ACCURATE GESTURES & GROUNDED POSTURE:
@@ -258,24 +265,27 @@ You MUST take their raw premise, question, draft, or concept and perform compreh
    - HEAD, NECK & GAZE VECTORS: Explicitly describe head tilt and eye gaze (e.g. "neck angled slightly forward, chin dipped, gaze tracking sharply toward screen-right").
    - ZERO ROBOTIC BIOMECHANICAL MATH: NEVER write numeric weight percentages or joint degree angles (NEVER write "70% weight", "15 degrees", "25 degrees"). Use vivid, natural physical descriptions only.
 
-8. ATMOSPHERIC MICRO-ENVIRONMENT, TACTILE PHYSICS & LIGHTING KELVIN:
+8. ATMOSPHERIC MICRO-ENVIRONMENT, TACTILE PHYSICS & STYLE-LOCKED LIGHTING:
    - PARTICLES & WEATHER: (e.g. "powdery dry snow accumulating in seam creases of dark woolen fabric, subtle breath vapor rising in freezing air").
    - SURFACE TACTILITY: (e.g. "damp pine needles and crushed leaves compressed underfoot, glistening frost crystals on wood grain").
-   - EMOTIONAL LIGHTING KELVIN & CONTRAST CURVE: Explicit light angle, Kelvin temperature (3000K warm tungsten vs 6500K overcast daylight), and key-to-fill contrast ratio matched to dramatic beat.
+   - LIGHTING & MONOCHROME STYLE LOCK: For color stories, specify Kelvin color temperature (3000K warm tungsten vs 6500K daylight). For strictly BLACK-AND-WHITE, MONOCHROME, NOIR INK, or MANGA ("no gray gradients") stories, NEVER output chromatic Kelvin ("3200K warm", "cold 5400K") or color hues ("cold cyan", "amber"): use stark high-contrast chiaroscuro and harsh white highlights instead.
 
-9. CINEMATIC OPTICS & LENS PRESCRIPTIONS:
-   Specify focal length and aperture/f-stop in every prompt (e.g. "50mm anamorphic prime lens, f/2.0 shallow depth of field with soft bokeh", "24mm f/8 deep focus").
+9. CINEMATIC OPTICS & LENS PRESCRIPTIONS (STILL IMAGE = ZERO MOTION LANGUAGE):
+   Specify ONE focal length and aperture/f-stop in every prompt (e.g. "50mm anamorphic prime lens, f/2.0 shallow depth of field"). Never duplicate focal lengths ("35mm 35mm"). In Text-to-Image mode, NEVER write video motion prose ("tracking left to reveal", "tracking upward").
 
-10. MODE ISOLATION FOR AUDIO & FOLEY CUES:
+10. MODE ISOLATION FOR AUDIO & FOLEY CUES & PHANTOM TEXT:
     ${isVideoMode
       ? `- VIDEO MODE MANDATORY SOUND DESIGN: Every video prompt and video beat MUST specify ambient foley, sound effects, footsteps, or handling cues (e.g. "Audio: muffled footsteps in wet gravel, metallic coin drop, no dialogue, ambient foley only").`
-      : `- IMAGE MODE STRICT AUDIO PROHIBITION: Diffusion image models (Midjourney, Flux) cannot render sound. DO NOT include audio descriptions, soundtrack cues, or sound effects in image prompts.`}
+      : `- IMAGE MODE STRICT AUDIO PROHIBITION: Diffusion image models (Midjourney, Flux) cannot render sound. DO NOT include audio descriptions, sound cues ("listening to an unseen whisper"), or invented etched text date timelines.`}
 
 11. KINETIC PROGRESSION & VELOCITY TEMPO:
     ${isVideoMode ? `- Explicit velocity and tempo progression (e.g. "Velocity: measured deliberate movement accelerating into a sharp sudden pivot").` : ''}
 
-12. LITERAL VISUAL KINEMATICS & TRANSFORMATION RULE (SHOW, DO NOT JUST TELL):
+12. LITERAL VISUAL KINEMATICS, CHRONOLOGICAL TWISTS & NEGATION DISCIPLINE:
     - When narration verbs describe actions or losses (e.g. "disappears", "melts", "vanishes"), the AI visual prompt MUST LITERALLY SHOW THAT ACTION HAPPENING TO THE OBJECT!
+    - CHRONOLOGICAL TWIST PROTECTION: Never spoil a late reveal earlier in the storyboard (e.g. if a reflection only smiles in Scene 7, ALL earlier beats including "It's an entity" and "that has studied" MUST remain neutral/unblinking; if Scene 3 states it is "perfectly mimicking", depict 1:1 zero-delay synchrony on blink, breath, and move).
+    - NEGATION FIDELITY: Respect negations literally ("You never reach out" means hands stay down and glass remains untouched).
+    - Keep characterSheet strictly expression-free and pose-free, lock recurring entities/antagonists in characterSheet as well as protagonists, maintain exact footwear consistency ("barefoot" stays barefoot, except infant crib flashbacks), expand CamelCase entity keys into natural English (never raw "DarkRoom" or "Protagonist"), and keep framing ("Over-the-Shoulder (OTS)", "Medium Close-Up") in shotType and vertical/tilt angles ("eye-level", "low-angle", "high-angle") in cameraAngle.
 
 13. GROUNDED STORY CONSTRAINT & ANTI-HALLUCINATION ENGINE:
     - ZERO UNSTATED INVENTIONS: Strictly forbid hallucinating phantom characters, arbitrary weapons, fictional sci-fi devices, or unprompted plot twists not in the user's premise.
@@ -295,7 +305,7 @@ You MUST take their raw premise, question, draft, or concept and perform compreh
 
 17. FRONT-LOADED VISUAL FOUNDATION (FIRST 15-20 TOKENS):
     - In all prompts, front-load the visual foundation at the start:
-      [${characterStyle || 'cinematic'}, 32-bit flat-shaded] [Environment Anchor] [Subject & Locked Color/Material]: [Action kinematics & movement]. Camera: [Shot Type], [Camera Angle], [Camera Movement]. Optics: [...]. Lighting: [...]. Physics: [...]. ${isVideoMode ? 'Audio: no dialogue, ambient sound only. ' : ''}${defaultAspectRatio}.`;
+      [${characterStyle || 'cinematic'}] [Environment Anchor] [Subject & Locked Color/Material]: [Action kinematics & movement]. Camera: [Shot Type], [Camera Angle], [Camera Movement]. Optics: [...]. Lighting: [...]. Physics: [...]. ${isVideoMode ? 'Audio: no dialogue, ambient sound only. ' : ''}${defaultAspectRatio}.`;
 
   const systemPrompt = isVideoMode
     ? `You are an expert film director, cinematographer, and AI video prompt engineer.
@@ -319,7 +329,7 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
 
 2. Continuity Sheets & Locked Wardrobe Token (MANDATORY RESOLUTION):
    Generate the full breakdown in one model call that has the entire story in view.
-   - "characterSheet": Create a top-level object mapping each recurring character name to ONE fixed, highly detailed visual description with PERMANENT WARDROBE (e.g. "wearing a plain crewneck white t-shirt, blue denim shorts, and blue rubber slippers").
+   - "characterSheet": Create a top-level object mapping EVERY recurring human character AND recurring non-human entity/mimic/creature to ONE fixed, highly detailed expression-free visual description with PERMANENT WARDROBE/SILHOUETTE (e.g. "wearing a plain crewneck white t-shirt, blue denim shorts, and blue rubber slippers"). Keep infant flashbacks free of adult clothing!
    - "locationSheet": Create a top-level object mapping any specific place returned to more than once to ONE fixed, highly detailed visual description.
    - CRITICAL WARDROBE LOCK & STRICT BAN ON "MATCHING ESTABLISHED LOOK":
      * Downstream diffusion models (Kling, Runway, Sora, Midjourney, Flux) render each shot independently and have NO memory of prior scenes.
@@ -433,11 +443,11 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - "lensAndFilmStock": lens and film stock descriptor
 
 2. Continuity Sheets & Locked Wardrobe Token:
-   - "characterSheet": recurring character descriptions with PERMANENT LOCKED WARDROBE (e.g. "wearing a plain crewneck white t-shirt, blue denim shorts, and blue rubber slippers").
+   - "characterSheet": recurring human character AND recurring non-human entity/creature descriptions with PERMANENT LOCKED WARDROBE/SILHOUETTE and ZERO transient facial expressions ("smiling", "horrified", "neutral expression") or frozen poses.
    - "locationSheet": recurring location descriptions.
    - CRITICAL WARDROBE LOCK & STRICT BAN ON SHORTCUTS:
      * NEVER write "(matching established look from Scene 1)" or "(matching established look)".
-     * In EVERY single beat's imagePrompt where the character appears, state their locked clothing explicitly (e.g. "Kael, wearing a plain crewneck white t-shirt and blue slippers").
+     * In EVERY single beat's imagePrompt where the adult character or entity appears, state their locked clothing/silhouette explicitly (except infancy/childhood flashbacks where baby wears crib blankets, NOT adult clothing).
 
 3. Nested Scenes and Beats (100% NARRATION COVERAGE & NON-DUPLICATE PROGRESSION):
    - Each scene has index, narratorLine, estimatedSeconds, and beats array.
@@ -531,15 +541,24 @@ ${durationInstruction}`;
     topP: 0.85,
   });
 
-  // Sanitize styleProfile
+  // Sanitize styleProfile (enforce monochrome lighting purity when style is B&W / monochrome)
   const rawStyleProfile = parsedData.styleProfile || {};
-  const sanitizedStyleProfile: StyleProfile = {
+  const preliminaryStyleProfile: StyleProfile = {
     artStyle: removeEmDashes(rawStyleProfile.artStyle || characterStyle || 'Cinematic Rendering'),
     colorPalette: removeEmDashes(rawStyleProfile.colorPalette || 'Harmonious color grading matching narrative tone'),
     lighting: removeEmDashes(rawStyleProfile.lighting || 'Cinematic three-point lighting with soft rim fill'),
     eraAndSetting: removeEmDashes(rawStyleProfile.eraAndSetting || 'Contemporary atmospheric setting'),
     lensAndFilmStock: removeEmDashes(rawStyleProfile.lensAndFilmStock || 'Shot on 35mm anamorphic prime lens, subtle film grain'),
   };
+  const sanitizedStyleProfile: StyleProfile = isMonochromeStyle(preliminaryStyleProfile)
+    ? {
+        ...preliminaryStyleProfile,
+        colorPalette: sanitizeMonochromeLighting(preliminaryStyleProfile.colorPalette, preliminaryStyleProfile),
+        lighting:
+          sanitizeMonochromeLighting(preliminaryStyleProfile.lighting, preliminaryStyleProfile) ||
+          'Stark high-contrast chiaroscuro lighting with deep pitch-black shadows and crisp white highlights',
+      }
+    : preliminaryStyleProfile;
 
   const sanitizedCharacterSheet: Record<string, string> = {};
   if (parsedData.characterSheet && typeof parsedData.characterSheet === 'object') {
@@ -596,6 +615,15 @@ ${durationInstruction}`;
         imagePrompt = `[${sanitizedStyleProfile.artStyle}] ${imagePrompt}`;
       }
 
+      const rawShotType = removeEmDashes(beat.shotType || inferShotType(imagePrompt, beatIndex));
+      const rawCameraAngle = removeEmDashes(beat.cameraAngle || inferCameraAngle(imagePrompt, beatIndex));
+      const cameraMovement = removeEmDashes(beat.cameraMovement || inferCameraMovement(imagePrompt, beatIndex));
+
+      // Expand CamelCase entity keys, enforce monochrome lighting purity, and clean still-image motion/optics
+      imagePrompt = expandEntityKeysInPrompt(imagePrompt, sanitizedCharacterSheet, sanitizedLocationSheet);
+      imagePrompt = sanitizeMonochromeLighting(imagePrompt, sanitizedStyleProfile);
+      imagePrompt = sanitizeStillImageMotionAndOptics(imagePrompt, rawShotType, isVideoMode);
+
       // Deduplicate and clean prompt, stripping any audio cues in image mode
       imagePrompt = cleanAndDeduplicatePrompt(imagePrompt, isVideoMode);
 
@@ -613,9 +641,8 @@ ${durationInstruction}`;
         optics = removeEmDashes(opticsMatch[1].trim());
       }
 
-      const shotType = removeEmDashes(beat.shotType || inferShotType(imagePrompt, beatIndex));
-      const cameraAngle = removeEmDashes(beat.cameraAngle || inferCameraAngle(imagePrompt, beatIndex));
-      const cameraMovement = removeEmDashes(beat.cameraMovement || inferCameraMovement(imagePrompt, beatIndex));
+      const shotType = rawShotType;
+      const cameraAngle = rawCameraAngle;
 
       const directAnchor = extractTemporalAnchor(textSpan);
 
@@ -656,6 +683,7 @@ ${durationInstruction}`;
     locationSheet: sanitizedLocationSheet,
     isLongForm: format === 'long',
     isVideoMode,
+    targetVideoDuration: isVideoMode ? targetVideoDuration : undefined,
     apiKey,
     aiProvider: req.aiProvider,
     modelQuality,

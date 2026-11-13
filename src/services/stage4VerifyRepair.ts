@@ -11,6 +11,7 @@ import { WrittenPromptBeat } from './stage3PromptWriter';
 import { MIN_DWELL, FAST_CUT_BELOW, MAX_DWELL } from './stage2BeatPlan';
 import { fetchWithExponentialBackoff } from '../utils/retryFetch';
 import { callGroqChatCompletion } from './groqClient';
+import { extractGeminiResponseText } from './unifiedAiService';
 
 export interface BeatCheckResult {
   passed: boolean;
@@ -415,23 +416,27 @@ Return ONLY the corrected image prompt text as plain string with no markdown for
         };
       }
     } else {
-      const modelName = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-3.8-flash';
+      const modelName = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-4-hydrogen';
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+
+      const payload: Record<string, any> = {
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      };
+      if (modelName !== 'gemini-4-hydrogen') {
+        payload.generationConfig = { temperature: 0.1 };
+      }
 
       const response = await fetchWithExponentialBackoff(() =>
         fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.1 },
-          }),
+          body: JSON.stringify(payload),
         })
       );
 
       if (response.ok) {
         const json = await response.json();
-        const fixedText = json?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        const fixedText = extractGeminiResponseText(json);
         if (fixedText) {
           return {
             ...beat,
@@ -507,8 +512,15 @@ Output JSON format:
       );
       parsed = JSON.parse(rawText);
     } else {
-      const modelName = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-3.8-flash';
+      const modelName = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-4-hydrogen';
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+
+      const generationConfig: Record<string, any> = {
+        responseMimeType: 'application/json',
+      };
+      if (modelName !== 'gemini-4-hydrogen') {
+        generationConfig.temperature = 0.1;
+      }
 
       const response = await fetchWithExponentialBackoff(() =>
         fetch(url, {
@@ -516,17 +528,14 @@ Output JSON format:
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            generationConfig: {
-              responseMimeType: 'application/json',
-              temperature: 0.1,
-            },
+            generationConfig,
           }),
         })
       );
 
       if (response.ok) {
         const json = await response.json();
-        const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+        const rawText = extractGeminiResponseText(json);
         if (rawText) {
           parsed = JSON.parse(rawText);
         }
