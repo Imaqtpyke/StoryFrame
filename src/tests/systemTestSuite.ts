@@ -38,6 +38,7 @@ import {
   auditScenesForRepair,
   scaleBeatsToTargetDuration,
   runTwoPhaseProgressionAndRepair,
+  normalizeContinuitySheetKeys,
 } from '../services/beatProgressionEngine';
 import { sanitizeGroqErrorMessage, extractCleanJson, GROQ_API_BASE_URL, sanitizePromptText, tryRepairTruncatedJson } from '../services/groqClient';
 import { robustJsonParse } from '../services/unifiedAiService';
@@ -2200,7 +2201,202 @@ async function runTestSuite21() {
   );
 }
 
+// ============================================================================
+// SUITE 23: SCI-FI REGRESSION GUARDS (CHARACTER LOCK ISOLATION, THUMBNAIL HYGIENE, DILEMMA CTA)
+// ============================================================================
+function runTestSuite23() {
+  const sciFiSheet: Record<string, string> = {
+    'Mira Vale':
+      'A lean woman in her mid-twenties with olive skin, sharp jawline, and asymmetrical dark undercut hair, wearing a weathered black techwear jacket traced with glowing cyan circuitry seams',
+    'Chrome-Faced Enforcers':
+      'Tall armored tactical operatives wearing seamless polished liquid-chrome featureless faceplates and heavy matte-carbon trench coats with glowing magenta shoulder optics',
+  };
+
+  const soloBeatLocked = injectCompactCharacterLocks(
+    'Vertical 9:16 portrait composition, Medium Close-Up at eye-level inside a damp doorway. The lean woman with asymmetrical dark undercut hair and weathered black techwear jacket connects the chip. Visual Style: Cinematic cyberpunk realism. --ar 9:16',
+    'she discovers',
+    'Hunted by chrome-faced enforcers, she discovers it holds the city’s erased history, and her own.',
+    sciFiSheet
+  );
+  const firstNameBeatLocked = injectCompactCharacterLocks(
+    'Vertical 9:16 portrait composition, Medium Shot from a low-angle on a rooftop beside a relay tower. Visual Style: Cinematic cyberpunk realism. --ar 9:16',
+    'At dawn, Mira must choose:',
+    'At dawn, Mira must choose: sell the truth or broadcast it.',
+    sciFiSheet
+  );
+  assert(
+    !soloBeatLocked.includes('Chrome-Faced Enforcers') &&
+      soloBeatLocked.includes('Featuring Mira Vale') &&
+      firstNameBeatLocked.includes('Featuring Mira Vale'),
+    'Suite 23: Sci-Fi Regression Guards',
+    '23.1 Multi-Character Lock Isolation & First-Name Alias Binding',
+    `solo=${soloBeatLocked} | alias=${firstNameBeatLocked}`
+  );
+
+  const sciFiThumb = compileThumbnailPrompt({
+    rawThumbnail: {
+      heroMoment: 'Mira jamming the glowing cyan memory-chip into the rooftop relay',
+      expression: 'Fierce defiance',
+      bgDescription: 'Dark, simplified high-contrast Neo-Kaido skyline fading into silhouette towers',
+      accentColor: 'intense glowing cyan with warm dawn amber rim light',
+      hookText: 'BROADCAST THE TRUTH',
+    },
+    styleProfile: {
+      artStyle: 'Cinematic cyberpunk realism',
+      colorPalette: 'Deep charcoal shadows, glowing cyan circuitry, warm golden dawn amber',
+      lighting: 'High-contrast neon chiaroscuro, transitioning to 3200K warm golden sunrise rim light at the climax',
+      eraAndSetting: 'Near-future Neo-Kaido',
+    },
+    characterSheet: { 'Mira Vale': sciFiSheet['Mira Vale'] },
+    format: 'short',
+    platform: 'tiktok',
+  });
+  assert(
+    !/intense\s+intense/i.test(sciFiThumb.compiledPrompt) &&
+      !/rim\s+light\s+rim\s+lighting/i.test(sciFiThumb.compiledPrompt) &&
+      !/dark\s+simplified\s+background:\s*Dark,\s*simplified/i.test(sciFiThumb.compiledPrompt) &&
+      sciFiThumb.compiledPrompt.includes('. Subject centered in the upper-middle vertical band'),
+    'Suite 23: Sci-Fi Regression Guards',
+    '23.2 Clean Thumbnail Rim Lighting, Background Deduplication & Subject Capitalization',
+    `Thumb: ${sciFiThumb.compiledPrompt}`
+  );
+
+  const sciFiPremise =
+    "In Neo-Kaido, courier Mira Vale smuggles a stolen memory-chip through rain-soaked neon streets. Hunted by chrome-faced enforcers, she discovers it holds the city's erased history, and her own. At dawn, Mira must choose: sell the truth or broadcast it, igniting a revolution.";
+  const sciFiCta = compileCtaPrompt({
+    storyPremise: sciFiPremise,
+    styleProfile: {
+      artStyle: 'Cinematic cyberpunk realism',
+      colorPalette: 'Deep charcoal shadows and glowing cyan circuitry',
+      lighting:
+        'High-contrast neon chiaroscuro with 5200K teal reflections, transitioning to 3200K warm golden sunrise rim light at the climax',
+      eraAndSetting: 'Near-future Neo-Kaido',
+    },
+    characterSheet: { 'Mira Vale': sciFiSheet['Mira Vale'] },
+    format: 'short',
+    platform: 'tiktok',
+    modality: 'image',
+  });
+  assert(
+    sciFiCta.questionText === 'Would you sell the truth or broadcast it?' &&
+      !sciFiCta.compiledPrompt.toLowerCase().includes('transitioning to'),
+    'Suite 23: Sci-Fi Regression Guards',
+    '23.3 Dilemma-First Sci-Fi CTA & Static Frame Lighting Scrubbing',
+    `question=${sciFiCta.questionText} | prompt=${sciFiCta.compiledPrompt}`
+  );
+}
+
+// ============================================================================
+// SUITE 24: DOCUMENTARY REGRESSION GUARDS (CAMELCASE ROLE CLEANUP & HISTORY CTA)
+// ============================================================================
+function runTestSuite24() {
+  const docStyle: StyleProfile = {
+    artStyle: 'Authentic 1960s archival documentary realism',
+    colorPalette: 'Muted mid-century office tones of warm cream, olive green, and charcoal gray',
+    lighting: 'Restrained dramatic documentary lighting balancing 3400K desk lamps, shifting to 5600K solar rim light',
+    eraAndSetting: '1969, NASA engineering offices and Apollo 11',
+  };
+  const docSheet: Record<string, string> = {
+    LeadSoftwareEngineer:
+      'Mid-1960s American woman in her early thirties with shoulder-length dark brown wavy hair, tortoise-shell rectangular eyeglasses, cream collared blouse, and muted olive cardigan',
+  };
+
+  const docThumb = compileThumbnailPrompt({
+    rawThumbnail: {
+      heroMoment: 'A focused 1960s female software engineer standing beside towering Apollo code printouts',
+      expression: 'calm steely determination',
+      bgDescription: 'darkened 1960s NASA computer lab',
+      accentColor: 'warm amber',
+      hookText: 'TRUST THE CODE',
+    },
+    styleProfile: docStyle,
+    characterSheet: docSheet,
+    format: 'short',
+    platform: 'tiktok',
+  });
+  assert(
+    !docThumb.compiledPrompt.includes('LeadSoftwareEngineer') &&
+      docThumb.compiledPrompt.includes('Hero Subject: The lead software engineer (locked visual identity:'),
+    'Suite 24: Documentary Regression Guards',
+    '24.1 Splits CamelCase Role Keys Into Natural Prose in Thumbnail Prompts',
+    `Thumb: ${docThumb.compiledPrompt}`
+  );
+
+  const docCta = compileCtaPrompt({
+    storyPremise:
+      'In 1969, American engineer Margaret Hamilton leads NASA Apollo guidance-software team as Apollo 11 approaches the Moon. On July 20, 1969, her work helps Neil Armstrong and Buzz Aldrin land safely on the Moon.',
+    styleProfile: docStyle,
+    characterSheet: docSheet,
+    format: 'short',
+    platform: 'tiktok',
+    modality: 'image',
+  });
+  assert(
+    !docCta.compiledPrompt.includes('LeadSoftwareEngineer') &&
+      docCta.compiledPrompt.includes('portrait of the lead software engineer (locked visual identity:') &&
+      docCta.questionText.includes('historic moment'),
+    'Suite 24: Documentary Regression Guards',
+    '24.2 Uses Documentary CTA Question & Natural Role Prose Without CamelCase Leak',
+    `question=${docCta.questionText} | prompt=${docCta.compiledPrompt}`
+  );
+}
+
+// ============================================================================
+// SUITE 25: HORROR REGRESSION GUARDS (CLOSE-UP AGE/RUNNER-UP ISOLATION & THUMBNAIL PUNCTUATION)
+// ============================================================================
+function runTestSuite25() {
+  const normalizedHorrorSheet = normalizeContinuitySheetKeys({
+    Elara:
+      'A pale, gaunt young woman in her late twenties with dark under-eye shadows, hollow cheekbones, and long tousled dark hair, wearing an oversized loose charcoal knit sweater.',
+    TheWomanBehindHer:
+      'A gaunt older woman with sunken cheeks, pale ashen skin, and long tangled silver-streaked dark hair, wearing a faded dusty charcoal nightgown with bare pale feet.',
+  });
+  const olderWomanCloseUp = injectCompactCharacterLocks(
+    'Vertical 9:16 portrait composition, Close-Up with a tense dutch-tilt from the shadows behind the wrought-iron bed. The gaunt older woman with sunken cheeks, pale ashen skin, and tangled silver-streaked dark hair wearing the faded dusty charcoal nightgown snaps both hollow eyes wide open in the darkness, staring straight toward the blurred charcoal-sweatered silhouette of the unsuspecting young archivist standing ahead at the mirror. Visual Style: Psychological horror realism. --ar 9:16',
+    'has been waiting.',
+    'When Elara finally confronts it, she realizes the mirror has been showing her, and the woman sleeping behind her has been waiting.',
+    normalizedHorrorSheet
+  );
+  assert(
+    Object.keys(normalizedHorrorSheet).includes('The Woman Behind Her') &&
+      !olderWomanCloseUp.includes('Featuring Elara'),
+    'Suite 25: Horror Regression Guards',
+    '25.1 Prevents Background/Age-Mismatched Lock From Stamping Onto Older Character Close-Up',
+    `keys=${Object.keys(normalizedHorrorSheet).join(',')} | prompt=${olderWomanCloseUp}`
+  );
+
+  const horrorThumb = compileThumbnailPrompt({
+    rawThumbnail: {
+      heroMoment:
+        'A pale archivist holding a flickering lantern confronts a cracked mirror that reveals a gaunt older woman awake on the bed behind her.',
+      expression: 'wide-eyed frozen terror.',
+      bgDescription: 'pitch-dark dust-filled Victorian parlor.',
+      accentColor: 'dim amber and cold blue',
+      hookText: 'LOOK BEHIND HER',
+    },
+    styleProfile: {
+      artStyle: 'Psychological horror realism',
+      colorPalette: 'Desaturated charcoal grays and flickering amber gold',
+      lighting: 'Dim 2700K amber lantern key light',
+      eraAndSetting: 'Victorian house',
+    },
+    characterSheet: normalizedHorrorSheet,
+    format: 'short',
+    platform: 'tiktok',
+  });
+  assert(
+    !horrorThumb.compiledPrompt.includes('..') &&
+      !horrorThumb.cleanPlatePrompt.includes('..'),
+    'Suite 25: Horror Regression Guards',
+    '25.2 Eliminates Double Periods From Thumbnail Hero Moment & Background',
+    `Thumb: ${horrorThumb.compiledPrompt}`
+  );
+}
+
 runTestSuite21().then(() => {
+  runTestSuite23();
+  runTestSuite24();
+  runTestSuite25();
   console.log('\n====================================================================');
   console.log('                  FULL-SYSTEM VERIFICATION REPORT                  ');
   console.log('====================================================================');

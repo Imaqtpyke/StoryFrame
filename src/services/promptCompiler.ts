@@ -571,16 +571,23 @@ export function compileThumbnailPrompt(params: {
   // Primary character extraction for identity lock (strip transient expressions so thumbnail emotion never clashes)
   const formatSheetSubjectName = (rawKey: string, capitalizeStart: boolean): string => {
     const trimmed = rawKey.trim();
-    const spaced = trimmed.replace(/([a-z])([A-Z])/g, '$1 $2').trim();
+    const hasCamelBoundary = /[a-z0-9][A-Z]/.test(trimmed) || /[A-Z]{2,}[a-z]/.test(trimmed);
+    const spaced = trimmed
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+      .replace(/_/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
     const lower = spaced.toLowerCase();
     const isGenericRole =
-      /^(?:protagonist|narrator|photographer|street photographer|detective|soldier|scientist|survivor|stray child|child|mother|father|driver|archivist|diver|doctor|stranger|victim|hero|explorer|journalist|writer|teacher|student|guard|pilot|captain|officer|knight|king|queen)$/i.test(
+      hasCamelBoundary ||
+      /\b(?:protagonist|narrator|photographer|detective|soldier|scientist|survivor|child|mother|father|driver|archivist|diver|doctor|stranger|victim|hero|explorer|journalist|writer|teacher|student|guard|pilot|captain|officer|knight|king|queen|engineer|astronaut|astronauts|courier|nurse|surgeon|worker|researcher|operative|operatives|enforcers|guards|soldiers)\b$/i.test(
         lower
       );
     if (isGenericRole) {
       return capitalizeStart ? `The ${lower}` : `the ${lower}`;
     }
-    return trimmed;
+    return spaced;
   };
 
   const characters = Object.entries(params.characterSheet || {});
@@ -594,8 +601,8 @@ export function compileThumbnailPrompt(params: {
 
   // Safe zones and layout
   const subjectPlacement = isWidescreen
-    ? 'subject positioned in the left third, filling roughly 50% of the frame'
-    : 'subject centered in the upper-middle vertical band, filling roughly 55% of the frame';
+    ? 'Subject positioned in the left third, filling roughly 50% of the frame'
+    : 'Subject centered in the upper-middle vertical band, filling roughly 55% of the frame';
 
   const textPlacement = isWidescreen
     ? 'in the upper-right third of the frame'
@@ -605,23 +612,30 @@ export function compileThumbnailPrompt(params: {
     ? 'Platform safe zone: strictly keep the bottom-right corner clear of text and faces for the YouTube timestamp duration badge; keep lower 10% clear for the scrub bar.'
     : 'Platform safe zone: keep the top 12% clear for header/profile icons, bottom 25% clear for captions/music titles, and right edge clear for like/comment buttons.';
 
-  const cleanAccentColor = accentColor.replace(/\s*rim\s+lighting\s*$/i, '').trim() || accentColor;
+  const cleanAccentColor =
+    accentColor
+      .replace(/^intense\s+/i, '')
+      .replace(/\s*rim\s+(?:lighting|light)\s*$/i, '')
+      .trim() || accentColor;
   const rimLightPhrase = isMono
     ? 'stark pure-white rim lighting cutting through pitch-black cross-hatched shadows'
-    : `intense ${cleanAccentColor} rim lighting from behind separating the subject from a dark simplified background`;
+    : `intense ${cleanAccentColor} rim lighting separating the subject from the background`;
 
   const cleanPalette = sanitizeMonochromeLighting(
     params.styleProfile?.colorPalette || 'high-contrast dramatic lighting',
     params.styleProfile
   );
+  const cleanExpression = expression.replace(/[.!?]+$/, '').trim();
+  const cleanHeroMoment = heroMoment.replace(/[.!?]+$/, '').trim();
+  const cleanBgDescription = bgDescription.replace(/[.!?]+$/, '').trim();
 
   // Full compiled prompt with typography
   const compiledPrompt = normalizeUnicodeAndDashes([
     `STATIC THUMBNAIL IMAGE ONLY. Single high-impact cover frame. No animation, video, camera movement, or motion blur.`,
     `Framed in ${aspectRatio} aspect ratio for a high-CTR ${targetPlatform} cover.`,
     `Style continuity: ${params.styleProfile?.artStyle || 'Cinematic realistic'}, ${cleanPalette}.`,
-    `Hero Subject: ${primaryCharClause}, expression ${expression}. ${subjectPlacement}.`,
-    `Visual Conflict: Climactic turning point: ${heroMoment}. Deep shadows, ${rimLightPhrase}: ${bgDescription}.`,
+    `Hero Subject: ${primaryCharClause}, expression: ${cleanExpression}. ${subjectPlacement}.`,
+    `Visual Conflict: Climactic turning point: ${cleanHeroMoment}. Deep shadows, ${rimLightPhrase}: ${cleanBgDescription}.`,
     `${safeZoneGuidance}`,
     `Typography & Text Overlay: Graphic headline text "${cleanHook}" rendered in ${storyAdaptiveFont}, in bold uppercase with a thick dark outline and high-contrast fill, positioned ${textPlacement}. Text appears exactly once, perfectly spelled, perfectly legible at small mobile thumbnail scale. No other lettering, subtitles, dialogue, or watermarks.`,
     `--ar ${aspectRatio}`,
@@ -632,8 +646,8 @@ export function compileThumbnailPrompt(params: {
     `STATIC THUMBNAIL IMAGE ONLY. Single high-impact background plate. No animation, video, camera movement, or motion blur.`,
     `Framed in ${aspectRatio} aspect ratio for a ${targetPlatform} cover.`,
     `Style continuity: ${params.styleProfile?.artStyle || 'Cinematic realistic'}, ${cleanPalette}.`,
-    `Hero Subject: ${primaryCharClause}, expression ${expression}. ${subjectPlacement}.`,
-    `Visual Conflict: Climactic turning point: ${heroMoment}. Deep shadows, ${rimLightPhrase}: ${bgDescription}.`,
+    `Hero Subject: ${primaryCharClause}, expression: ${cleanExpression}. ${subjectPlacement}.`,
+    `Visual Conflict: Climactic turning point: ${cleanHeroMoment}. Deep shadows, ${rimLightPhrase}: ${cleanBgDescription}.`,
     `${safeZoneGuidance}`,
     `Negative Space & Clean Plate: Clean negative space ${textPlacement} left completely empty without any text, lettering, words, watermarks, or logos, designed as a clean text-free background plate for custom graphic overlay.`,
     `--ar ${aspectRatio}`,
@@ -695,15 +709,62 @@ export function inferStoryAdaptiveCtaQuestion(storyPremise?: string, characterNa
     };
   }
 
-  // Mystery / Detective / Secret
+  // Explicit high-stakes binary dilemma ("must choose: sell the truth or broadcast it")
+  const explicitChoiceMatch = (storyPremise || '').match(
+    /\b(?:must choose|forced to choose|has to choose|choose between)[:\s]+([^,.!?]+?\s+or\s+[^,.!?]+)/i
+  );
+  if (explicitChoiceMatch && explicitChoiceMatch[1]) {
+    const rawChoice = explicitChoiceMatch[1].trim().replace(/[.!?]+$/, '');
+    const questionPrefix = /^(?:between|whether)\b/i.test(rawChoice)
+      ? `Which side would you pick: ${rawChoice}?`
+      : `Would you ${rawChoice}?`;
+    return {
+      primaryQuestion: questionPrefix,
+      alternateQuestions: [
+        `What would you have chosen in ${char}'s position?`,
+        'Is safety worth silence, or should the truth always go public?',
+        'Would you take the payoff and walk away, or risk everything to expose it?',
+        'What do you think happens next after this choice?',
+      ],
+    };
+  }
+
+  const isSciFiPremise =
+    /\b(?:ai|robot|future|space|cyber|cyberpunk|dystopian|simulation|alien|tech|memory-chip|hologram|neon|enforcers|android|neural)\b/i.test(
+      text
+    );
+
+  const isFuturisticSciFi =
+    /\b(?:cyber|cyberpunk|dystopian|simulation|alien|memory-chip|hologram|neon|enforcers|android|neural|robot|ai)\b/i.test(
+      text
+    );
+
+  // Documentary / Historical / Space / Science Pioneer (evaluated before generic Sci-Fi "space" or default fallback)
+  if (
+    !isFuturisticSciFi &&
+    /\b(?:19\d\d|18\d\d|17\d\d|16\d\d|nasa|apollo|moon landing|lunar|astronaut|history|historic|historical|historian|pioneer|invented|invention|discovered|scientist|swedish|mission|century|archival|true story|real-life|world war)\b/i.test(
+      text
+    )
+  ) {
+    return {
+      primaryQuestion: 'Did you already know the story behind this historic moment, or was it new to you?',
+      alternateQuestions: [
+        'Which unsung pioneer from history deserves a spotlight next?',
+        'How different would today look if this moment had turned out differently?',
+        'What detail from this true story surprised you the most?',
+        'Should more real-life history stories be told like this?',
+      ],
+    };
+  }
+
+  // Mystery / Detective / Secret (do not let incidental "truth" hijack Sci-Fi dilemmas)
   if (
     text.includes('mystery') ||
     text.includes('clue') ||
     text.includes('secret') ||
     text.includes('detective') ||
     text.includes('murder') ||
-    text.includes('hidden') ||
-    text.includes('truth')
+    ((text.includes('hidden') || text.includes('truth')) && !isSciFiPremise)
   ) {
     return {
       primaryQuestion: 'Did you spot the single clue before the reveal, or were you blindsided?',
@@ -732,16 +793,7 @@ export function inferStoryAdaptiveCtaQuestion(storyPremise?: string, characterNa
   }
 
   // Sci-Fi / AI / Tech / Space / Future / Cyber
-  if (
-    text.includes('ai') ||
-    text.includes('robot') ||
-    text.includes('future') ||
-    text.includes('space') ||
-    text.includes('cyber') ||
-    text.includes('simulation') ||
-    text.includes('alien') ||
-    text.includes('tech')
-  ) {
+  if (isSciFiPremise) {
     return {
       primaryQuestion: 'Would you accept this technology if it was offered to you today?',
       alternateQuestions: [
@@ -812,13 +864,20 @@ export function compileCtaPrompt(params: {
   // Primary character extraction for identity lock (expression-free)
   const formatCtaRoleName = (rawKey: string): string => {
     const trimmed = rawKey.trim();
-    const spaced = trimmed.replace(/([a-z])([A-Z])/g, '$1 $2').trim();
+    const hasCamelBoundary = /[a-z0-9][A-Z]/.test(trimmed) || /[A-Z]{2,}[a-z]/.test(trimmed);
+    const spaced = trimmed
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+      .replace(/_/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
     const lower = spaced.toLowerCase();
     const isGenericRole =
-      /^(?:protagonist|narrator|photographer|street photographer|detective|soldier|scientist|survivor|stray child|child|mother|father|driver|archivist|diver|doctor|stranger|victim|hero|explorer|journalist|writer|teacher|student|guard|pilot|captain|officer|knight|king|queen)$/i.test(
+      hasCamelBoundary ||
+      /\b(?:protagonist|narrator|photographer|detective|soldier|scientist|survivor|child|mother|father|driver|archivist|diver|doctor|stranger|victim|hero|explorer|journalist|writer|teacher|student|guard|pilot|captain|officer|knight|king|queen|engineer|astronaut|astronauts|courier|nurse|surgeon|worker|researcher|operative|operatives|enforcers|guards|soldiers)\b$/i.test(
         lower
       );
-    return isGenericRole ? `the ${lower}` : trimmed;
+    return isGenericRole ? `the ${lower}` : spaced;
   };
 
   const characters = Object.entries(params.characterSheet || {});
@@ -847,9 +906,17 @@ export function compileCtaPrompt(params: {
   );
   const rawLighting =
     params.styleProfile?.lighting || 'deep directional key light with saturated rim backlight';
+  const staticSafeLighting =
+    modality === 'image'
+      ? rawLighting
+          .replace(/,?\s*\b(?:transitioning|shifting|fading|morphing)\s+to\b[^.;]*/gi, '')
+          .replace(/,\s*$/, '')
+          .trim() || rawLighting
+      : rawLighting;
   const lighting = isMono
-    ? sanitizeMonochromeLighting(rawLighting, params.styleProfile) || 'stark chiaroscuro contrast lighting with deep ink shadows'
-    : rawLighting;
+    ? sanitizeMonochromeLighting(staticSafeLighting, params.styleProfile) ||
+      'stark chiaroscuro contrast lighting with deep ink shadows'
+    : staticSafeLighting;
 
   // Platform specific safe zone rules & UI annotations
   let platformLabel = 'TikTok';

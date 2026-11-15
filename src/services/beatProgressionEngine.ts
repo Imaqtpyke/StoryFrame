@@ -359,6 +359,23 @@ export function sanitizeMonochromeLighting(text: string, styleProfile?: StylePro
  * Replaces raw CamelCase sheet variable keys ("DarkRoom", "Protagonist", "CastleCourtyard")
  * with natural descriptive prose so image generators never receive unexpanded variable tokens.
  */
+export function normalizeContinuitySheetKeys(sheet: Record<string, string>): Record<string, string> {
+  const normalized: Record<string, string> = {};
+  for (const [rawKey, val] of Object.entries(sheet || {})) {
+    const cleanKey = rawKey
+      .trim()
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+      .replace(/_/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (cleanKey && val) {
+      normalized[cleanKey] = val;
+    }
+  }
+  return normalized;
+}
+
 export function expandEntityKeysInPrompt(
   prompt: string,
   characterSheet?: Record<string, string>,
@@ -548,6 +565,28 @@ export function isCharacterFreeBeat(prompt: string, textSpan: string): boolean {
  * a character is present or referenced (including via pronouns when the scene subject is known),
  * unless the beat is explicitly character-free or already contains the locked traits.
  */
+const GENERIC_ALIAS_WORDS = new Set([
+  'the', 'a', 'an', 'young', 'old', 'tall', 'tiny', 'dark', 'bright', 'chrome', 'chrome-faced',
+  'street', 'shadow', 'neon', 'black', 'white', 'red', 'blue', 'cyber', 'armored', 'masked',
+  'lead', 'main', 'unknown', 'stranger', 'figure', 'person', 'man', 'woman', 'boy', 'girl',
+]);
+
+function buildCharacterAliasRegex(charName: string, allCharNames: string[]): RegExp | null {
+  const parts = charName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return null;
+  const firstToken = parts[0].replace(/[^a-zA-Z0-9-]/g, '');
+  if (firstToken.length < 3 || GENERIC_ALIAS_WORDS.has(firstToken.toLowerCase())) return null;
+
+  const collidesWithOther = allCharNames.some((other) => {
+    if (other === charName) return false;
+    return new RegExp(`\\b${firstToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(other);
+  });
+  if (collidesWithOther) return null;
+
+  const escapedFirst = firstToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`\\b${escapedFirst}(?:'s)?\\b`, 'i');
+}
+
 export function injectCompactCharacterLocks(
   prompt: string,
   textSpan: string,
@@ -564,8 +603,40 @@ export function injectCompactCharacterLocks(
   const isFlashback = isInfancyOrChildhoodFlashback(textSpan, prompt);
   let updated = prompt;
   const charEntries = Object.entries(characterSheet);
+  const allCharNames = charEntries.map(([name]) => name);
   const singleLeadChar = charEntries.length === 1 ? charEntries[0] : null;
-  const combinedBeatAndNarration = `${textSpan} ${sceneNarration}`;
+  const spanLower = (textSpan || '').toLowerCase();
+  const promptLower = updated.toLowerCase();
+  const isCloseUpOrEcu = /\b(?:Close-Up|Extreme Close-Up)\b/i.test(updated);
+  const foregroundSlice = promptLower
+    .replace(/\b(?:toward|at|past)\s+(?:the\s+)?blurred\b[^.]*/gi, '')
+    .slice(0, 280);
+  const foregroundHasOlder = /\b(?:older woman|older man|elderly|aged|silver-streaked)\b/i.test(foregroundSlice);
+  const foregroundHasYoung = /\b(?:young woman|young man|teenager|little boy|little girl)\b/i.test(foregroundSlice);
+
+  const spanHasFemalePronoun = /\b(?:she|her|hers)\b/i.test(spanLower);
+  const spanHasMalePronoun = /\b(?:he|him|his)\b/i.test(spanLower);
+  const spanHasPluralPronoun = /\b(?:they|them|their|theirs)\b/i.test(spanLower);
+
+  // Pre-compute visual token match counts so Close-Up/ECU shots do not lock onto a background silhouette runner-up
+  const tokenMatchCounts = new Map<string, number>();
+  let maxMatchedTokens = 0;
+  for (const [charName, fullDesc] of charEntries) {
+    if (!fullDesc || fullDesc.trim().length < 6) continue;
+    const compact = buildCompactCharacterAnchor(fullDesc, 18);
+    if (!compact) continue;
+    const tokens = compact
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 3 && !STOP_WORDS.has(w));
+    let count = 0;
+    for (const t of tokens) {
+      if (promptLower.includes(t)) count++;
+    }
+    tokenMatchCounts.set(charName, count);
+    if (count > maxMatchedTokens) maxMatchedTokens = count;
+  }
 
   for (const [charName, fullDesc] of charEntries) {
     if (!fullDesc || fullDesc.trim().length < 6) continue;
@@ -580,35 +651,85 @@ export function injectCompactCharacterLocks(
 
     const escapedName = charName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const nameRegex = new RegExp(`\\b${escapedName}(?:'s)?\\b`, 'i');
+    const aliasRegex = buildCharacterAliasRegex(charName, allCharNames);
 
-    const promptMentionsName = nameRegex.test(updated);
-    const beatMentionsName = nameRegex.test(textSpan);
-    const pronounOrRoleMatch = /\b(?:he|him|his|she|her|hers|soldier|warrior|knight|hero|man|woman|boy|girl|forearm|chest plate|trigger|rifle|boots)\b/i.test(
-      `${textSpan} ${updated}`
-    );
-    const sceneMentionsChar =
-      nameRegex.test(combinedBeatAndNarration) ||
-      (singleLeadChar && singleLeadChar[0] === charName && pronounOrRoleMatch);
-
-    if (!promptMentionsName && !beatMentionsName && !sceneMentionsChar) {
-      continue;
-    }
+    const promptMentionsName = nameRegex.test(updated) || (aliasRegex ? aliasRegex.test(updated) : false);
+    const beatMentionsName = nameRegex.test(textSpan) || (aliasRegex ? aliasRegex.test(textSpan) : false);
+    const narrationMentionsName =
+      nameRegex.test(sceneNarration) || (aliasRegex ? aliasRegex.test(sceneNarration) : false);
 
     const compactAnchor = buildCompactCharacterAnchor(fullDesc, 18);
     if (!compactAnchor) continue;
 
-    // Check if significant locked traits are already embedded in the prompt
     const anchorTokens = compactAnchor
       .toLowerCase()
       .replace(/[^a-z0-9\s]/g, ' ')
       .split(/\s+/)
       .filter((w) => w.length > 3 && !STOP_WORDS.has(w));
-    const lowerUpdated = updated.toLowerCase();
-    let matchedTokens = 0;
-    for (const t of anchorTokens) {
-      if (lowerUpdated.includes(t)) matchedTokens++;
-    }
+    const matchedTokens = tokenMatchCounts.get(charName) || 0;
     const coverageRatio = anchorTokens.length > 0 ? matchedTokens / anchorTokens.length : 1;
+
+    // Determine gender/plurality/age compatibility to prevent stamping mismatched subjects onto solo beats
+    const isPluralChar =
+      /\b(?:enforcers|operatives|guards|soldiers|officers|assassins|agents|hunters|twins|drones|crowd)\b/i.test(
+        `${charName} ${fullDesc}`
+      );
+    const isFemaleChar =
+      !isPluralChar && /\b(?:woman|girl|female|mother|sister|daughter|lady|actress)\b/i.test(fullDesc);
+    const isMaleChar =
+      !isPluralChar && !isFemaleChar && /\b(?:man|boy|male|father|brother|son|guy|actor)\b/i.test(fullDesc);
+
+    const charIsYoung = /\b(?:young woman|young man|twenties|early twenties|late twenties|teen|teenager|boy|girl)\b/i.test(
+      fullDesc
+    );
+    const charIsOlder = /\b(?:older woman|older man|elderly|aged|middle-aged|silver-streaked|gray-haired)\b/i.test(
+      fullDesc
+    );
+    const ageMismatch =
+      (charIsYoung && foregroundHasOlder && !foregroundHasYoung) ||
+      (charIsOlder && foregroundHasYoung && !foregroundHasOlder);
+
+    const isRunnerUpInCloseUp =
+      isCloseUpOrEcu &&
+      charEntries.length > 1 &&
+      !promptMentionsName &&
+      !beatMentionsName &&
+      maxMatchedTokens >= 3 &&
+      matchedTokens < maxMatchedTokens;
+
+    const pronounMismatch =
+      (isPluralChar && (spanHasFemalePronoun || spanHasMalePronoun) && !spanHasPluralPronoun) ||
+      (isFemaleChar && spanHasMalePronoun && !spanHasFemalePronoun) ||
+      (isMaleChar && spanHasFemalePronoun && !spanHasMalePronoun);
+
+    const pronounOrRoleMatch = /\b(?:he|him|his|she|her|hers|they|them|their|soldier|warrior|knight|hero|man|woman|boy|girl|forearm|chest plate|trigger|rifle|boots)\b/i.test(
+      `${textSpan} ${updated}`
+    );
+
+    const matchesViaSingleLead =
+      Boolean(singleLeadChar && singleLeadChar[0] === charName && pronounOrRoleMatch && !pronounMismatch);
+
+    // Multi-character scene inheritance: only bind when beat has matching visual traits OR compatible narration/pronoun without mismatch
+    const matchesViaVisualTraits = matchedTokens >= 2 && !pronounMismatch && !ageMismatch && !isRunnerUpInCloseUp;
+    const matchesViaBeatPronounAndNarration =
+      narrationMentionsName &&
+      !pronounMismatch &&
+      !ageMismatch &&
+      !isRunnerUpInCloseUp &&
+      ((isFemaleChar && spanHasFemalePronoun) ||
+        (isMaleChar && spanHasMalePronoun) ||
+        (isPluralChar && spanHasPluralPronoun));
+
+    const shouldInject =
+      promptMentionsName ||
+      beatMentionsName ||
+      matchesViaSingleLead ||
+      matchesViaVisualTraits ||
+      matchesViaBeatPronounAndNarration;
+
+    if (!shouldInject) {
+      continue;
+    }
 
     // If prompt already mentions character and has >= 55% of compact lock tokens, skip
     if (promptMentionsName && coverageRatio >= 0.55) {
@@ -621,11 +742,10 @@ export function injectCompactCharacterLocks(
       if (nonPossessiveRegex.test(updated)) {
         updated = updated.replace(nonPossessiveRegex, `$1 (${compactAnchor})`);
       } else {
-        // Insert before Visual Style or --ar
         updated = insertClauseBeforeStyleOrAr(updated, `${charName} (${compactAnchor})`);
       }
-    } else if (beatMentionsName || sceneMentionsChar) {
-      // Character is active in the beat via pronoun or narration: inject compact identity anchor cleanly
+    } else {
+      // Character is active in the beat via alias, pronoun, or visual traits: inject compact identity anchor cleanly
       updated = insertClauseBeforeStyleOrAr(updated, `Featuring ${charName} (${compactAnchor})`);
     }
   }

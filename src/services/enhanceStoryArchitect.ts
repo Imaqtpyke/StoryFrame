@@ -14,6 +14,7 @@ import {
 import {
   expandEntityKeysInPrompt,
   isMonochromeStyle,
+  normalizeContinuitySheetKeys,
   normalizeUnicodeAndDashes,
   runTwoPhaseProgressionAndRepair,
   sanitizeMonochromeLighting,
@@ -399,10 +400,10 @@ STRICT CONSTRAINTS:
     "lensAndFilmStock": "Shot on 35mm anamorphic lens, fine film grain..."
   },
   "characterSheet": {
-    "CharacterName": "Detailed visual description..."
+    "Lead Software Engineer": "Detailed visual description using spaced human names or roles, never smashed CamelCase..."
   },
   "locationSheet": {
-    "LocationName": "Detailed visual description..."
+    "NASA Instrumentation Office": "Detailed visual description using spaced readable location names..."
   },
   "totalDurationSeconds": number,
   "scenes": [
@@ -676,11 +677,14 @@ ${durationInstruction}`;
     };
   });
 
+  const readableCharacterSheet = normalizeContinuitySheetKeys(sanitizedCharacterSheet);
+  const readableLocationSheet = normalizeContinuitySheetKeys(sanitizedLocationSheet);
+
   const scenesWithHints = await runTwoPhaseProgressionAndRepair({
     scenes: sanitizedScenes,
     styleProfile: sanitizedStyleProfile,
-    characterSheet: sanitizedCharacterSheet,
-    locationSheet: sanitizedLocationSheet,
+    characterSheet: readableCharacterSheet,
+    locationSheet: readableLocationSheet,
     isLongForm: format === 'long',
     isVideoMode,
     targetVideoDuration: isVideoMode ? targetVideoDuration : undefined,
@@ -705,7 +709,7 @@ ${durationInstruction}`;
   const thumbnail = compileThumbnailPrompt({
     rawThumbnail: parsedData.thumbnail,
     styleProfile: sanitizedStyleProfile,
-    characterSheet: sanitizedCharacterSheet,
+    characterSheet: readableCharacterSheet,
     storyPremise: story,
     format,
     platform,
@@ -713,8 +717,8 @@ ${durationInstruction}`;
 
   return {
     styleProfile: sanitizedStyleProfile,
-    characterSheet: sanitizedCharacterSheet,
-    locationSheet: sanitizedLocationSheet,
+    characterSheet: readableCharacterSheet,
+    locationSheet: readableLocationSheet,
     totalDurationSeconds: totalDuration,
     scenes: scenesWithHints,
     generationMode: isVideoMode ? 'video' : 'image',

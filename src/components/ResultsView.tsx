@@ -32,7 +32,6 @@ import {
   Clapperboard,
   Image as ImageIcon,
   Zap,
-  Users,
 } from 'lucide-react';
 
 import {
@@ -632,18 +631,6 @@ export default function ResultsView({
             >
               <Layers size={13} className="mr-1.5 text-[#9C9C96]" />
               <span>Style &amp; Cast</span>
-            </button>
-          )}
-
-          {characterEntries.length > 0 && (
-            <button
-              type="button"
-              id="open-ref-packets-header-btn"
-              onClick={() => setIsRefModalOpen(true)}
-              className="inline-flex items-center px-3 py-2 bg-[#161614] hover:bg-[#20201e] text-[#D4D4D0] hover:text-white border border-white/15 text-xs font-display transition-colors rounded-[3px] cursor-pointer"
-            >
-              <Users size={13} className="mr-1.5 text-[#9C9C96]" />
-              <span>Character Packets</span>
             </button>
           )}
 

@@ -14,6 +14,7 @@ import {
   expandEntityKeysInPrompt,
   isInfancyOrChildhoodFlashback,
   isMonochromeStyle,
+  normalizeContinuitySheetKeys,
   normalizeUnicodeAndDashes,
   runTwoPhaseProgressionAndRepair,
   sanitizeFakePrecisionMath,
@@ -505,10 +506,10 @@ STRICT CONSTRAINTS:
     "lensAndFilmStock": "Shot on 35mm anamorphic lens, fine film grain..."
   },
   "characterSheet": {
-    "CharacterName": "Detailed visual description with all physical attributes resolved..."
+    "Lead Software Engineer": "Detailed visual description with all physical attributes resolved (use spaced human names or roles, never smashed CamelCase)..."
   },
   "locationSheet": {
-    "LocationName": "Detailed visual description of the specific recurring location..."
+    "NASA Instrumentation Office": "Detailed visual description of the specific recurring location (use spaced readable names)..."
   },
   "totalDurationSeconds": number,
   "scenes": [
@@ -681,10 +682,10 @@ STRICT CONSTRAINTS:
     "eraAndSetting": "Era and setting..."
   },
   "characterSheet": {
-    "CharacterName": "Fixed visual description with all physical attributes resolved..."
+    "Lead Software Engineer": "Fixed visual description with all physical attributes resolved (use spaced human names or roles, never smashed CamelCase)..."
   },
   "locationSheet": {
-    "LocationName": "Fixed visual description of the specific recurring location..."
+    "NASA Instrumentation Office": "Fixed visual description of the specific recurring location (use spaced readable names)..."
   },
   "thumbnail": {
     "heroMoment": "one line describing peak conflict/turning point",
@@ -1114,11 +1115,14 @@ ${durationInstruction}${customBeatsPrompt}`;
     }),
   }));
 
+  const readableCharacterSheet = normalizeContinuitySheetKeys(sanitizedCharacterSheet);
+  const readableLocationSheet = normalizeContinuitySheetKeys(sanitizedLocationSheet);
+
   const scenesWithTransitionHints = await runTwoPhaseProgressionAndRepair({
     scenes: preppedScenes,
     styleProfile: sanitizedStyleProfile,
-    characterSheet: sanitizedCharacterSheet,
-    locationSheet: sanitizedLocationSheet,
+    characterSheet: readableCharacterSheet,
+    locationSheet: readableLocationSheet,
     isLongForm,
     isVideoMode,
     targetVideoDuration: isVideoMode ? targetVideoDuration : undefined,
@@ -1136,7 +1140,7 @@ ${durationInstruction}${customBeatsPrompt}`;
   const thumbnail = compileThumbnailPrompt({
     rawThumbnail: parsedData.thumbnail,
     styleProfile: sanitizedStyleProfile,
-    characterSheet: sanitizedCharacterSheet,
+    characterSheet: readableCharacterSheet,
     storyPremise: story,
     format,
     platform,
@@ -1144,8 +1148,8 @@ ${durationInstruction}${customBeatsPrompt}`;
 
   return {
     styleProfile: sanitizedStyleProfile,
-    characterSheet: sanitizedCharacterSheet,
-    locationSheet: sanitizedLocationSheet,
+    characterSheet: readableCharacterSheet,
+    locationSheet: readableLocationSheet,
     totalDurationSeconds: totalSeconds,
     scenes: scenesWithTransitionHints,
     generationMode: isVideoMode ? 'video' : 'image',

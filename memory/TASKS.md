@@ -191,3 +191,34 @@
   - Locked Standard Mode (`geminiClient.ts` + `beatProgressionEngine.ts` + `GeneratorForm.tsx`) to preserve exact user narration words with zero expansion, reserving expansion exclusively for Enhance Story Mode.
   - Cleaned dangling prepositions around stripped orientation strings (`in a from a`), refined `isMonochromeStyle` against full-color palettes with B&W props, guarded `extractGeographicAnchor` against fictional hyphenated settings (`Neo-Seoul`), added visible-surface fidelity rules, trimmed repeated `Visual Style:` suffixes, and formatted generic CTA/Thumbnail character keys cleanly (`the photographer`).
   - Added Test Suite 22 in `src/tests/systemTestSuite.ts` covering all regression guards.
+- [x] **Contextual Target Duration & UI Header Cleanup:**
+  - Removed `(Optional)` beside `Character & Visual Style` (`GeneratorForm.tsx`) and removed the icon from the `AI Assistant` header button (`Header.tsx`).
+  - Applied Option 1 for duration visibility (`GeneratorForm.tsx`): hid `Target Duration` in `Text to Image` when `Enhance Story` is OFF (defaulting cleanly to automatic word-count pacing), kept `Target Duration` when `Enhance Story` is ON, and kept `Clip Duration` always visible in `Text to Video`.
+
+- [x] **Sci-Fi Stress Test Fixes (Suite 23, 175/175 passing):**
+  - Scoped `injectCompactCharacterLocks` (`beatProgressionEngine.ts`) to support unambiguous first-name aliases (`Mira` -> `Mira Vale`), pronoun/plurality compatibility, and beat-level visual trait overlap so secondary antagonists (`Chrome-Faced Enforcers`) are never stamped onto solo protagonist beats.
+  - Cleaned `compileThumbnailPrompt` (`promptCompiler.ts`) duplicate `"intense"`, `"rim light rim lighting"`, `"dark simplified background: Dark, simplified"`, and capitalized `Subject centered/positioned`.
+  - Prioritized explicit binary dilemma extraction (`"Would you sell the truth or broadcast it?"`) and expanded Sci-Fi cues in `inferStoryAdaptiveCtaQuestion`, and stripped `"transitioning to..."` temporal wording from static CTA image lighting.
+- [x] **Documentary Stress Test Fixes & Results Toolbar Cleanup (Suite 24, 177/177 passing):**
+  - Updated `formatSheetSubjectName` & `formatCtaRoleName` (`promptCompiler.ts`) to split CamelCase/PascalCase continuity keys (`LeadSoftwareEngineer` -> `the lead software engineer`), and replaced PascalCase placeholder examples in `geminiClient.ts` & `enhanceStoryArchitect.ts` with spaced readable labels.
+  - Added a dedicated Documentary / History / Real-Event CTA branch in `inferStoryAdaptiveCtaQuestion` (`promptCompiler.ts`) evaluated ahead of generic Sci-Fi/default fallbacks.
+  - Hid the top-bar `Character Packets` button (`#open-ref-packets-header-btn` in `ResultsView.tsx`) while keeping `Style & Cast`, `CharacterReferenceModal`, `characterSheet` persistence, History, Thumbnail, CTA, and exports completely intact.
+
+- [x] **Horror Stress Test Fixes (Suite 25, 179/179 passing):**
+  - Added `normalizeContinuitySheetKeys` (`beatProgressionEngine.ts`, wired into `geminiClient.ts` and `enhanceStoryArchitect.ts` after prompt expansion) so smashed PascalCase sheet keys (`TheWomanBehindHer`, `LateMothersHouseParlor`) display cleanly as spaced human titles.
+  - Added explicit foreground age-mismatch and Close-Up/ECU runner-up subject guards in `injectCompactCharacterLocks` (`beatProgressionEngine.ts`) so a background/younger protagonist (`Elara`) is never stamped onto a Close-Up of an older character (`The Woman Behind Her`).
+  - Stripped trailing `[.!?]+` punctuation from `heroMoment` and `bgDescription` in `compileThumbnailPrompt` (`promptCompiler.ts`) to prevent `..` double periods.
+
+## Active Testing & Planned Future Roadmap (Post-Testing)
+- [ ] **Genre Stress-Testing Loop (In Progress):**
+  - Completed: **Sci-Fi**, **Documentary / History**, and **Horror / Psychological Thriller** (next category up: **Stylized Art**).
+  - Remaining stress categories:
+    1. **Stylized Art** (Stickman, Anime, Claymation, Oil Painting)
+    2. **No-Character / Object / Nature** (zero invented humans)
+    3. **Multi-Character + Flashbacks** (pronouns, age shifts)
+    4. **Text-to-Video (4s/5s) & Long-Form 16:9**
+- [ ] **Post-Testing Feature & Product Recommendations (Saved for Later):**
+  - **Silent / Visual-Only (No Narration) Mode:** Dedicated toggle so movement-only videos, silent FPS/GoPro POV, ASMR, ambient nature, action choreography, and product B-roll generate pure visual beats and camera motion without forcing text into `narratorLine`.
+  - **Additional Format Support:** Multi-speaker screenplay dialogue and music/BPM-synced montages.
+  - **Commercial SaaS Layer (If/When moving beyond BYOK):** User authentication, cloud-saved projects and character libraries, Stripe credit/subscription billing, server-side API proxy, and one-click in-app image/voiceover/video generation.
+
