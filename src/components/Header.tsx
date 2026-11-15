@@ -1,5 +1,5 @@
 import { ActivePage } from '../types';
-import { History as HistoryIcon, MessageSquare, BookOpen, KeyRound } from 'lucide-react';
+import { History as HistoryIcon, BookOpen, KeyRound } from 'lucide-react';
 
 interface HeaderProps {
   activePage: ActivePage;
@@ -66,10 +66,9 @@ export default function Header({
             type="button"
             id="nav-assistant-btn"
             onClick={onOpenAssistant}
-            className="min-h-[38px] inline-flex items-center gap-1.5 px-2.5 sm:px-3 rounded-[3px] text-[#C4C4BE] hover:text-white hover:bg-white/[0.05] transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-white cursor-pointer"
+            className="min-h-[38px] inline-flex items-center px-2.5 sm:px-3 rounded-[3px] text-[#C4C4BE] hover:text-white hover:bg-white/[0.05] transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-white cursor-pointer"
             title="Open AI Assistant"
           >
-            <MessageSquare className="w-3.5 h-3.5 text-[#8C8C86]" />
             <span>AI Assistant</span>
           </button>
 

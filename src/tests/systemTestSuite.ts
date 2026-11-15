@@ -2123,6 +2123,81 @@ async function runTestSuite21() {
     '21.3 Strict Image Mode Isolation Preserves Natural Montage Timing',
     `Expected natural 2.8s sum in Image Mode even if targetVideoDuration passed, got ${imageModeScenes[0].estimatedSeconds}s / ${imageBeatSum}s`
   );
+
+  // ============================================================================
+  // 22. NEONOIR REGRESSION FIXES: PREPOSITION GRAMMAR, MONOCHROME FALSE-POSITIVE, GEO GUARD & CTA ROLES
+  // ============================================================================
+  console.log('\n--- Running Test Suite 22: Neo-Noir Regression Guards ---');
+
+  const dirtyOrientationPrompt =
+    'Wide Establishing Shot in a Vertical 9:16 portrait composition from a high-angle perspective, showcasing a dark alley. --ar 9:16';
+  const cleanedGrammarPrompt = assembleCleanPrompt(dirtyOrientationPrompt, false);
+  const formattedGrammarBeat = formatFinalBeatPrompt(
+    {
+      beatIndex: 1,
+      textSpan: 'Inside the rain-soaked alley.',
+      shotType: 'Wide Establishing Shot',
+      cameraAngle: 'high-angle',
+      cameraMovement: 'Static Frame',
+      imagePrompt: 'Vertical 9:16 portrait composition, Wide Establishing Shot in a from a high-angle perspective overlooking wet stones. --ar 9:16',
+      estimatedSeconds: 2.0,
+    },
+    false,
+    false
+  );
+  assert(
+    !/\bin a from a\b/i.test(cleanedGrammarPrompt) &&
+      !/\bin a from a\b/i.test(formattedGrammarBeat.imagePrompt) &&
+      formattedGrammarBeat.imagePrompt.includes('from a high-angle perspective'),
+    'Suite 22: Neo-Noir Regression Guards',
+    '22.1 Eliminates Dangling Prepositions Around Orientation Prefixes',
+    `Cleaned: ${cleanedGrammarPrompt} | Formatted: ${formattedGrammarBeat.imagePrompt}`
+  );
+
+  const neoNoirStyle: StyleProfile = {
+    artStyle: 'Atmospheric 2.5D ink-illustrated Neo-Noir animation with round white stickman heads',
+    colorPalette:
+      'Deep rainy asphalt slate contrasted with darkroom crimson safelight, amber, neon cyan, and black-and-white silver-gelatin film prints',
+    lighting: 'High-contrast nocturnal chiaroscuro with rain reflections',
+    eraAndSetting: '1980s Neo-Seoul',
+  };
+  const neoNoirSanitized = sanitizeMonochromeLighting('Towering neon cyan signage and amber lamps', neoNoirStyle);
+  assert(
+    isMonochromeStyle(neoNoirStyle) === false &&
+      neoNoirSanitized.includes('neon cyan') &&
+      !neoNoirSanitized.includes('stark white accents'),
+    'Suite 22: Neo-Noir Regression Guards',
+    '22.2 Prevents False Monochrome Conversion on Full-Color Palettes With B&W Props',
+    `isMono=${isMonochromeStyle(neoNoirStyle)}, text=${neoNoirSanitized}`
+  );
+
+  const neoSeoulGeo = extractGeographicAnchor('In 1980s Neo-Seoul, a young street photographer');
+  const realCountryGeo = extractGeographicAnchor('In Sweden,');
+  assert(
+    neoSeoulGeo === null && realCountryGeo !== null && realCountryGeo.countryOrRegion === 'Sweden',
+    'Suite 22: Neo-Noir Regression Guards',
+    '22.3 Skips Cartographic Map Hijack on Fictional Hyphenated Settings While Keeping Real Countries',
+    `neoSeoulGeo=${JSON.stringify(neoSeoulGeo)}, realCountryGeo=${JSON.stringify(realCountryGeo)}`
+  );
+
+  const photographerCta = compileCtaPrompt({
+    storyPremise: 'A street photographer rescues a child at a midnight crosswalk.',
+    styleProfile: neoNoirStyle,
+    characterSheet: {
+      Photographer: 'slender black-ink stickman with khaki trench coat and silver 35mm camera',
+    },
+    format: 'short',
+    platform: 'tiktok',
+    modality: 'image',
+  });
+  assert(
+    photographerCta.questionText.includes("the photographer's position") &&
+      !photographerCta.questionText.includes("Photographer's position") &&
+      photographerCta.compiledPrompt.includes('portrait of the photographer (locked visual identity:'),
+    'Suite 22: Neo-Noir Regression Guards',
+    '22.4 Formats Generic Sheet Role Keys Into Natural Prose in CTA Prompts',
+    `Got questionText: ${photographerCta.questionText}`
+  );
 }
 
 runTestSuite21().then(() => {

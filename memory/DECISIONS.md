@@ -274,3 +274,16 @@
 - **Context:** Synthetic transition anchor boilerplate cramped every boundary beat in the UI inspector, bottom sheet, and shot-list tables without adding actionable visual value.
 - **Date:** 2026-11-13
 - **Status:** Active
+
+## Standard Mode Verbatim Script Lock & Prompt Quality Fixes
+- **Fact/Decision:** Locked Standard Mode (`autoArchitectMode` OFF in `geminiClient.ts`) to keep user narration strictly verbatim without expanding short scripts (e.g., 20 input words remain 20 spoken words), leaving script expansion exclusively to Enhance Story mode (`enhanceStoryArchitect.ts`), with clarified input copy in `GeneratorForm.tsx`. Additionally fixed orphaned orientation prepositions (`in a from a`), prevented `isMonochromeStyle` from false-triggering on full-color palettes mentioning B&W props, blocked cartographic map overrides on fictional hyphenated cities (`Neo-Seoul`), added visible-surface / named-object fidelity rules, compacted repeated beat `Visual Style:` suffixes, and formatted generic sheet keys (`Photographer` -> `the photographer`) in CTA/Thumbnail prompts (`promptCompiler.ts`).
+- **Context:** Prevents unexpected narration inflation in Standard Mode and fixes the phrasing, color, and map regressions spotted in test outputs.
+- **Date:** 2026-11-14
+- **Status:** Active
+
+## Contextual Target Duration Visibility (Option 1)
+- **Fact/Decision:** In `GeneratorForm.tsx`, hid `Target Duration` in `Text to Image` mode when `Enhance Story` (`autoArchitectMode`) is OFF (submitting `durationMode = 'automatic'` and `durationSeconds = undefined` without custom-duration validation), while keeping `Target Duration` visible when `Enhance Story` is ON and keeping `Clip Duration` always visible in `Text to Video` mode. Also removed `(Optional)` beside `Character & Visual Style` (`GeneratorForm.tsx`) and removed the icon on the `AI Assistant` header button (`Header.tsx`) per explicit user request.
+- **Context:** Standard Image Mode preserves user narration verbatim, so showing a Target Duration picker when Enhance Story is OFF implied length control that did not occur.
+- **Date:** 2026-11-14
+- **Status:** Active
+

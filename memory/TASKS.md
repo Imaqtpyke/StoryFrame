@@ -187,3 +187,7 @@
   - Removed the `Editing Note` pill badge and `Editing Note: Scene Transition Anchor` panel from `BeatBottomSheet.tsx`, the `EDITING TRANSITION NOTE` card from `ResultsView.tsx`, and the optional field from `CustomBeatEditor.tsx`.
   - Removed the `Editing Note` column from CSV and Markdown shot-list exports in `ResultsView.tsx`.
   - Stopped generating or requesting `transitionHint` boilerplate in `beatSplitting.ts` (`populateSceneTransitionHints`), `beatProgressionEngine.ts`, `geminiClient.ts`, and `enhanceStoryArchitect.ts`.
+- [x] **Standard Mode Verbatim Script Lock & Neo-Noir Prompt Hygiene Fixes:**
+  - Locked Standard Mode (`geminiClient.ts` + `beatProgressionEngine.ts` + `GeneratorForm.tsx`) to preserve exact user narration words with zero expansion, reserving expansion exclusively for Enhance Story Mode.
+  - Cleaned dangling prepositions around stripped orientation strings (`in a from a`), refined `isMonochromeStyle` against full-color palettes with B&W props, guarded `extractGeographicAnchor` against fictional hyphenated settings (`Neo-Seoul`), added visible-surface fidelity rules, trimmed repeated `Visual Style:` suffixes, and formatted generic CTA/Thumbnail character keys cleanly (`the photographer`).
+  - Added Test Suite 22 in `src/tests/systemTestSuite.ts` covering all regression guards.

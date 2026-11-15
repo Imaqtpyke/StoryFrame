@@ -296,13 +296,31 @@ export function stripTransientExpressionsAndPoses(desc: string): string {
  */
 export function isMonochromeStyle(styleProfile?: StyleProfile): boolean {
   if (!styleProfile) return false;
-  const combined = `${styleProfile.artStyle || ''} ${styleProfile.colorPalette || ''}`.toLowerCase();
+  const artLower = (styleProfile.artStyle || '').toLowerCase();
+  const paletteRaw = (styleProfile.colorPalette || '').toLowerCase();
+  // Strip references where monochrome/B&W modifies a physical prop (e.g. "black-and-white film prints") rather than overall style
+  const paletteWithoutProps = paletteRaw.replace(
+    /\b(?:stark\s+)?(?:monochrome\s+)?black[-\s]+and[-\s]+white\s+(?:silver[-\s]+gelatin\s+)?(?:film\s+)?(?:prints?|photos?|photographs?|negatives?|snapshots?|polaroids?)\b/gi,
+    ''
+  );
+  const combined = `${artLower} ${paletteWithoutProps}`.trim();
   const hasMono = /\b(?:black\s+and\s+white|black-and-white|black-white|monochrome|monochromatic|greyscale|grayscale|no\s+gray\s+gradients|b&w)\b/i.test(
     combined
   );
   if (!hasMono) return false;
-  // If user explicitly asked for an accent color in palette (e.g. Sin City red highlight), preserve only if stated
-  if (/\b(?:contrasted\s+with\s+(?:red|crimson|neon)|selective\s+color)\b/i.test(combined)) {
+
+  // Preserve full-color palettes that only contrast selective accents or use multiple rich chromatic hues
+  if (
+    /\b(?:contrasted\s+with\s+(?:\w+\s+){0,2}(?:red|crimson|neon|amber|orange)|selective\s+color)\b/i.test(
+      `${artLower} ${paletteRaw}`
+    )
+  ) {
+    return false;
+  }
+  const artDeclaresMono = /\b(?:black\s+and\s+white|black-and-white|monochrome|greyscale|grayscale|no\s+gray\s+gradients|b&w)\b/i.test(
+    artLower
+  );
+  if (!artDeclaresMono && /\b(?:crimson|amber|orange|khaki|emerald|cobalt|magenta|yellow)\b/i.test(paletteWithoutProps)) {
     return false;
   }
   return true;
@@ -651,11 +669,20 @@ export function stripLeadingOrientationPrefixes(prompt: string): string {
     prev = cleaned;
     guard++;
     cleaned = cleaned.replace(
-      /^(?:Cinematic 16:9 widescreen composition|Vertical 9:16 portrait composition|9:16 vertical composition|16:9 widescreen composition)(?:\s*[,.:;-]\s*|\s+)/gi,
+      /^(?:(?:framed|captured|shot|set)\s+)?(?:\b(?:in|with|as)\s+a\s+)?(?:Cinematic 16:9 widescreen composition|Vertical 9:16 portrait composition|9:16 vertical composition|16:9 widescreen composition)(?:\s*[,.:;-]\s*|\s+)*/gi,
       ''
     );
   }
-  return cleaned.trim();
+  // Remove embedded orientation strings along with any dangling preposition right before them
+  cleaned = cleaned.replace(
+    /(?:(?:framed|captured|shot|set)\s+)?\b(?:in|with|as)\s+a\s+(?:Cinematic 16:9 widescreen composition|Vertical 9:16 portrait composition|9:16 vertical composition|16:9 widescreen composition)(?:\s*[,.:;-]\s*|\s+)*/gi,
+    ''
+  );
+  cleaned = cleaned.replace(
+    /\b(?:in|with)\s+a\s+(?=(?:from\s+a|at\s+eye[-\s]*level|at\s+(?:low|high)[-\s]*angle|with\s+a\s+(?:tense\s+)?dutch|birds?[-\s]*eye|worms?[-\s]*eye)\b)/gi,
+    ''
+  );
+  return cleaned.replace(/\s{2,}/g, ' ').trim();
 }
 
 /**
@@ -831,8 +858,9 @@ export function formatFinalBeatPrompt(
     body = `${synced.shotType}${angleLabel}${connector}${lowerFirst}`;
   }
 
-  // Final punctuation & spacing cleanup
+  // Final punctuation, dangling preposition & spacing cleanup
   body = body
+    .replace(/\b(?:in|with)\s+a\s+(?=(?:from\s+a|at\s+eye[-\s]*level|at\s+(?:low|high)[-\s]*angle|with\s+a\s+(?:tense\s+)?dutch|birds?[-\s]*eye|worms?[-\s]*eye)\b)/gi, '')
     .replace(/\.{2,}/g, '.')
     .replace(/,\s*,+/g, ',')
     .replace(/\s+([,.;!?])/g, '$1')
@@ -1675,7 +1703,7 @@ ${compactCastSummary ? `\nLOCKED CHARACTERS (Compact Identity Anchors - MUST inc
 ${compactLocSummary ? `\nLOCKED LOCATIONS:\n${compactLocSummary}` : ''}
 
 STRICT REPAIR RULES:
-1. 100% NARRATION WORD COVERAGE: Every word in the scene's "narratorLine" MUST appear in exact sequential order across its "beats[].textSpan". Never drop or truncate trailing clauses.
+1. 100% EXACT NARRATION WORD COVERAGE (DO NOT EXPAND OR ALTER): Keep each scene's "narratorLine" verbatim without adding, removing, or rewriting words. Every word in "narratorLine" MUST appear in exact sequential order across its "beats[].textSpan". Never drop or truncate trailing clauses.
 2. DYNAMIC VISUAL-EVENT & SELECTIVE MONTAGE PACING:
    - Default baseline (~1.5s to 3.0s per beat): Cut on genuine physical actions, object state transitions, camera vantage shifts, or reveals. NEVER isolate plain grammar connectors ("But he has one problem:", "him live.") into stub beats.
    - EXCEPTION A - ACTION-TRIPLET / PARALLEL-LIST MONTAGE (~0.7s to 1.2s per beat): Whenever narration lists 2-3+ parallel actions/sensory items (e.g. "every blink, every breath, every move"), split EVERY item into its own rapid beat with a RADICALLY DIFFERENT shot scale and focal noun ("every blink" -> Extreme Close-Up macro on eyelids in 1:1 mirror symmetry; "every breath" -> Extreme Close-Up macro on frozen condensation mist on glass near parted lips; "every move" -> Medium Shot on raised shoulder and hand posture). Keep exact 1:1 synchrony unless lag is reached.
@@ -1684,8 +1712,9 @@ STRICT REPAIR RULES:
      * Stalking/verb beat ("that has studied") -> protagonist facing forward completely unaware in sharp focus while the dark entity looms behind in deep shadow watching.
      * Origin flashback beat ("you since birth") -> infant protagonist swaddled INSIDE a wooden crib while the shadowy entity hides behind/outside the crib slats watching. Strictly NO adult turtleneck/jeans wardrobe on the baby, NO modern bedroom traits, and NO etched date timelines on glass!
    - EXCEPTION C - REPEATED NEGATIONS & CLIMAX TURNS: Split repeated rhetorical negations ("You never reach out." hands still at sides -> "You never cross." feet halted before frame) and separate timing-lag beats from smile-reveal beats ("half-second late." -> "Now it's smiling." -> "And you never smiled.").
-3. CHRONOLOGICAL TWIST PROTECTION & ZERO SPOILERS:
+3. CHRONOLOGICAL TWIST PROTECTION, VISIBLE CONTENT & ZERO SPOILERS:
    - Never reveal late-story horror twists early (if reflection only smiles at the end, keep it unsmiling earlier; if Scene 3 says "perfectly mimicking", show 1:1 synchrony with zero delay).
+   - VISIBLE CONTENT FIDELITY: When narration states a photograph, print, newspaper, or screen "shows", "displays", or "reveals" something, depict its visible front face showing all stated items (never turn it face-down or omit named items like a headline board).
    - Never contradict negation beats, never quote spoken words inside visual prompts, and never invent unseen whispers.
 4. MONOCHROME & ENTITY CONSISTENCY:
    - ${isMonochromeStyle(styleProfile) ? 'STRICT MONOCHROME INK STYLE ACTIVE: NEVER include color Kelvin temperatures (3200K warm, 5400K, cyan, amber, crimson). Use pure monochrome contrast and chiaroscuro ink shadow lighting only.' : 'Keep lighting and color palette aligned with Style Profile.'}
@@ -1693,7 +1722,7 @@ STRICT REPAIR RULES:
 5. SYNCHRONIZED SHOT METADATA & OPENING:
    - Each beat MUST specify "shotType", "cameraAngle", and "cameraMovement".
    - NEVER place framing terms like "over-the-shoulder" or "pov" inside "cameraAngle"! Only vertical/tilt angles are allowed in cameraAngle.
-   - Begin "imagePrompt" with: "${orientationText}, <shotType>, <cameraAngle>, <Art Style> - <Subject with compact locked identity> <concrete action/state>, <setting>, <lighting & lens> ${arFlag}"
+   - Begin "imagePrompt" with: "${orientationText}, <shotType>, <cameraAngle>, <compact visual scene>" (NEVER insert "in a" before the angle or repeat orientation strings).
    - Ensure shotType and cameraAngle in metadata match the opening of imagePrompt 1-for-1.
 6. NATURAL BIOMECHANICS & CHRONOLOGY:
    - NEVER write degree angles or body-weight percentages (e.g. "70% weight", "15 degrees"). Describe posture, weight, grip, and gaze in natural language.

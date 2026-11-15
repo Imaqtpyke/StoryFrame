@@ -500,6 +500,9 @@ export default function GeneratorForm({
       }
       durationMode = 'preset';
       durationSeconds = targetVideoDuration;
+    } else if (!autoArchitectMode) {
+      durationMode = 'automatic';
+      durationSeconds = undefined;
     } else {
       if (durationValue === 'automatic') {
         durationMode = 'automatic';
@@ -698,7 +701,7 @@ export default function GeneratorForm({
                 htmlFor="story-input-box"
                 className="block font-display text-sm font-medium text-white"
               >
-                {autoArchitectMode ? 'Story Premise, Question, or Draft' : 'Story Idea or Script'}
+                {autoArchitectMode ? 'Story Premise, Question, or Draft' : 'Exact Story or Script'}
               </label>
 
               <div className="flex items-center gap-2.5">
@@ -740,7 +743,7 @@ export default function GeneratorForm({
                   ? "Enter any premise, question, or rough draft (for example: 'What happens if you swallow a magnet?' or 'A deep-sea diver discovers a glowing hatch'). StoryFrame expands the narrative and directs every shot."
                   : beatMode === 'custom'
                     ? 'e.g. She fell (beat 1) two miles through open air (beat 2), strapped to three airplane seats, and survived (beat 3).'
-                    : 'Write your story, narration script, or scene sequence from beginning to end...'
+                    : 'Paste your story or exact narrator script. Standard mode preserves every word as written without expanding it (enable Enhance Story to expand a short idea).'
               }
               className={`w-full p-4 bg-[#121211] hover:bg-[#151513] focus:bg-[#121211] text-[#F5F5F0] placeholder:text-[#666660] border rounded-[3px] transition-colors focus:outline-none text-sm sm:text-base leading-relaxed resize-y story-textarea-scroll ${
                 autoArchitectMode
@@ -770,7 +773,7 @@ export default function GeneratorForm({
               htmlFor="character-prompt-input"
               className="block font-display text-sm font-medium text-white"
             >
-              Character &amp; Visual Style <span className="text-[#8C8C86] font-normal">(Optional)</span>
+              Character &amp; Visual Style
             </label>
             <input
               type="text"
@@ -899,7 +902,7 @@ export default function GeneratorForm({
                   </span>
                 </div>
                 <p className="text-xs text-[#8C8C86] leading-snug">
-                  Expands short notes into a structured hook and full narration.
+                  Expands a short idea or 1-line premise into a structured hook and full narration.
                 </p>
               </div>
 
@@ -1071,7 +1074,7 @@ export default function GeneratorForm({
                     </div>
                   )}
                 </div>
-              ) : (
+              ) : autoArchitectMode ? (
                 <div className="space-y-2">
                   <CustomDropdown
                     id="duration-select"
@@ -1080,6 +1083,7 @@ export default function GeneratorForm({
                     selectedValue={durationValue}
                     onSelect={setDurationValue}
                     disabled={isLoading}
+                    helperText="Controls how long Enhance Story expands your narration script."
                   />
                   {durationValue === 'custom' && (
                     <div className="pt-1 space-y-1.5">
@@ -1104,7 +1108,7 @@ export default function GeneratorForm({
                     </div>
                   )}
                 </div>
-              )}
+              ) : null}
             </div>
           </div>
 

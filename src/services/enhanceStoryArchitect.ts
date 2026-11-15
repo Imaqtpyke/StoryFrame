@@ -373,10 +373,12 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
 7. CASTING & STYLE DECOUPLING:
    - When a scene or beat has NO characters (e.g. empty harbor, still life of an object), NEVER write character or mascot requirements into the prompt (e.g. do not write "with exaggerated stretchy animal characters" if the scene has no characters).
 
-8. GEOGRAPHIC DEMONYM & CARTOGRAPHIC ANCHOR RULE:
-   - Whenever a country, nationality/demonym (e.g. "Swedish", "British", "French", "German", "Japanese", "American", "in France", "in Sweden"), or prominent geographic area is spoken in narration, that entity MUST form its own standalone micro-beat (e.g. Beat 1: "In 1896", Beat 2: "Swedish", Beat 3: "scientist Svante Arrhenius").
-   - The visual prompt for this geographic beat MUST focus strictly on the environment and cartography: a tactile 2.5D topographic map or rotating vintage terrestrial globe with the country's national borders illuminated with glowing boundary lines, a metallic dropped location pin, and the authentic national flag or crest displayed beside the geographic outline. Shallow depth of field, warm directional lighting, macro lens aesthetic. NO humans, characters, or faces in frame.
-   - The character or historical action is introduced in the subsequent beat.
+   - VISIBLE CONTENT & NAMED-OBJECT FIDELITY: When narration states that a photograph, print, newspaper, screen, or sign "shows", "displays", or "reveals" something, depict the visible front surface clearly showing all stated elements (never turn it face-down or omit named items like a headline board).
+
+8. GEOGRAPHIC DEMONYM & CARTOGRAPHIC ANCHOR RULE (DOCUMENTARY / REAL-WORLD CALLOUTS ONLY):
+   - Whenever a real-world country, nationality/demonym (e.g. "Swedish", "British", "French", "German", "Japanese", "American", "in France", "in Sweden") appears as a geographic callout in documentary/historical narration, that entity forms its own standalone micro-beat (e.g. Beat 1: "In 1896", Beat 2: "Swedish", Beat 3: "scientist Svante Arrhenius").
+   - DO NOT apply this tabletop map rule to fictionalized or hyphenated world settings (e.g. "Neo-Seoul", "Cyber-Tokyo") or when Scene 1 Beat 1 opens on a main character in action. Keep fictional world beats grounded inside the story world with characters visible!
+   - When triggered for a real-world documentary geographic beat, focus on a tactile 2.5D topographic map or vintage globe with glowing national borders, a dropped pin, and the national flag (no characters in frame).
 
 STRICT CONSTRAINTS:
 1. DO NOT use em dashes anywhere. Use commas, periods, or parentheses instead.
@@ -465,10 +467,12 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
 5. CASTING & STYLE DECOUPLING:
    - When a scene or beat has NO characters (e.g. empty harbor, still life of an object), NEVER write character or mascot requirements into the prompt (e.g. do not write "with exaggerated stretchy animal characters" if the scene has no characters).
 
-6. GEOGRAPHIC DEMONYM & CARTOGRAPHIC ANCHOR RULE:
-   - Whenever a country, nationality/demonym (e.g. "Swedish", "British", "French", "German", "Japanese", "American", "in France", "in Sweden"), or prominent geographic area is spoken in narration, that entity MUST form its own standalone micro-beat (e.g. Beat 1: "In 1896", Beat 2: "Swedish", Beat 3: "scientist Svante Arrhenius").
-   - The visual prompt for this geographic beat MUST focus strictly on the environment and cartography: a tactile 2.5D topographic map or rotating vintage terrestrial globe with the country's national borders illuminated with glowing boundary lines, a metallic dropped location pin, and the authentic national flag or crest displayed beside the geographic outline. Shallow depth of field, warm directional lighting, macro lens aesthetic. NO humans, characters, or faces in frame.
-   - The character or historical action is introduced in the subsequent beat.
+   - VISIBLE CONTENT & NAMED-OBJECT FIDELITY: When narration states that a photograph, print, newspaper, screen, or sign "shows", "displays", or "reveals" something, depict the visible front surface clearly showing all stated elements (never turn it face-down or omit named items like a headline board).
+
+6. GEOGRAPHIC DEMONYM & CARTOGRAPHIC ANCHOR RULE (DOCUMENTARY / REAL-WORLD CALLOUTS ONLY):
+   - Whenever a real-world country, nationality/demonym (e.g. "Swedish", "British", "French", "German", "Japanese", "American", "in France", "in Sweden") appears as a geographic callout in documentary/historical narration, that entity forms its own standalone micro-beat (e.g. Beat 1: "In 1896", Beat 2: "Swedish", Beat 3: "scientist Svante Arrhenius").
+   - DO NOT apply this tabletop map rule to fictionalized or hyphenated world settings (e.g. "Neo-Seoul", "Cyber-Tokyo") or when Scene 1 Beat 1 opens on a main character in action. Keep fictional world beats grounded inside the story world with characters visible!
+   - When triggered for a real-world documentary geographic beat, focus on a tactile 2.5D topographic map or vintage globe with glowing national borders, a dropped pin, and the national flag (no characters in frame).
 
 STRICT CONSTRAINTS:
 1. DO NOT use em dashes anywhere.

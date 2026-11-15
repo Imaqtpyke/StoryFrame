@@ -9,6 +9,7 @@ import {
   sanitizeImagePromptShotFraming,
 } from './beatSplitting';
 import {
+  buildCompactCharacterAnchor,
   deduplicateAndProgressSceneBeats,
   expandEntityKeysInPrompt,
   isInfancyOrChildhoodFlashback,
@@ -267,12 +268,19 @@ export function assembleCleanPrompt(
   // Strip legacy variation prefixes
   cleaned = cleaned.replace(/^(?:the altered environment|emphasizing grounded scale|focusing on tactile textures|vantage perspective looking down across the scene|reaction angle focusing on physical interaction)\.\s*/gi, '');
 
-  // Strip redundant aspect ratio tags and orientation strings anywhere in text
+  // Strip redundant aspect ratio tags, orientation strings, and any orphaned prepositions before framing
   cleaned = cleaned.replace(/\s*--ar\s+[0-9:]+/gi, '');
   cleaned = cleaned.replace(/,\s*ar\s+[0-9:]+[.,]?/gi, '');
   cleaned = cleaned.replace(/\bar\s+[0-9:]+[.,]?/gi, '');
   cleaned = stripLeadingOrientationPrefixes(cleaned);
-  cleaned = cleaned.replace(/\b(?:Cinematic 16:9 widescreen composition|Vertical 9:16 portrait composition)(?:\s*[,.:;-]\s*|\s+)*/gi, '');
+  cleaned = cleaned.replace(
+    /(?:(?:framed|captured|shot|set)\s+)?(?:\b(?:in|with|as)\s+a\s+)?\b(?:Cinematic 16:9 widescreen composition|Vertical 9:16 portrait composition)(?:\s*[,.:;-]\s*|\s+)*/gi,
+    ''
+  );
+  cleaned = cleaned.replace(
+    /\b(?:in|with)\s+a\s+(?=(?:from\s+a|at\s+eye[-\s]*level|at\s+(?:low|high)[-\s]*angle|with\s+a\s+(?:tense\s+)?dutch|birds?[-\s]*eye|worms?[-\s]*eye)\b)/gi,
+    ''
+  );
 
   // Strip degenerate/empty prompts like "Extreme." or "Wide."
   if (/^(?:Extreme|Wide|Medium|Close-up|Macro|Point-of-View|Over-the-Shoulder)\.?\s*$/i.test(cleaned)) {
@@ -336,18 +344,23 @@ export async function generateOriginalStory(
 
   let durationInstruction = '';
   if (isVideoMode) {
-    durationInstruction = `Generation mode is Text to Video. Target single video clip duration is strictly ${targetVideoDuration} seconds per scene. Break the story into distinct visual scenes that can each be captured in a single ${targetVideoDuration}-second AI video shot. Each scene's master "videoPrompt" MUST state Duration: ${targetVideoDuration} seconds.`;
+    durationInstruction = `Generation mode is Text to Video. Target single video clip duration is strictly ${targetVideoDuration} seconds per scene. Partition the user's EXACT script words cleanly across clips without adding or expanding narration. Each scene's master "videoPrompt" MUST state Duration: ${targetVideoDuration} seconds.`;
   } else if (durationMode === 'automatic') {
-    durationInstruction = `Duration mode is Automatic. Break the story into however many scenes it naturally requires. Estimate realistic narration pacing with a floor of 3 to 6 seconds of spoken narration per scene. Calculate and return totalDurationSeconds accurately based on the scene pacing.`;
+    durationInstruction = `Duration mode is Automatic. Break the user's EXACT narration text into natural visual scenes without adding, rewriting, or expanding any spoken words (20 input words = 20 spoken words total). Estimate realistic spoken timing (~2.2 words/sec) and calculate totalDurationSeconds accurately from the user's actual word count.`;
   } else if (durationSeconds && durationSeconds > 0) {
-    durationInstruction = `Target total duration is exactly ${durationSeconds} seconds (${isLongForm ? Math.round(durationSeconds / 60) + ' minutes' : durationSeconds + ' seconds'}). Carefully pace the number of scenes and the length of each scene's spoken narrator line so their combined spoken narration matches this target duration closely.`;
+    durationInstruction = `User selected duration reference: ${durationSeconds} seconds (${isLongForm ? Math.round(durationSeconds / 60) + ' minutes' : durationSeconds + ' seconds'}). STILL keep the user's input narration verbatim without padding extra sentences or inventing filler dialogue; distribute visual pacing across the user's exact words.`;
   } else {
-    durationInstruction = `Provide a well-paced scene sequence with 3 to 6 seconds per scene floor.`;
+    durationInstruction = `Break the user's EXACT narration words into natural visual scenes without expanding or inventing extra narration.`;
   }
 
   const systemPrompt = isVideoMode
     ? `You are an expert film director, cinematographer, and AI video prompt engineer.
-Your task is to take a story and generate a production-ready, scene-by-scene video generation breakdown with cinematic video prompts, smart video shot beats, narrator lines, a style profile, and visual continuity sheets.
+Your task is to convert the user's EXACT script into a production-ready, scene-by-scene video generation breakdown with cinematic video prompts, smart video shot beats, style profile, and visual continuity sheets.
+
+STRICT VERBATIM SCRIPT LOCK (ZERO EXPANSION / ZERO REWRITING):
+- Standard Mode is active (Enhance Story is OFF). Treat the user's input as the FINAL spoken voiceover script, NEVER as an idea to expand.
+- NEVER add new sentences, extra exposition, invented twists, or filler narration. Joining every scene's "narratorLine" from Scene 1 to Scene N MUST reproduce 100% of the user's input words verbatim in exact sequence (for example, 20 input words = 20 total spoken words across narratorLine and beats[].textSpan).
+- If the script is short (e.g. 20 words), output a tight 1-to-3 scene storyboard matching those exact 20 words. Put all rich visual expansion inside "videoPrompt" and "imagePrompt", NEVER inside "narratorLine".
 
 CLAUSE & MICRO-ACTION BEAT SEGMENTATION RULES (CRITICAL):
 1. Grammar is NOT equal to Scene: Never force an entire long sentence with multiple actions into a single 4-second clip.
@@ -445,10 +458,10 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
 9. CASTING & STYLE DECOUPLING:
    - When a scene or beat has NO characters (e.g. empty harbor, still life of an object), NEVER write character or mascot requirements into the prompt (e.g. do not write "with exaggerated stretchy animal characters" if the scene has no characters).
 
-10. GEOGRAPHIC DEMONYM & CARTOGRAPHIC ANCHOR RULE:
-    - Whenever a country, nationality/demonym (e.g. "Swedish", "British", "French", "German", "Japanese", "American", "in France", "in Sweden"), or prominent geographic area is spoken in narration, that entity MUST form its own standalone micro-beat (e.g. Beat 1: "In 1896", Beat 2: "Swedish", Beat 3: "scientist Svante Arrhenius").
-    - The visual prompt for this geographic beat MUST focus strictly on the environment and cartography: a tactile 2.5D topographic map or rotating vintage terrestrial globe with the country's national borders illuminated with glowing boundary lines, a metallic dropped location pin, and the authentic national flag or crest displayed beside the geographic outline. Shallow depth of field, warm directional lighting, macro lens aesthetic. NO humans, characters, or faces in frame.
-    - The character or historical action is introduced in the subsequent beat.
+10. GEOGRAPHIC DEMONYM & CARTOGRAPHIC ANCHOR RULE (DOCUMENTARY / REAL-WORLD CALLOUTS ONLY):
+    - Whenever a real-world country, nationality/demonym (e.g. "Swedish", "British", "French", "German", "Japanese", "American", "in France", "in Sweden") appears as a geographic callout in documentary/historical narration, that entity forms its own standalone micro-beat (e.g. Beat 1: "In 1896", Beat 2: "Swedish", Beat 3: "scientist Svante Arrhenius").
+    - DO NOT apply this tabletop map rule to fictionalized or hyphenated world settings (e.g. "Neo-Seoul", "Cyber-Tokyo") or when Scene 1 Beat 1 opens on a main character in action. Keep fictional world beats grounded inside the story environment with characters visible!
+    - When triggered for a real-world documentary geographic beat, focus on a tactile 2.5D topographic map or vintage terrestrial globe with glowing borders, a dropped location pin, and the national flag (NO humans in frame).
 
 11. Unified Stylistic Register (CONSISTENT ART MEDIUM VOCABULARY):
     When a specific art style or medium is requested, apply that art style's specific descriptive vocabulary consistently across ALL parts of the prompt.
@@ -524,7 +537,12 @@ STRICT CONSTRAINTS:
 }
 Do not include markdown code fences or backticks, just raw JSON.`
     : `You are an expert film director, cinematographer, and storyboard production supervisor.
-Your task is to take a story and generate a production-ready, nested scene-and-beat visual breakdown with exact cinematic image prompts, shot taxonomy tags, narrator lines, a style profile, and visual continuity sheets.
+Your task is to convert the user's EXACT script into a production-ready, nested scene-and-beat visual breakdown with exact cinematic image prompts, shot taxonomy tags, a style profile, and visual continuity sheets.
+
+STRICT VERBATIM SCRIPT LOCK (ZERO EXPANSION / ZERO REWRITING):
+- Standard Mode is active (Enhance Story is OFF). Treat the user's input as the FINAL spoken voiceover script, NEVER as an idea to expand or embellish.
+- NEVER add new sentences, invented exposition, plot extensions, or filler narration. Joining every scene's "narratorLine" from Scene 1 to Scene N MUST reproduce 100% of the user's input words verbatim in exact sequence (e.g. 20 input words = 20 total spoken words across narratorLine and beats[].textSpan).
+- Put all cinematic visual expansion strictly inside "imagePrompt", NEVER inside "narratorLine".
 
 CLAUSE & MICRO-ACTION BEAT SEGMENTATION RULES (CRITICAL):
 1. Do NOT make a boring 1-sentence = 1-image breakdown! A long sentence with multiple items, actions, or psychological turns MUST be broken into granular, rhythmic visual beats.
@@ -638,10 +656,12 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
 11. STYLE AND CASTING COMPATIBILITY:
    - If a scene or beat has NO characters (e.g. empty harbor, still life object), do NOT include character or animal mascot requirements in the visual prompt (e.g. do not write "with exaggerated stretchy animal characters" if the scene is an empty environment).
 
-12. GEOGRAPHIC DEMONYM & CARTOGRAPHIC ANCHOR RULE:
-   - Whenever a country, nationality/demonym (e.g. "Swedish", "British", "French", "German", "Japanese", "American", "in France", "in Sweden"), or prominent geographic area is spoken in narration, that entity MUST form its own standalone micro-beat (e.g. Beat 1: "In 1896", Beat 2: "Swedish", Beat 3: "scientist Svante Arrhenius").
-   - The visual prompt for this geographic beat MUST focus strictly on the environment and cartography: a tactile 2.5D topographic map or rotating vintage terrestrial globe with the country's national borders illuminated with glowing boundary lines, a metallic dropped location pin, and the authentic national flag or crest displayed beside the geographic outline. Shallow depth of field, warm directional lighting, macro lens aesthetic. NO humans, characters, or faces in frame.
-   - The character or historical action is introduced in the subsequent beat.
+   - VISIBLE CONTENT & NAMED-OBJECT FIDELITY: When narration explicitly states that a photograph, print, newspaper, headline board, screen, or letter "shows", "displays", or "reveals" something, depict the visible front surface clearly showing all stated elements. NEVER turn the photo face-down to hide what narration says it shows, and depict EVERY named object listed in that beat's clause.
+
+12. GEOGRAPHIC DEMONYM & CARTOGRAPHIC ANCHOR RULE (DOCUMENTARY / REAL-WORLD CALLOUTS ONLY):
+   - Whenever a real-world country, nationality/demonym (e.g. "Swedish", "British", "French", "German", "Japanese", "American", "in France", "in Sweden") appears as a geographic callout in documentary/historical narration, that entity forms its own standalone micro-beat (e.g. Beat 1: "In 1896", Beat 2: "Swedish", Beat 3: "scientist Svante Arrhenius").
+   - DO NOT apply this tabletop map rule to fictionalized or hyphenated world settings (e.g. "Neo-Seoul", "Cyber-Tokyo") or when Scene 1 Beat 1 opens on a main character in action. Keep fictional world beats grounded inside the story environment with characters visible!
+   - When triggered for a real-world documentary geographic beat, focus on a tactile 2.5D topographic map or vintage terrestrial globe with glowing borders, a dropped location pin, and the national flag (NO humans in frame).
 
 13. Nested Scenes and Beats:
    Break the story into a sequence of scenes with rich, dynamic visual beats.
@@ -707,7 +727,7 @@ Beats:
 ${cs.beats.map((b, bIdx) => `  - Beat ${bIdx + 1} phrase: "${b.textSpan}"${b.userGuidance ? ` | Director's Visual Note: "${b.userGuidance}"` : ''}${b.shotType ? ` | Preferred Shot: "${b.shotType}"` : ''}`).join('\n')}`).join('\n\n')}`;
   }
 
-  const userPrompt = `Story Idea / Concept Premise:
+  const userPrompt = `Exact Story / Voiceover Script (preserve every word verbatim, DO NOT expand):
 ${story}
 
 Character Style Instruction:
@@ -899,13 +919,13 @@ ${durationInstruction}${customBeatsPrompt}`;
         }
       }
 
-      // Avoid appending repetitive style boilerplate if already covered or if prompts are concise
+      // Append compact style suffix without repeating a 40+ word style paragraph on every beat
       if (
         !finalImagePrompt.toLowerCase().includes(sanitizedStyleProfile.artStyle.toLowerCase().slice(0, 15)) &&
         !finalImagePrompt.toLowerCase().includes('visual style:')
       ) {
-        // Keep style append concise without dumping full paragraph
-        finalImagePrompt += ` Visual Style: ${sanitizedStyleProfile.artStyle}.`;
+        const compactBeatStyle = buildCompactCharacterAnchor(sanitizedStyleProfile.artStyle, 14) || sanitizedStyleProfile.artStyle;
+        finalImagePrompt += ` Visual Style: ${compactBeatStyle}.`;
       }
 
       // Sanitize visualSoundEffect (Image mode only; illustrated / comic styles only)

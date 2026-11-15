@@ -170,12 +170,20 @@ export function extractGeographicAnchor(text: string): GeographicAnchor | null {
   if (!text || !text.trim()) return null;
   const clean = text.trim();
 
+  // Do not hijack active hero / character-action clauses in fictional worlds (e.g. "In 1980s Neo-Seoul, a young street photographer")
+  const hasActiveSubjectOrHyphenWorld =
+    /\b(?:neo|cyber|retro|proto|new)-[a-z]+/i.test(clean) &&
+    /\b(?:photographer|detective|soldier|girl|boy|man|woman|child|walks|runs|shoots|sprints)\b/i.test(clean);
+  if (hasActiveSubjectOrHyphenWorld) {
+    return null;
+  }
+
   // Sort keys by length descending to match multi-word entries first (e.g. "great britain", "south korea")
   const sortedKeys = Object.keys(GEOGRAPHIC_DICTIONARY).sort((a, b) => b.length - a.length);
 
   for (const key of sortedKeys) {
     const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(`\\b(?:in\\s+|across\\s+|from\\s+)?(${escapedKey})\\b`, 'i');
+    const regex = new RegExp(`(?<!-)\\b(?:in\\s+|across\\s+|from\\s+)?(${escapedKey})\\b(?!-)`, 'i');
     const match = clean.match(regex);
     if (match && match[1]) {
       const entry = GEOGRAPHIC_DICTIONARY[key];

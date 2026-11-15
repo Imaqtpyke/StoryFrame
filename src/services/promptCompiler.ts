@@ -569,12 +569,26 @@ export function compileThumbnailPrompt(params: {
       : inferStoryAdaptiveFont(params.styleProfile?.artStyle, params.storyPremise);
 
   // Primary character extraction for identity lock (strip transient expressions so thumbnail emotion never clashes)
+  const formatSheetSubjectName = (rawKey: string, capitalizeStart: boolean): string => {
+    const trimmed = rawKey.trim();
+    const spaced = trimmed.replace(/([a-z])([A-Z])/g, '$1 $2').trim();
+    const lower = spaced.toLowerCase();
+    const isGenericRole =
+      /^(?:protagonist|narrator|photographer|street photographer|detective|soldier|scientist|survivor|stray child|child|mother|father|driver|archivist|diver|doctor|stranger|victim|hero|explorer|journalist|writer|teacher|student|guard|pilot|captain|officer|knight|king|queen)$/i.test(
+        lower
+      );
+    if (isGenericRole) {
+      return capitalizeStart ? `The ${lower}` : `the ${lower}`;
+    }
+    return trimmed;
+  };
+
   const characters = Object.entries(params.characterSheet || {});
   let primaryCharClause = 'The protagonist';
   if (characters.length > 0) {
     const [name, desc] = characters[0];
     const cleanIdentityDesc = stripTransientExpressionsAndPoses(desc) || desc;
-    const displayName = name.trim().toLowerCase() === 'protagonist' ? 'The protagonist' : name.trim();
+    const displayName = formatSheetSubjectName(name, true);
     primaryCharClause = `${displayName} (locked visual identity: ${cleanIdentityDesc})`;
   }
 
@@ -796,15 +810,26 @@ export function compileCtaPrompt(params: {
   const aspectRatio: '16:9' | '9:16' = isWidescreen ? '16:9' : '9:16';
 
   // Primary character extraction for identity lock (expression-free)
+  const formatCtaRoleName = (rawKey: string): string => {
+    const trimmed = rawKey.trim();
+    const spaced = trimmed.replace(/([a-z])([A-Z])/g, '$1 $2').trim();
+    const lower = spaced.toLowerCase();
+    const isGenericRole =
+      /^(?:protagonist|narrator|photographer|street photographer|detective|soldier|scientist|survivor|stray child|child|mother|father|driver|archivist|diver|doctor|stranger|victim|hero|explorer|journalist|writer|teacher|student|guard|pilot|captain|officer|knight|king|queen)$/i.test(
+        lower
+      );
+    return isGenericRole ? `the ${lower}` : trimmed;
+  };
+
   const characters = Object.entries(params.characterSheet || {});
   let primaryCharName = 'the protagonist';
-  let primaryCharClause = 'The protagonist';
+  let primaryCharClause = 'the protagonist';
   if (characters.length > 0) {
     const [rawName, rawDesc] = characters[0];
     const cleanDesc = stripTransientExpressionsAndPoses(rawDesc) || rawDesc;
-    const isGenericProtag = rawName.trim().toLowerCase() === 'protagonist';
-    primaryCharName = isGenericProtag ? 'the protagonist' : rawName.trim();
-    primaryCharClause = `${isGenericProtag ? 'the protagonist' : rawName.trim()} (locked visual identity: ${cleanDesc})`;
+    const formattedName = formatCtaRoleName(rawName);
+    primaryCharName = formattedName;
+    primaryCharClause = `${formattedName} (locked visual identity: ${cleanDesc})`;
   }
 
   // Question resolution
