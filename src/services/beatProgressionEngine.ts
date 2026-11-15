@@ -554,6 +554,15 @@ export function isCharacterFreeBeat(prompt: string, textSpan: string): boolean {
   ) {
     return true;
   }
+  const hasEmptyLocationPhrase = /\b(?:empty|uninhabited|deserted)\s+(?:headland|pier|dock|shoreline|coastline|beach|cove|street|alley|plaza|square|room|hallway|parlor|landscape|skyline|lighthouse|house)\b/i.test(
+    prompt
+  );
+  const promptHasPersonNoun = /\b(?:man|woman|boy|girl|child|baby|infant|person|figure|silhouette|crowd|people|soldier|detective|inventor|artist|scientist|engineer|astronaut|photographer|archivist|cat|dog|creature|entity|his|her|their|she|he)\b/i.test(
+    prompt.replace(/\bVisual Style:[^.]*\.?/gi, '')
+  );
+  if (hasEmptyLocationPhrase && !promptHasPersonNoun) {
+    return true;
+  }
   const geo = extractGeographicAnchor(textSpan);
   if (geo && getWordCount(textSpan) <= 3) {
     return true;
@@ -601,6 +610,8 @@ const GENERIC_VISUAL_TRAIT_WORDS = new Set([
   'long', 'short', 'thick', 'thin', 'round', 'flat', 'simple', 'clean', 'bold', 'heavy',
   'wooden', 'paper', 'painted', 'stylized', 'expressive', 'lumpy', 'young', 'older',
   'companion', 'artist', 'edges', 'surface', 'textures',
+  'adult', 'back', 'weathered', 'worn', 'fair', 'brown', 'yellow', 'navy', 'green',
+  'rolled', 'tanned', 'buttoned', 'striped', 'over', 'under', 'coastal', 'neatly', 'tied',
 ]);
 
 export function injectCompactCharacterLocks(
@@ -651,6 +662,17 @@ export function injectCompactCharacterLocks(
   const spanHasMalePronoun = /\b(?:he|him|his)\b/i.test(spanLower);
   const spanHasPluralPronoun = /\b(?:they|them|their|theirs)\b/i.test(spanLower);
 
+  const bodyHasFemaleCue = /\b(?:woman|girl|mother|sister|daughter|lady|actress|she|her|hers)\b/i.test(bodyLower);
+  const bodyHasMaleCue = /\b(?:man|boy|father|brother|son|guy|actor|he|him|his)\b/i.test(bodyLower);
+  const promptHasExplicitChild =
+    /\b(?:young\s+girl|young\s+boy|nine-year-old|\d+-year-old\s+(?:boy|girl|child)|childhood\s+(?:summer\s+)?flashback|both\s+children|little\s+girl|little\s+boy|boyhood|girlhood)\b/i.test(
+      bodyLower
+    );
+  const promptHasExplicitAdult =
+    /\b(?:adult\s+woman|adult\s+man|older\s+woman|older\s+man|elderly|mid-thirties|silver-streaked)\b/i.test(
+      bodyLower
+    );
+
   const tokenMatchesBody = (token: string): boolean => {
     if (bodyWordTokens.has(token)) return true;
     if (token === 'hair' && bodyWordTokens.has('haired')) return true;
@@ -664,7 +686,7 @@ export function injectCompactCharacterLocks(
   let maxMatchedTokens = 0;
   for (const [charName, fullDesc] of charEntries) {
     if (!fullDesc || fullDesc.trim().length < 6) continue;
-    const compact = buildCompactCharacterAnchor(fullDesc, 18);
+    const compact = buildCompactCharacterAnchor(fullDesc, 36);
     if (!compact) continue;
     const tokens = compact
       .toLowerCase()
@@ -729,6 +751,16 @@ export function injectCompactCharacterLocks(
     const isMaleChar =
       !isPluralChar && !isFemaleChar && /\b(?:man|boy|male|father|brother|son|guy|actor)\b/i.test(fullDesc);
 
+    const charIsChild =
+      /\b(?:child|nine-year-old|\d+-year-old\s+(?:boy|girl|child)|young\s+(?:boy|girl)|little\s+(?:boy|girl)|boyhood|girlhood)\b/i.test(
+        `${charName} ${fullDesc}`
+      );
+    const charIsAdult =
+      !charIsChild &&
+      /\b(?:adult|mid-thirties|late twenties|early twenties|thirties|forties|fifties|older woman|older man|elderly|middle-aged|silver-streaked)\b/i.test(
+        `${charName} ${fullDesc}`
+      );
+
     const charIsYoung = /\b(?:young woman|young man|twenties|early twenties|late twenties|teen|teenager|boy|girl)\b/i.test(
       fullDesc
     );
@@ -737,7 +769,9 @@ export function injectCompactCharacterLocks(
     );
     const ageMismatch =
       (charIsYoung && foregroundHasOlder && !foregroundHasYoung) ||
-      (charIsOlder && foregroundHasYoung && !foregroundHasOlder);
+      (charIsOlder && foregroundHasYoung && !foregroundHasOlder) ||
+      (charIsAdult && promptHasExplicitChild && !promptHasExplicitAdult) ||
+      (charIsChild && promptHasExplicitAdult && !promptHasExplicitChild);
 
     const isRunnerUpInCloseUp =
       isCloseUpOrEcu &&
@@ -747,10 +781,22 @@ export function injectCompactCharacterLocks(
       maxMatchedTokens >= 3 &&
       matchedTokens < maxMatchedTokens;
 
+    const effectiveFemalePronounOnly =
+      spanHasFemalePronoun && !spanHasMalePronoun && !spanHasPluralPronoun && !bodyHasMaleCue;
+    const effectiveMalePronounOnly =
+      spanHasMalePronoun && !spanHasFemalePronoun && !spanHasPluralPronoun && !bodyHasFemaleCue;
+
+    const bodyGenderMismatch =
+      !promptMentionsName &&
+      !beatMentionsName &&
+      ((isFemaleChar && bodyHasMaleCue && !bodyHasFemaleCue) ||
+        (isMaleChar && bodyHasFemaleCue && !bodyHasMaleCue));
+
     const pronounMismatch =
       (isPluralChar && (spanHasFemalePronoun || spanHasMalePronoun) && !spanHasPluralPronoun) ||
-      (isFemaleChar && spanHasMalePronoun && !spanHasFemalePronoun) ||
-      (isMaleChar && spanHasFemalePronoun && !spanHasMalePronoun);
+      (isFemaleChar && effectiveMalePronounOnly) ||
+      (isMaleChar && effectiveFemalePronounOnly) ||
+      bodyGenderMismatch;
 
     const pronounOrRoleMatch = /\b(?:he|him|his|she|her|hers|they|them|their|soldier|warrior|knight|hero|man|woman|boy|girl|forearm|chest plate|trigger|rifle|boots)\b/i.test(
       `${textSpan} ${bodyWithoutStyleOrAr}`
@@ -772,8 +818,8 @@ export function injectCompactCharacterLocks(
       !pronounMismatch &&
       !ageMismatch &&
       !isRunnerUpInCloseUp &&
-      ((isFemaleChar && spanHasFemalePronoun) ||
-        (isMaleChar && spanHasMalePronoun) ||
+      ((isFemaleChar && spanHasFemalePronoun && !spanHasPluralPronoun) ||
+        (isMaleChar && spanHasMalePronoun && !spanHasPluralPronoun) ||
         (isPluralChar && spanHasPluralPronoun));
 
     const shouldInject =
@@ -981,6 +1027,42 @@ export function synchronizeBeatMetadataWithPrompt(beat: Beat): Beat {
  * when none is present in the prose, expanded entity keys, monochrome-safe lighting, still-image
  * motion filtering, cleaned punctuation, and exact --ar parameter flag.
  */
+export function sanitizeStyleForEra(
+  text: string,
+  era: 'present' | 'flashback'
+): string {
+  if (!text || typeof text !== 'string') return '';
+  let cleaned = text.trim();
+
+  if (era === 'present') {
+    cleaned = cleaned
+      .replace(/;\s*[^;.]*\b(?:childhood\s+flashbacks?|youth\s+flashbacks?|golden-hour\s+coastal\s+sunlight\s+in\s+childhood)\b[^;.]*/gi, '')
+      .replace(/,?\s*\b(?:contrasted\s+with|and\s+clear\s+visual\s+transitions\s+between)\b[^,.;]*\b(?:flashbacks?|past\s+and\s+present)\b[^,.;]*/gi, '')
+      .replace(/,?\s*\bwith\s+[^,.;]*\b(?:childhood\s+flashbacks?|golden\s+childhood)\b[^,.;]*/gi, '')
+      .replace(/\bin\s+present-day\s+[^,.;]+;\s*/gi, '')
+      .replace(/\bin\s+the\s+present\b/gi, '');
+  } else {
+    cleaned = cleaned
+      .replace(/,?\s*\bcool\s+[^,.;]*\bpresent-day\b[^,.;]*/gi, '')
+      .replace(/\b[^;.]*\bin\s+the\s+present\s*;\s*(?:rich\s+)?/gi, '')
+      .replace(/,?\s*\band\s+clear\s+visual\s+transitions\s+between\s+past\s+and\s+present\b/gi, '')
+      .replace(/,?\s*\bcool\s+slate\s+blue-gray[^;.]*\bpresent-day[^;.]*;\s*/gi, '');
+  }
+
+  return cleaned
+    .replace(/\s*,\s*,+/g, ',')
+    .replace(/\s*;\s*;+/g, ';')
+    .replace(/,\s*\./g, '.')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/^[,;\s]+|[,;\s]+$/g, '')
+    .trim();
+}
+
+/**
+ * Formats a beat prompt with a single clean orientation declaration, synchronized framing opening
+ * when none is present in the prose, expanded entity keys, monochrome-safe lighting, still-image
+ * motion filtering, cleaned punctuation, and exact --ar parameter flag.
+ */
 export function formatFinalBeatPrompt(
   beat: Beat,
   isLongForm: boolean,
@@ -1019,6 +1101,28 @@ export function formatFinalBeatPrompt(
 
   // Clean video tracking verbs & duplicated optics in Text-to-Image mode
   body = sanitizeStillImageMotionAndOptics(body, synced.shotType || 'Medium Shot', isVideoMode);
+
+  // Scope dual-era style suffixes cleanly to present-day vs flashback beats & ensure Visual Style tag consistency
+  const beatEra: 'present' | 'flashback' = /\b(?:flashbacks?|childhood\s+(?:summer\s+)?(?:memor(?:y|ies)|flashbacks?|era|days|years)|years\s+earlier|nine-year-old|shared\s+summers)\b/i.test(
+    `${beat.textSpan || ''} ${body}`
+  )
+    ? 'flashback'
+    : 'present';
+
+  body = body.replace(/\bVisual Style:\s*([^.]+(?:\.[^.]*)?)/gi, (_match, rawStylePart: string) => {
+    const cleanedStyle = sanitizeStyleForEra(rawStylePart.replace(/\.$/, ''), beatEra);
+    return cleanedStyle ? `Visual Style: ${cleanedStyle}.` : '';
+  });
+
+  if (options?.styleProfile?.artStyle && !/\bVisual Style:/i.test(body)) {
+    const eraArtStyle = sanitizeStyleForEra(
+      buildCompactCharacterAnchor(options.styleProfile.artStyle, 14) || options.styleProfile.artStyle,
+      beatEra
+    );
+    if (eraArtStyle) {
+      body = `${body.replace(/[.,\s]+$/, '')}. Visual Style: ${eraArtStyle}.`;
+    }
+  }
 
   // Check if prose already opens with shot framing; if not in Image mode, prepend synchronized shotType & cameraAngle
   const hasOpeningFraming =

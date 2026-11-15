@@ -1,12 +1,14 @@
 import { Beat, Scene, StyleProfile, StoryFormat, GenerationMode, ThumbnailData, CtaPlatform, CtaModality, CtaEngagementType, CtaPromptData } from '../types';
 import { extractGeographicAnchor } from './beatSplitting';
 import {
+  buildCompactCharacterAnchor,
   computeVisualPromptSimilarity,
   expandEntityKeysInPrompt,
   hasDistinctMontageFocalSubject,
   isMonochromeStyle,
   normalizeUnicodeAndDashes,
   sanitizeMonochromeLighting,
+  sanitizeStyleForEra,
   stripLeadingOrientationPrefixes,
   stripTransientExpressionsAndPoses,
 } from './beatProgressionEngine';
@@ -592,8 +594,10 @@ export function compileThumbnailPrompt(params: {
 
   const characters = Object.entries(params.characterSheet || {});
   let primaryCharClause = 'The protagonist';
+  let primaryName = '';
   if (characters.length > 0) {
     const [name, desc] = characters[0];
+    primaryName = name;
     const cleanIdentityDesc = stripTransientExpressionsAndPoses(desc) || desc;
     const displayName = formatSheetSubjectName(name, true);
     primaryCharClause = `${displayName} (locked visual identity: ${cleanIdentityDesc})`;
@@ -621,19 +625,67 @@ export function compileThumbnailPrompt(params: {
     ? 'stark pure-white rim lighting cutting through pitch-black cross-hatched shadows'
     : `intense ${cleanAccentColor} rim lighting separating the subject from the background`;
 
-  const cleanPalette = sanitizeMonochromeLighting(
-    params.styleProfile?.colorPalette || 'high-contrast dramatic lighting',
-    params.styleProfile
-  );
+  const thumbEra: 'present' | 'flashback' = /\b(?:flashback|childhood|nine-year-old)\b/i.test(
+    `${heroMoment} ${bgDescription}`
+  )
+    ? 'flashback'
+    : 'present';
+
+  const cleanThumbArtStyle =
+    sanitizeStyleForEra(params.styleProfile?.artStyle || 'Cinematic realistic', thumbEra) ||
+    params.styleProfile?.artStyle ||
+    'Cinematic realistic';
+  const cleanPalette =
+    sanitizeStyleForEra(
+      sanitizeMonochromeLighting(
+        params.styleProfile?.colorPalette || 'high-contrast dramatic lighting',
+        params.styleProfile
+      ),
+      thumbEra
+    ) || 'high-contrast dramatic lighting';
+
   const cleanExpression = expression.replace(/[.!?]+$/, '').trim();
-  const cleanHeroMoment = heroMoment.replace(/[.!?]+$/, '').trim();
+  let cleanHeroMoment = heroMoment.replace(/[.!?]+$/, '').trim();
   const cleanBgDescription = bgDescription.replace(/[.!?]+$/, '').trim();
+
+  // Expand secondary character mentions in Visual Conflict (e.g. "faces Rowan" -> "faces Adult Rowan (locked visual identity: ...)")
+  if (characters.length > 1) {
+    const isChildMoment = thumbEra === 'flashback';
+    for (const [secName, secDesc] of characters.slice(1)) {
+      if (!secDesc || secName === primaryName) continue;
+      const isSecChild = /\b(?:child|nine-year-old|young\s+(?:boy|girl))\b/i.test(`${secName} ${secDesc}`);
+      const isSecAdult = !isSecChild && /\b(?:adult|mid-thirties|thirties|forties|older)\b/i.test(`${secName} ${secDesc}`);
+      if ((isChildMoment && isSecAdult) || (!isChildMoment && isSecChild)) continue;
+
+      const compactSec = buildCompactCharacterAnchor(stripTransientExpressionsAndPoses(secDesc) || secDesc, 16);
+      if (!compactSec) continue;
+
+      const escapedFull = secName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const fullRegex = new RegExp(`\\b(${escapedFull})\\b(?!\\s*\\()`, 'i');
+      if (fullRegex.test(cleanHeroMoment)) {
+        cleanHeroMoment = cleanHeroMoment.replace(fullRegex, `$1 (${compactSec})`);
+        continue;
+      }
+
+      // Check unambiguous personal token (e.g. "Rowan" from "Adult Rowan")
+      const ageStripped = secName
+        .replace(/^(?:Adult|Child|Young|Older|The)\s+/i, '')
+        .trim();
+      if (ageStripped.length >= 3) {
+        const escapedShort = ageStripped.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const shortRegex = new RegExp(`\\b(${escapedShort})\\b(?!\\s*\\()`, 'i');
+        if (shortRegex.test(cleanHeroMoment)) {
+          cleanHeroMoment = cleanHeroMoment.replace(shortRegex, `${secName} (${compactSec})`);
+        }
+      }
+    }
+  }
 
   // Full compiled prompt with typography
   const compiledPrompt = normalizeUnicodeAndDashes([
     `STATIC THUMBNAIL IMAGE ONLY. Single high-impact cover frame. No animation, video, camera movement, or motion blur.`,
     `Framed in ${aspectRatio} aspect ratio for a high-CTR ${targetPlatform} cover.`,
-    `Style continuity: ${params.styleProfile?.artStyle || 'Cinematic realistic'}, ${cleanPalette}.`,
+    `Style continuity: ${cleanThumbArtStyle}, ${cleanPalette}.`,
     `Hero Subject: ${primaryCharClause}, expression: ${cleanExpression}. ${subjectPlacement}.`,
     `Visual Conflict: Climactic turning point: ${cleanHeroMoment}. Deep shadows, ${rimLightPhrase}: ${cleanBgDescription}.`,
     `${safeZoneGuidance}`,
@@ -645,7 +697,7 @@ export function compileThumbnailPrompt(params: {
   const cleanPlatePrompt = normalizeUnicodeAndDashes([
     `STATIC THUMBNAIL IMAGE ONLY. Single high-impact background plate. No animation, video, camera movement, or motion blur.`,
     `Framed in ${aspectRatio} aspect ratio for a ${targetPlatform} cover.`,
-    `Style continuity: ${params.styleProfile?.artStyle || 'Cinematic realistic'}, ${cleanPalette}.`,
+    `Style continuity: ${cleanThumbArtStyle}, ${cleanPalette}.`,
     `Hero Subject: ${primaryCharClause}, expression: ${cleanExpression}. ${subjectPlacement}.`,
     `Visual Conflict: Climactic turning point: ${cleanHeroMoment}. Deep shadows, ${rimLightPhrase}: ${cleanBgDescription}.`,
     `${safeZoneGuidance}`,
@@ -757,7 +809,26 @@ export function inferStoryAdaptiveCtaQuestion(storyPremise?: string, characterNa
     };
   }
 
-  // Mystery / Detective / Secret (do not let incidental "truth" hijack Sci-Fi dilemmas)
+  // Emotional Reunion / Forgiveness / Bond Decision (before loose "truth" Mystery trigger)
+  const isHardMystery = /\b(?:murder|killer|detective|clue|suspect|crime scene|whodunit|forensic|autopsy)\b/i.test(text);
+  if (
+    !isHardMystery &&
+    /\b(?:must decide|decide whether|old bond|promise to reunite|reunite|reunion|returns changed|childhood friend|forgive|let go|second chance|survive the truth)\b/i.test(
+      text
+    )
+  ) {
+    return {
+      primaryQuestion: `Should ${char} trust that old bond again, or walk away?`,
+      alternateQuestions: [
+        'Can a childhood promise survive twenty years of secrets and distance?',
+        `What would you have decided in ${char}'s shoes at that threshold?`,
+        'When someone returns changed, do you open the door or keep it shut?',
+        'Would you forgive the past to save the bond, or protect yourself?',
+      ],
+    };
+  }
+
+  // Mystery / Detective / Secret (do not let incidental "truth" hijack Sci-Fi or emotional reunion dilemmas)
   if (
     text.includes('mystery') ||
     text.includes('clue') ||
@@ -899,24 +970,29 @@ export function compileCtaPrompt(params: {
       : primaryQuestion;
 
   const isMono = isMonochromeStyle(params.styleProfile);
-  const artStyle = params.styleProfile?.artStyle || 'Cinematic realistic';
-  const colorPalette = sanitizeMonochromeLighting(
-    params.styleProfile?.colorPalette || 'high-contrast dramatic lighting, rich atmospheric haze',
-    params.styleProfile
-  );
+  const rawArtStyle = params.styleProfile?.artStyle || 'Cinematic realistic';
+  const artStyle = sanitizeStyleForEra(rawArtStyle, 'present') || rawArtStyle;
+  const rawPalette = params.styleProfile?.colorPalette || 'high-contrast dramatic lighting, rich atmospheric haze';
+  const colorPalette = sanitizeStyleForEra(
+    sanitizeMonochromeLighting(rawPalette, params.styleProfile),
+    'present'
+  ) || sanitizeMonochromeLighting(rawPalette, params.styleProfile);
   const rawLighting =
     params.styleProfile?.lighting || 'deep directional key light with saturated rim backlight';
   const staticSafeLighting =
     modality === 'image'
-      ? rawLighting
-          .replace(/,?\s*\b(?:transitioning|shifting|fading|morphing)\s+to\b[^.;]*/gi, '')
-          .replace(/,\s*$/, '')
-          .trim() || rawLighting
-      : rawLighting;
+      ? sanitizeStyleForEra(
+          rawLighting
+            .replace(/,?\s*\b(?:transitioning|shifting|fading|morphing)\s+to\b[^.;]*/gi, '')
+            .replace(/,\s*$/, '')
+            .trim() || rawLighting,
+          'present'
+        )
+      : sanitizeStyleForEra(rawLighting, 'present');
   const lighting = isMono
     ? sanitizeMonochromeLighting(staticSafeLighting, params.styleProfile) ||
       'stark chiaroscuro contrast lighting with deep ink shadows'
-    : staticSafeLighting;
+    : staticSafeLighting || rawLighting;
 
   // Platform specific safe zone rules & UI annotations
   let platformLabel = 'TikTok';

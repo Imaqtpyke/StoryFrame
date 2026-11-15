@@ -214,13 +214,18 @@
   - Made `COMMON_NOUN_CHARACTER_NAMES` matching case-sensitive in `injectCompactCharacterLocks` so lowercase visual words like `"scrambling ink limbs"` never expand into `"scrambling ink (...)"`.
   - Stripped `Visual Style:` and `--ar` before scanning visual trait tokens, required character/entity body subjects plus >=2 distinctive non-generic tokens (`GENERIC_VISUAL_TRAIT_WORDS`), and split hyphenated traits (`spiky-haired`) with a `0.5` coverage threshold to stop phantom style casts and redundant mid-sentence parentheses.
 
+- [x] **Multi-Character + Flashbacks Stress Test Fixes (Suite 27):**
+  - Added child vs. adult mutual exclusion, visual body gender compatibility, framing-pronoun plural bypass (`"As she reads, ... their shared summers"`), empty-headland/pier establishing detection, and broader generic scenery word filtering in `injectCompactCharacterLocks` (`beatProgressionEngine.ts`).
+  - Added `sanitizeStyleForEra` (`beatProgressionEngine.ts`) and wired it into `formatFinalBeatPrompt`, `compileThumbnailPrompt`, and `compileCtaPrompt` (`promptCompiler.ts`) so dual-era art styles and lighting clauses stay scoped to present-day vs. flashback frames, and ensured consistent `Visual Style:` tags across all beats.
+  - Expanded secondary character mentions (`Rowan` -> `Adult Rowan (...)`) inside Thumbnail `Visual Conflict` (`compileThumbnailPrompt`).
+  - Prioritized emotional reunion / `"must decide whether"` dilemma detection ahead of loose `"truth"` mystery questions in `inferStoryAdaptiveCtaQuestion`.
+
 ## Active Testing & Planned Future Roadmap (Post-Testing)
 - [ ] **Genre Stress-Testing Loop (In Progress):**
-  - Completed: **Sci-Fi**, **Documentary / History**, **Horror / Psychological Thriller**, and **Stylized Art** (next category up: **No-Character / Object / Nature**).
+  - Completed: **Sci-Fi**, **Documentary / History**, **Horror / Psychological Thriller**, **Stylized Art**, and **Multi-Character + Flashbacks**.
   - Remaining stress categories:
     1. **No-Character / Object / Nature** (zero invented humans)
-    2. **Multi-Character + Flashbacks** (pronouns, age shifts)
-    3. **Text-to-Video (4s/5s) & Long-Form 16:9**
+    2. **Text-to-Video (4s/5s) & Long-Form 16:9**
 - [ ] **Post-Testing Feature & Product Recommendations (Saved for Later):**
   - **Silent / Visual-Only (No Narration) Mode:** Dedicated toggle so movement-only videos, silent FPS/GoPro POV, ASMR, ambient nature, action choreography, and product B-roll generate pure visual beats and camera motion without forcing text into `narratorLine`.
   - **Additional Format Support:** Multi-speaker screenplay dialogue and music/BPM-synced montages.

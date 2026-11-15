@@ -2451,11 +2451,147 @@ function runTestSuite26() {
   );
 }
 
+// ============================================================================
+// SUITE 27: MULTI-CHARACTER & FLASHBACK REGRESSION GUARDS
+// ============================================================================
+function runTestSuite27() {
+  const lighthouseCast = {
+    'Adult Elena':
+      'Adult woman in her mid-thirties with silver-streaked dark hair tied neatly back, weathered fair skin, a buttoned navy waterproof raincoat, dark rubber coastal boots, and a brass storm lantern',
+    'Child Elena':
+      'Nine-year-old girl with dark hair tucked under a bright yellow rain hat, a yellow knit sweater over sturdy dark trousers, worn coastal sneakers, and a clothbound sketchbook',
+    'Adult Rowan':
+      'Adult man in his mid-thirties with tousled dark-brown hair, weathered tanned skin, a faded olive-green canvas jacket over a dark wool shirt, worn brown leather boots, and a scarred brass pocket compass',
+    'Child Rowan':
+      'Nine-year-old boy with messy brown hair, sun-tanned skin, a rolled-sleeve striped cotton shirt, sturdy canvas shorts, worn canvas sneakers, and an unscarred shiny brass pocket compass',
+  };
+
+  const emptyHeadlandLocked = injectCompactCharacterLocks(
+    'Vertical 9:16 portrait composition, Wide Establishing Shot at a low-angle, A towering stone coastal lighthouse stands atop wet dark basalt cliffs overlooking choppy swells in present-day Harborline along the empty headland. Visual Style: Cinematic animated realism. --ar 9:16',
+    'In present-day Harborline, lighthouse keeper Elena',
+    'In present-day Harborline, lighthouse keeper Elena finds a message from her childhood friend Rowan, who vanished twenty years ago.',
+    lighthouseCast
+  );
+  assert(
+    !emptyHeadlandLocked.includes('Featuring Adult Elena') &&
+      !emptyHeadlandLocked.includes('Featuring Child Elena') &&
+      !emptyHeadlandLocked.includes('Featuring Adult Rowan'),
+    'Suite 27: Multi-Character & Flashback Regression Guards',
+    '27.1 Keeps Empty Headland Establishing Shot Free of Phantom Character Locks',
+    `Prompt: ${emptyHeadlandLocked}`
+  );
+
+  const flashbackMixedLocked = injectCompactCharacterLocks(
+    'Vertical 9:16 portrait composition, Wide Establishing Shot at eye-level, In a sun-drenched childhood summer flashback, a young girl in a yellow rain hat and sweater carrying a worn sketchbook runs along golden Harborline tide pools beside a young boy with messy brown hair in a rolled-sleeve shirt. Shot on 28mm f/2.8 prime lens. Visual Style: Cinematic animated realism. --ar 9:16',
+    'As she reads, flashbacks reveal their shared summers',
+    'As she reads, flashbacks reveal their shared summers and a promise to reunite.',
+    lighthouseCast
+  );
+  assert(
+    !flashbackMixedLocked.includes('Featuring Adult Elena') &&
+      !flashbackMixedLocked.includes('Featuring Adult Rowan') &&
+      flashbackMixedLocked.includes('Featuring Child Elena') &&
+      flashbackMixedLocked.includes('Featuring Child Rowan'),
+    'Suite 27: Multi-Character & Flashback Regression Guards',
+    '27.2 Keeps Adult Locks Out of Childhood Flashback While Locking Both Child Characters Despite Framing Pronoun',
+    `Prompt: ${flashbackMixedLocked}`
+  );
+
+  const soloRowanLocked = injectCompactCharacterLocks(
+    'Vertical 9:16 portrait composition, Wide Establishing Shot at eye-level, Back in cool present-day Harborline, a quiet adult man in a faded green canvas jacket and worn leather boots stands on wooden pier planks. His broad shoulders face the distant lighthouse silhouette. Shot on 35mm f/2.8 wide prime lens. Visual Style: Cinematic animated realism. --ar 9:16',
+    'Rowan returns changed,',
+    'Rowan returns changed, but Elena must decide whether their old bond can survive the truth.',
+    lighthouseCast
+  );
+  assert(
+    !soloRowanLocked.includes('Featuring Adult Elena') &&
+      !soloRowanLocked.includes('Featuring Child Elena') &&
+      soloRowanLocked.includes('Featuring Adult Rowan'),
+    'Suite 27: Multi-Character & Flashback Regression Guards',
+    '27.3 Prevents Female & Child Locks From Stamping Onto Solitary Adult Male Shot',
+    `Prompt: ${soloRowanLocked}`
+  );
+
+  const dualEraStyle: StyleProfile = {
+    artStyle:
+      'Cinematic animated realism with warm golden childhood flashbacks, cool blue-gray present-day coastal tones',
+    colorPalette:
+      'Cool slate blue-gray and deep navy in present-day Harborline; warm amber and vivid yellow in childhood flashbacks',
+    lighting:
+      'Overcast 5800K cool coastal twilight contrasted with 3000K warm brass lantern light in the present; rich 3000K golden-hour coastal sunlight in childhood flashbacks',
+    eraAndSetting: 'Present-day Harborline lighthouse contrasted with coastal cove flashbacks',
+  };
+
+  const formattedPresentBeat = formatFinalBeatPrompt(
+    {
+      beatIndex: 3,
+      textSpan: 'from her childhood friend Rowan,',
+      shotType: 'Over-the-Shoulder (OTS)',
+      cameraAngle: 'high-angle',
+      cameraMovement: 'Slow Push-In',
+      imagePrompt:
+        'Over-the-Shoulder (OTS) at a high-angle, Seen past the adult woman navy raincoat shoulder, her hands unfold the damp paper message in cinematic animated realism. Shot on 50mm f/2 prime lens. --ar 9:16',
+      estimatedSeconds: 2,
+    },
+    false,
+    false,
+    { styleProfile: dualEraStyle, characterSheet: lighthouseCast }
+  );
+  assert(
+    formattedPresentBeat.imagePrompt.includes('Visual Style:') &&
+      !formattedPresentBeat.imagePrompt.toLowerCase().includes('childhood flashback'),
+    'Suite 27: Multi-Character & Flashback Regression Guards',
+    '27.4 Appends Era-Clean Visual Style Suffix Without Flashback Leakage on Present-Day Beat',
+    `Prompt: ${formattedPresentBeat.imagePrompt}`
+  );
+
+  const harborThumb = compileThumbnailPrompt({
+    rawThumbnail: {
+      heroMoment:
+        'Adult Elena holding her glowing lantern inside the misty lighthouse doorway faces Rowan extending his scarred compass across the threshold.',
+      expression: 'Guarded disbelief tightening her brows.',
+      bgDescription: 'Dark fog-choked coastal stone doorway.',
+      accentColor: 'Warm 3000K amber lantern rim light',
+      hookText: 'TWENTY YEARS GONE',
+    },
+    styleProfile: dualEraStyle,
+    characterSheet: lighthouseCast,
+    format: 'short',
+    platform: 'tiktok',
+  });
+  assert(
+    harborThumb.compiledPrompt.includes('faces Adult Rowan (') &&
+      !harborThumb.compiledPrompt.toLowerCase().includes('childhood flashback'),
+    'Suite 27: Multi-Character & Flashback Regression Guards',
+    '27.5 Expands Secondary Character Visual Identity & Strips Opposite-Era Clauses in Thumbnail',
+    `Thumb: ${harborThumb.compiledPrompt}`
+  );
+
+  const reunionCta = compileCtaPrompt({
+    storyPremise:
+      'In present-day Harborline, lighthouse keeper Elena finds a message from her childhood friend Rowan, who vanished twenty years ago. As she reads, flashbacks reveal their shared summers and a promise to reunite. Rowan returns changed, but Elena must decide whether their old bond can survive the truth.',
+    styleProfile: dualEraStyle,
+    characterSheet: lighthouseCast,
+    format: 'short',
+    platform: 'tiktok',
+    modality: 'image',
+  });
+  assert(
+    !reunionCta.questionText.includes('single clue') &&
+      reunionCta.questionText.includes('old bond') &&
+      !reunionCta.compiledPrompt.toLowerCase().includes('childhood flashback'),
+    'Suite 27: Multi-Character & Flashback Regression Guards',
+    '27.6 Uses Emotional Reunion/Choice Question & Era-Clean Lighting in CTA',
+    `question=${reunionCta.questionText} | prompt=${reunionCta.compiledPrompt}`
+  );
+}
+
 runTestSuite21().then(() => {
   runTestSuite23();
   runTestSuite24();
   runTestSuite25();
   runTestSuite26();
+  runTestSuite27();
   console.log('\n====================================================================');
   console.log('                  FULL-SYSTEM VERIFICATION REPORT                  ');
   console.log('====================================================================');
