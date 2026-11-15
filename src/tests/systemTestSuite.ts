@@ -39,6 +39,7 @@ import {
   scaleBeatsToTargetDuration,
   runTwoPhaseProgressionAndRepair,
   normalizeContinuitySheetKeys,
+  sanitizeStillImageMotionAndOptics,
 } from '../services/beatProgressionEngine';
 import { sanitizeGroqErrorMessage, extractCleanJson, GROQ_API_BASE_URL, sanitizePromptText, tryRepairTruncatedJson } from '../services/groqClient';
 import { robustJsonParse } from '../services/unifiedAiService';
@@ -2393,10 +2394,68 @@ function runTestSuite25() {
   );
 }
 
+// ============================================================================
+// SUITE 26: STYLIZED ART REGRESSION GUARDS (STATIC FRAME PHRASING, STYLE ISOLATION, COMMON-NOUN CASING)
+// ============================================================================
+function runTestSuite26() {
+  const cleanStatic = sanitizeStillImageMotionAndOptics(
+    'Vertical 9:16 composition, Extreme Wide Shot establishing Brushwick rooftop skyline with a crisp static frame of the hand-painted city skyline under golden morning sun. --ar 9:16',
+    'Extreme Wide Shot',
+    false
+  );
+  assert(
+    cleanStatic.includes('with a crisp view of the') && !cleanStatic.includes('with a crisp of the'),
+    'Suite 26: Stylized Art Regression Guards',
+    '26.1 Preserves Noun Head When Stripping Static Frame Phrasing',
+    `Prompt: ${cleanStatic}`
+  );
+
+  const stylizedSheet = {
+    Ink: 'Small agile 2D black stickman figure with bold uniform charcoal linework and expressive white eye dots.',
+    'Claymation Cat':
+      'Chubby tactile terracotta-orange claymation cat with thumbprint sculpting textures, wide round eyes, and tiny charcoal whiskers.',
+    'Animated Drawings':
+      'Loose hand-drawn charcoal stickman sketches with fluttering paper edges and expressive white eye dots.',
+    'The Inventor':
+      'Young anime-style inventor with spiky dark hair, brass forehead goggles, and a dusty canvas work apron.',
+  };
+
+  const emptySkylineBeat = injectCompactCharacterLocks(
+    'Vertical 9:16 composition, Extreme Wide Shot of the Brushwick city skyline at dawn, terracotta chimney tops casting soft long shadows across painted slate roofs. Visual Style: Bold stylized art blending clean 2D stickman animation, expressive anime character faces. --ar 9:16',
+    'Brushwick woke under a painted sky.',
+    'Brushwick woke under a painted sky. Every morning, ink-lined shadows stretched across the rooftops.',
+    stylizedSheet
+  );
+  assert(
+    !emptySkylineBeat.includes('Featuring Ink') &&
+      !emptySkylineBeat.includes('Featuring Claymation Cat') &&
+      !emptySkylineBeat.includes('Featuring Animated Drawings'),
+    'Suite 26: Stylized Art Regression Guards',
+    '26.2 Prevents Visual Style Keywords & Scenery Colors From Injecting Phantom Characters',
+    `Prompt: ${emptySkylineBeat}`
+  );
+
+  const commonNounAndHyphenBeat = injectCompactCharacterLocks(
+    'Vertical 9:16 composition, Medium Shot showing The Inventor wearing brass goggles and a canvas work apron as spiky-haired anime-style hands calm scrambling ink limbs beside Ink on the wooden desk. Visual Style: Mixed-media stylized art. --ar 9:16',
+    'Ink darted away from The Inventor.',
+    'Ink darted across the drafting desk away from The Inventor.',
+    stylizedSheet
+  );
+  assert(
+    !commonNounAndHyphenBeat.includes('scrambling ink (') &&
+      commonNounAndHyphenBeat.includes('beside Ink (') &&
+      !commonNounAndHyphenBeat.includes('The Inventor ('),
+    'Suite 26: Stylized Art Regression Guards',
+    '26.3 Enforces Case-Sensitive Common-Noun Locks & Hyphen-Aware Redundant Parenthesis Suppression',
+    `Prompt: ${commonNounAndHyphenBeat}`
+  );
+}
+
 runTestSuite21().then(() => {
   runTestSuite23();
   runTestSuite24();
   runTestSuite25();
+  runTestSuite26();
   console.log('\n====================================================================');
   console.log('                  FULL-SYSTEM VERIFICATION REPORT                  ');
   console.log('====================================================================');

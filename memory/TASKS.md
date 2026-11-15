@@ -209,14 +209,18 @@
   - Added explicit foreground age-mismatch and Close-Up/ECU runner-up subject guards in `injectCompactCharacterLocks` (`beatProgressionEngine.ts`) so a background/younger protagonist (`Elara`) is never stamped onto a Close-Up of an older character (`The Woman Behind Her`).
   - Stripped trailing `[.!?]+` punctuation from `heroMoment` and `bgDescription` in `compileThumbnailPrompt` (`promptCompiler.ts`) to prevent `..` double periods.
 
+- [x] **Stylized Art Stress Test Fixes (Suite 26):**
+  - Preserved head noun when stripping `"crisp static frame of"` -> `"crisp view of"` in `sanitizeStillImageMotionAndOptics` (`beatProgressionEngine.ts`).
+  - Made `COMMON_NOUN_CHARACTER_NAMES` matching case-sensitive in `injectCompactCharacterLocks` so lowercase visual words like `"scrambling ink limbs"` never expand into `"scrambling ink (...)"`.
+  - Stripped `Visual Style:` and `--ar` before scanning visual trait tokens, required character/entity body subjects plus >=2 distinctive non-generic tokens (`GENERIC_VISUAL_TRAIT_WORDS`), and split hyphenated traits (`spiky-haired`) with a `0.5` coverage threshold to stop phantom style casts and redundant mid-sentence parentheses.
+
 ## Active Testing & Planned Future Roadmap (Post-Testing)
 - [ ] **Genre Stress-Testing Loop (In Progress):**
-  - Completed: **Sci-Fi**, **Documentary / History**, and **Horror / Psychological Thriller** (next category up: **Stylized Art**).
+  - Completed: **Sci-Fi**, **Documentary / History**, **Horror / Psychological Thriller**, and **Stylized Art** (next category up: **No-Character / Object / Nature**).
   - Remaining stress categories:
-    1. **Stylized Art** (Stickman, Anime, Claymation, Oil Painting)
-    2. **No-Character / Object / Nature** (zero invented humans)
-    3. **Multi-Character + Flashbacks** (pronouns, age shifts)
-    4. **Text-to-Video (4s/5s) & Long-Form 16:9**
+    1. **No-Character / Object / Nature** (zero invented humans)
+    2. **Multi-Character + Flashbacks** (pronouns, age shifts)
+    3. **Text-to-Video (4s/5s) & Long-Form 16:9**
 - [ ] **Post-Testing Feature & Product Recommendations (Saved for Later):**
   - **Silent / Visual-Only (No Narration) Mode:** Dedicated toggle so movement-only videos, silent FPS/GoPro POV, ASMR, ambient nature, action choreography, and product B-roll generate pure visual beats and camera motion without forcing text into `narratorLine`.
   - **Additional Format Support:** Multi-speaker screenplay dialogue and music/BPM-synced montages.

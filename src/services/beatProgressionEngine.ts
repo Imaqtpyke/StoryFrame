@@ -444,6 +444,7 @@ export function sanitizeStillImageMotionAndOptics(
       .replace(/\btracking\s+(?:left|right|upward|downward|forward|back)\s+to\s+reveal\b/gi, 'revealing')
       .replace(/\btracking\s+(?:left|right|upward|downward|forward|back)\s+as\b/gi, 'as')
       .replace(/\btracking\s+(?:left|right|upward|downward|across|subject)\b/gi, '')
+      .replace(/\b(crisp|clean|sharp|frozen|single)\s+static\s+frame\s+of\b/gi, '$1 view of')
       .replace(/\bstatic\s+frame\s+of\b/gi, 'of')
       .replace(/\b(?:eye-level|low-angle|high-angle)\s+static\s+frame\s+showing\b/gi, '$1 showing')
       .replace(/\bpanning\s+(?:left|right|across)\s+(?:to|over)\b/gi, 'across')
@@ -587,6 +588,21 @@ function buildCharacterAliasRegex(charName: string, allCharNames: string[]): Reg
   return new RegExp(`\\b${escapedFirst}(?:'s)?\\b`, 'i');
 }
 
+const COMMON_NOUN_CHARACTER_NAMES = new Set([
+  'ink', 'shadow', 'ash', 'rain', 'dust', 'stone', 'flame', 'light', 'rose', 'grace',
+  'faith', 'storm', 'frost', 'glass', 'mirror', 'time', 'hope', 'echo', 'wolf', 'crow',
+  'cat', 'dog', 'sky', 'sun', 'moon', 'star',
+]);
+
+const GENERIC_VISUAL_TRAIT_WORDS = new Set([
+  'soft', 'hard', 'warm', 'cool', 'cold', 'dark', 'light', 'bright', 'deep', 'pale',
+  'white', 'black', 'gray', 'grey', 'terracotta', 'charcoal', 'crimson', 'amber', 'gold',
+  'golden', 'cobalt', 'slate', 'silver', 'cream', 'small', 'large', 'tiny', 'tall',
+  'long', 'short', 'thick', 'thin', 'round', 'flat', 'simple', 'clean', 'bold', 'heavy',
+  'wooden', 'paper', 'painted', 'stylized', 'expressive', 'lumpy', 'young', 'older',
+  'companion', 'artist', 'edges', 'surface', 'textures',
+]);
+
 export function injectCompactCharacterLocks(
   prompt: string,
   textSpan: string,
@@ -606,9 +622,26 @@ export function injectCompactCharacterLocks(
   const allCharNames = charEntries.map(([name]) => name);
   const singleLeadChar = charEntries.length === 1 ? charEntries[0] : null;
   const spanLower = (textSpan || '').toLowerCase();
-  const promptLower = updated.toLowerCase();
+
+  // Strip Visual Style and --ar suffixes before scanning visual character traits so style keywords never trigger phantom casts
+  const bodyWithoutStyleOrAr = updated
+    .replace(/\s*--ar\s+[0-9:]+.*$/i, '')
+    .replace(/\bVisual Style:[^.]*\.?/gi, '')
+    .trim();
+  const bodyLower = bodyWithoutStyleOrAr.toLowerCase();
+  const bodyWordTokens = new Set(
+    bodyLower
+      .replace(/[^a-z0-9\s-]/g, ' ')
+      .split(/[\s-]+/)
+      .filter(Boolean)
+  );
+  const bodyHasCharacterSubject =
+    /\b(?:man|woman|boy|girl|child|baby|infant|person|figure|silhouette|stickman|cat|dog|inventor|artist|soldier|enforcer|enforcers|operative|operatives|scientist|engineer|astronaut|astronauts|photographer|detective|archivist|entity|creature|creatures|sketches|drawings|crowd|people|eyes|face|hands|fingers|shoulders|boots|feet|hair)\b/i.test(
+      bodyLower
+    );
+
   const isCloseUpOrEcu = /\b(?:Close-Up|Extreme Close-Up)\b/i.test(updated);
-  const foregroundSlice = promptLower
+  const foregroundSlice = bodyLower
     .replace(/\b(?:toward|at|past)\s+(?:the\s+)?blurred\b[^.]*/gi, '')
     .slice(0, 280);
   const foregroundHasOlder = /\b(?:older woman|older man|elderly|aged|silver-streaked)\b/i.test(foregroundSlice);
@@ -618,8 +651,16 @@ export function injectCompactCharacterLocks(
   const spanHasMalePronoun = /\b(?:he|him|his)\b/i.test(spanLower);
   const spanHasPluralPronoun = /\b(?:they|them|their|theirs)\b/i.test(spanLower);
 
-  // Pre-compute visual token match counts so Close-Up/ECU shots do not lock onto a background silhouette runner-up
+  const tokenMatchesBody = (token: string): boolean => {
+    if (bodyWordTokens.has(token)) return true;
+    if (token === 'hair' && bodyWordTokens.has('haired')) return true;
+    if (token.endsWith('s') && token.length > 4 && bodyWordTokens.has(token.slice(0, -1))) return true;
+    return false;
+  };
+
+  // Pre-compute visual token match counts (total + distinctive non-generic) on the scene body only
   const tokenMatchCounts = new Map<string, number>();
+  const distinctiveMatchCounts = new Map<string, number>();
   let maxMatchedTokens = 0;
   for (const [charName, fullDesc] of charEntries) {
     if (!fullDesc || fullDesc.trim().length < 6) continue;
@@ -627,14 +668,19 @@ export function injectCompactCharacterLocks(
     if (!compact) continue;
     const tokens = compact
       .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, ' ')
-      .split(/\s+/)
+      .replace(/[^a-z0-9\s-]/g, ' ')
+      .split(/[\s-]+/)
       .filter((w) => w.length > 3 && !STOP_WORDS.has(w));
     let count = 0;
+    let distinctiveCount = 0;
     for (const t of tokens) {
-      if (promptLower.includes(t)) count++;
+      if (tokenMatchesBody(t)) {
+        count++;
+        if (!GENERIC_VISUAL_TRAIT_WORDS.has(t)) distinctiveCount++;
+      }
     }
     tokenMatchCounts.set(charName, count);
+    distinctiveMatchCounts.set(charName, distinctiveCount);
     if (count > maxMatchedTokens) maxMatchedTokens = count;
   }
 
@@ -650,10 +696,13 @@ export function injectCompactCharacterLocks(
     }
 
     const escapedName = charName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const nameRegex = new RegExp(`\\b${escapedName}(?:'s)?\\b`, 'i');
+    const isCommonNounName = COMMON_NOUN_CHARACTER_NAMES.has(charName.trim().toLowerCase());
+    const nameFlags = isCommonNounName ? '' : 'i';
+    const nameRegex = new RegExp(`\\b${escapedName}(?:'s)?\\b`, nameFlags);
     const aliasRegex = buildCharacterAliasRegex(charName, allCharNames);
 
-    const promptMentionsName = nameRegex.test(updated) || (aliasRegex ? aliasRegex.test(updated) : false);
+    const promptMentionsName =
+      nameRegex.test(bodyWithoutStyleOrAr) || (aliasRegex ? aliasRegex.test(bodyWithoutStyleOrAr) : false);
     const beatMentionsName = nameRegex.test(textSpan) || (aliasRegex ? aliasRegex.test(textSpan) : false);
     const narrationMentionsName =
       nameRegex.test(sceneNarration) || (aliasRegex ? aliasRegex.test(sceneNarration) : false);
@@ -663,15 +712,16 @@ export function injectCompactCharacterLocks(
 
     const anchorTokens = compactAnchor
       .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, ' ')
-      .split(/\s+/)
+      .replace(/[^a-z0-9\s-]/g, ' ')
+      .split(/[\s-]+/)
       .filter((w) => w.length > 3 && !STOP_WORDS.has(w));
     const matchedTokens = tokenMatchCounts.get(charName) || 0;
+    const distinctiveTokens = distinctiveMatchCounts.get(charName) || 0;
     const coverageRatio = anchorTokens.length > 0 ? matchedTokens / anchorTokens.length : 1;
 
     // Determine gender/plurality/age compatibility to prevent stamping mismatched subjects onto solo beats
     const isPluralChar =
-      /\b(?:enforcers|operatives|guards|soldiers|officers|assassins|agents|hunters|twins|drones|crowd)\b/i.test(
+      /\b(?:enforcers|operatives|guards|soldiers|officers|assassins|agents|hunters|twins|drones|crowd|drawings|sketches|creatures)\b/i.test(
         `${charName} ${fullDesc}`
       );
     const isFemaleChar =
@@ -703,14 +753,20 @@ export function injectCompactCharacterLocks(
       (isMaleChar && spanHasFemalePronoun && !spanHasMalePronoun);
 
     const pronounOrRoleMatch = /\b(?:he|him|his|she|her|hers|they|them|their|soldier|warrior|knight|hero|man|woman|boy|girl|forearm|chest plate|trigger|rifle|boots)\b/i.test(
-      `${textSpan} ${updated}`
+      `${textSpan} ${bodyWithoutStyleOrAr}`
     );
 
     const matchesViaSingleLead =
       Boolean(singleLeadChar && singleLeadChar[0] === charName && pronounOrRoleMatch && !pronounMismatch);
 
-    // Multi-character scene inheritance: only bind when beat has matching visual traits OR compatible narration/pronoun without mismatch
-    const matchesViaVisualTraits = matchedTokens >= 2 && !pronounMismatch && !ageMismatch && !isRunnerUpInCloseUp;
+    // Multi-character scene inheritance: require character/entity subject presence + >=2 distinctive non-generic traits
+    const matchesViaVisualTraits =
+      bodyHasCharacterSubject &&
+      distinctiveTokens >= 2 &&
+      matchedTokens >= 2 &&
+      !pronounMismatch &&
+      !ageMismatch &&
+      !isRunnerUpInCloseUp;
     const matchesViaBeatPronounAndNarration =
       narrationMentionsName &&
       !pronounMismatch &&
@@ -731,14 +787,14 @@ export function injectCompactCharacterLocks(
       continue;
     }
 
-    // If prompt already mentions character and has >= 55% of compact lock tokens, skip
-    if (promptMentionsName && coverageRatio >= 0.55) {
+    // If prompt already mentions character and embeds >= 50% of hyphen-aware compact lock tokens, skip redundant inline parenthesis
+    if (promptMentionsName && coverageRatio >= 0.5) {
       continue;
     }
 
     if (promptMentionsName) {
-      // Attach compact visual anchor right after the first mention of the character name (avoid possessive breaking)
-      const nonPossessiveRegex = new RegExp(`\\b(${escapedName})\\b(?!'s|\\s*\\()`, 'i');
+      // Attach compact visual anchor right after the first capitalized/matched mention (respecting common-noun casing)
+      const nonPossessiveRegex = new RegExp(`\\b(${escapedName})\\b(?!'s|\\s*\\()`, nameFlags);
       if (nonPossessiveRegex.test(updated)) {
         updated = updated.replace(nonPossessiveRegex, `$1 (${compactAnchor})`);
       } else {
