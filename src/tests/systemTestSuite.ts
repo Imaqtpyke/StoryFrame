@@ -40,6 +40,8 @@ import {
   runTwoPhaseProgressionAndRepair,
   normalizeContinuitySheetKeys,
   sanitizeStillImageMotionAndOptics,
+  buildSharedContextIgnoreTokens,
+  computeVisualPromptSimilarity,
 } from '../services/beatProgressionEngine';
 import { sanitizeGroqErrorMessage, extractCleanJson, GROQ_API_BASE_URL, sanitizePromptText, tryRepairTruncatedJson } from '../services/groqClient';
 import { robustJsonParse } from '../services/unifiedAiService';
@@ -2586,12 +2588,201 @@ function runTestSuite27() {
   );
 }
 
+// ============================================================================
+// 28. LONG-SCRIPT LATENCY, SHARED-MEDIUM SIMILARITY & FINANCE CTA GUARDS
+// ============================================================================
+function runTestSuite28() {
+  console.log('\n--- Running Test Suite 28: Long-Script Latency, Diorama Shared-Medium & Finance CTA ---');
+
+  const dioramaStyle: StyleProfile = {
+    artStyle:
+      'Handcrafted stop-motion clay diorama with sculpted polymer figurines, carved walnut furniture, textured cardstock ledgers, and matte paper-craft backdrops',
+    colorPalette:
+      'Warm cream limestone, deep forest green cardstock, polished walnut brown, brushed brass accents, and muted crimson ink',
+    lighting: 'Warm 3200K tabletop key light with soft miniature fill and crisp rim edges',
+    eraAndSetting: 'Miniature handcrafted clay diorama of a classic walnut bank hall and homeowner living room',
+  };
+
+  const dioramaCast: Record<string, string> = {
+    'Clay Homeowner':
+      'Handcrafted matte clay miniature figurine of an anxious homeowner wearing a knitted sage green sweater, cuffed tan chinos, and round tortoiseshell glasses, sculpted hair',
+    'Clay Bank Lender':
+      'Handcrafted matte clay miniature figurine of a stern bank lender in a charcoal pinstripe suit, crisp white collar, silk crimson tie, slicked-back clay hair, holding a brass fountain pen',
+  };
+
+  const dioramaLocations: Record<string, string> = {
+    'Walnut Bank Hall':
+      'Miniature handcrafted clay diorama interior with carved walnut teller counter, green cardstock ledger stacks, brass banker lamp, and arched cream windows',
+  };
+
+  const ignoredTokens = buildSharedContextIgnoreTokens(dioramaStyle, dioramaLocations, dioramaCast);
+
+  const beatA =
+    'Vertical 9:16 portrait composition, Medium Shot at eye-level, Clay Homeowner slides brass abacus beads across the carved walnut teller counter inside the Walnut Bank Hall while checking handwritten interest figures. Shot on 50mm f/2.0 prime lens. Visual Style: Handcrafted stop-motion clay diorama. --ar 9:16';
+  const beatB =
+    'Vertical 9:16 portrait composition, Close-Up at high-angle, Heavy brass shears slice cleanly through a bright crimson ribbon tied around stacked green cardstock ledgers on the oak desk. Shot on 85mm f/1.8 portrait lens. Visual Style: Handcrafted stop-motion clay diorama. --ar 9:16';
+
+  const simWithIgnore = computeVisualPromptSimilarity(beatA, beatB, ignoredTokens);
+  const flaggedScene = auditScenesForRepair(
+    [
+      {
+        index: 2,
+        narratorLine: 'The lender calculated every month of interest and prepared the contract.',
+        estimatedSeconds: 5,
+        beats: [
+          {
+            beatIndex: 1,
+            textSpan: 'The lender calculated every month of interest',
+            shotType: 'Medium Shot',
+            cameraAngle: 'eye-level',
+            cameraMovement: 'Static Frame',
+            imagePrompt: beatA,
+            estimatedSeconds: 2.5,
+          },
+          {
+            beatIndex: 2,
+            textSpan: 'and prepared the contract.',
+            shotType: 'Close-Up',
+            cameraAngle: 'high-angle',
+            cameraMovement: 'Static Frame',
+            imagePrompt: beatB,
+            estimatedSeconds: 2.5,
+          },
+        ],
+      },
+    ],
+    dioramaStyle,
+    false,
+    undefined,
+    dioramaCast,
+    dioramaLocations
+  );
+
+  assert(
+    simWithIgnore < 0.46 && flaggedScene.length === 0,
+    'Suite 28: Long-Script Latency, Diorama Shared-Medium & Finance CTA',
+    '28.1 Shared Diorama/Cast Medium Tokens Do Not Inflate Similarity or Trigger False Repair',
+    `sim=${simWithIgnore.toFixed(3)} | flagged=${JSON.stringify(flaggedScene)}`
+  );
+
+  // 28.2 Solo Clay Homeowner beat must NOT receive Clay Bank Lender lock, AND inline description should not duplicate Featuring (...)
+  const inlineSoloPrompt =
+    'Vertical 9:16 portrait composition, Medium Close-Up at eye-level, A handcrafted matte clay miniature figurine of an anxious homeowner wearing a knitted sage green sweater, cuffed tan chinos, and round tortoiseshell glasses sighs over a paper mortgage bill at a kitchen table. Shot on 50mm f/2.0 prime lens. Visual Style: Handcrafted stop-motion clay diorama. --ar 9:16';
+  const soloLocked = injectCompactCharacterLocks(
+    inlineSoloPrompt,
+    'She checked her monthly statement in worry.',
+    'The homeowner stared at her mortgage bill, wondering if refinancing would save money.',
+    dioramaCast
+  );
+  assert(
+    !soloLocked.includes('Clay Bank Lender') && !soloLocked.includes('Featuring Clay Homeowner'),
+    'Suite 28: Long-Script Latency, Diorama Shared-Medium & Finance CTA',
+    '28.2 Prevents Shared-Medium Lender Leakage and Redundant Parenthetical Duplication',
+    `Prompt: ${soloLocked}`
+  );
+
+  // 28.3 Lens punctuation, connector merge restraint, and clean duplicate fallback grammar
+  const commaLensFormatted = formatFinalBeatPrompt(
+    {
+      beatIndex: 1,
+      textSpan: 'Signing early triggers a steep fee',
+      shotType: 'Close-Up',
+      cameraAngle: 'low-angle',
+      cameraMovement: 'Static Frame',
+      imagePrompt:
+        'Vertical 9:16 portrait composition, Close-Up at low-angle, Hands stamp a red ink seal onto the mortgage page (clay miniature hands), Shot on 50mm f/2.0 prime lens. --ar 9:16',
+      estimatedSeconds: 2.2,
+    },
+    false,
+    false,
+    { styleProfile: dioramaStyle, characterSheet: dioramaCast }
+  );
+
+  const dupProgressed = deduplicateAndProgressSceneBeats(
+    [
+      {
+        beatIndex: 1,
+        textSpan: 'Before you sign that refinancing deal',
+        shotType: 'Medium Shot',
+        cameraAngle: 'eye-level',
+        cameraMovement: 'Static Frame',
+        imagePrompt:
+          'Vertical 9:16 portrait composition, Medium Shot at eye-level, Clay Homeowner leans toward the teller counter inside a handcrafted bank room reading fine print. Shot on 35mm f/2.8 lens.',
+        estimatedSeconds: 2.2,
+      },
+      {
+        beatIndex: 2,
+        textSpan: 'check whether a hidden fee awaits.',
+        shotType: 'Medium Shot',
+        cameraAngle: 'eye-level',
+        cameraMovement: 'Static Frame',
+        imagePrompt:
+          'Vertical 9:16 portrait composition, Medium Shot at eye-level, Clay Homeowner leans toward the teller counter inside a handcrafted bank room reading fine print. Shot on 35mm f/2.8 lens.',
+        estimatedSeconds: 2.2,
+      },
+    ],
+    {
+      styleProfile: dioramaStyle,
+      characterSheet: dioramaCast,
+      locationSheet: dioramaLocations,
+      isLongForm: false,
+      isVideoMode: false,
+    }
+  );
+
+  const progressedPrompt2 = dupProgressed[1]?.imagePrompt || '';
+  assert(
+    commaLensFormatted.imagePrompt.includes('). Shot on 50mm f/2.0 prime lens') &&
+      dupProgressed.length === 2 &&
+      !/inside A\b/i.test(progressedPrompt2) &&
+      !/\bof tight portrait study\b/i.test(progressedPrompt2) &&
+      !/\.\s*palette\b/i.test(progressedPrompt2),
+    'Suite 28: Long-Script Latency, Diorama Shared-Medium & Finance CTA',
+    '28.3 Fixes Comma-Before-Lens Punctuation and Fallback Template Grammar',
+    `commaLens=${commaLensFormatted.imagePrompt} | progressed2=${progressedPrompt2}`
+  );
+
+  // 28.4 Thumbnail prompt has no double periods ("..")
+  const financeThumb = compileThumbnailPrompt({
+    rawThumbnail: {
+      heroMoment: 'Clay Homeowner freezes as crimson ink highlights a hidden penalty clause across the oversized parchment.',
+      expression: 'Wide-eyed shock beneath round glasses.',
+      bgDescription: 'Warm carved walnut bank hall softly out of focus.',
+      accentColor: 'Muted crimson ink glow',
+      hookText: 'THE HIDDEN TRAP',
+    },
+    styleProfile: dioramaStyle,
+    characterSheet: dioramaCast,
+    format: 'short',
+    platform: 'tiktok',
+  });
+  assert(
+    !financeThumb.compiledPrompt.includes('..'),
+    'Suite 28: Long-Script Latency, Diorama Shared-Medium & Finance CTA',
+    '28.4 Eliminates Double-Period Artifacts in Compiled Thumbnail Prompt',
+    `Thumb: ${financeThumb.compiledPrompt}`
+  );
+
+  // 28.5 Financial mortgage script with "future income stream" must get Finance/Contract CTA, not Sci-Fi
+  const financeCta = inferStoryAdaptiveCtaQuestion(
+    'Most homeowners assume paying off a mortgage early is always smart, because lenders rely on that future income stream and build a prepayment penalty clause right into the contract.'
+  );
+  assert(
+    financeCta.primaryQuestion.toLowerCase().includes('loan contract') &&
+      !financeCta.primaryQuestion.toLowerCase().includes('technology'),
+    'Suite 28: Long-Script Latency, Diorama Shared-Medium & Finance CTA',
+    '28.5 Routes Mortgage Script With "future income stream" to Finance CTA Instead of Sci-Fi',
+    `CTA: ${financeCta.primaryQuestion}`
+  );
+}
+
 runTestSuite21().then(() => {
   runTestSuite23();
   runTestSuite24();
   runTestSuite25();
   runTestSuite26();
   runTestSuite27();
+  runTestSuite28();
   console.log('\n====================================================================');
   console.log('                  FULL-SYSTEM VERIFICATION REPORT                  ');
   console.log('====================================================================');

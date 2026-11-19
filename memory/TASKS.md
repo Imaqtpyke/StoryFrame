@@ -220,9 +220,16 @@
   - Expanded secondary character mentions (`Rowan` -> `Adult Rowan (...)`) inside Thumbnail `Visual Conflict` (`compileThumbnailPrompt`).
   - Prioritized emotional reunion / `"must decide whether"` dilemma detection ahead of loose `"truth"` mystery questions in `inferStoryAdaptiveCtaQuestion`.
 
+- [x] **130-Word Mortgage Diorama Stress Test & Latency Hardening (Suite 28):**
+  - Added `thinkingLevel` (`'low'` default / `'minimal'` for Phase-2 repair) in `unifiedAiService.ts` (`gemini-4-hydrogen`) with automatic 1-shot retry fallback if `thinkingConfig` is rejected, cutting multi-minute reasoning overhead on longer scripts.
+  - Added `buildSharedContextIgnoreTokens` (`beatProgressionEngine.ts`) and wired it into `deduplicateAndProgressSceneBeats` and `auditScenesForRepair` so shared diorama/medium/location/cast tokens no longer cause false-positive duplicate flags or template overwrites.
+  - Added cross-cast shared-medium token filtering (`sharedCastTokens`) and 50% `anchorTokens` inline coverage deduplication in `injectCompactCharacterLocks` to prevent secondary character leakage and redundant `Featuring ... (...)` parentheticals.
+  - Fixed comma-before-lens punctuation, restricted connector auto-merges (`<= 2` words / `<= 1.8s`), cleaned duplicate fallback grammar (`inside A`, `of tight portrait study`, `. palette`), and stripped double periods (`..`) in `compileThumbnailPrompt` / `compileCtaPrompt`.
+  - Scoped `isSciFiPremise` away from standalone `"future"` phrases like `"future income stream"` and added a dedicated Finance / Mortgage / Contract Trap CTA branch in `inferStoryAdaptiveCtaQuestion` (`promptCompiler.ts`).
+
 ## Active Testing & Planned Future Roadmap (Post-Testing)
 - [ ] **Genre Stress-Testing Loop (In Progress):**
-  - Completed: **Sci-Fi**, **Documentary / History**, **Horror / Psychological Thriller**, **Stylized Art**, and **Multi-Character + Flashbacks**.
+  - Completed: **Sci-Fi**, **Documentary / History**, **Horror / Psychological Thriller**, **Stylized Art**, **Multi-Character + Flashbacks**, and **130-Word Finance/Diorama Stress Test**.
   - Remaining stress categories:
     1. **No-Character / Object / Nature** (zero invented humans)
     2. **Text-to-Video (4s/5s) & Long-Form 16:9**

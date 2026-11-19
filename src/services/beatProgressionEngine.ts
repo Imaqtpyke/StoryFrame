@@ -156,7 +156,71 @@ const BOILERPLATE_STRIP_PATTERNS = [
   /visual style:[^.]*\.?/gi,
   /character continuity \([^)]*\)\.?/gi,
   /location continuity \([^)]*\)\.?/gi,
+  /featuring\s+[^.(]+\([^)]*\)\.?/gi,
+  /shot\s+on\s+\d{2,3}mm[^.]*\.?/gi,
 ];
+
+const ACTION_OR_BODY_KEEP_WORDS = new Set([
+  'hand', 'hands', 'face', 'eyes', 'mouth', 'finger', 'fingers', 'head', 'shoulder', 'shoulders',
+  'hold', 'holding', 'grip', 'gripping', 'open', 'close', 'stamp', 'seal', 'shears', 'ribbon',
+  'coin', 'coins', 'compass', 'mirror', 'lantern', 'sword', 'rifle', 'magazine', 'door', 'window',
+  'contract', 'ledger', 'vault', 'abacus', 'beads', 'magnifying', 'glass', 'pen', 'signature',
+]);
+
+export function buildSharedContextIgnoreTokens(
+  styleProfile?: StyleProfile,
+  locationSheet?: Record<string, string>,
+  characterSheet?: Record<string, string>
+): Set<string> {
+  const ignore = new Set<string>();
+  const addFromText = (text?: string) => {
+    if (!text) return;
+    const toks = text
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 3 && !STOP_WORDS.has(w) && !ACTION_OR_BODY_KEEP_WORDS.has(w));
+    for (const t of toks) {
+      ignore.add(t);
+    }
+  };
+
+  if (styleProfile) {
+    addFromText(styleProfile.artStyle);
+    addFromText(styleProfile.colorPalette);
+    addFromText(styleProfile.lighting);
+    addFromText(styleProfile.eraAndSetting);
+  }
+  if (locationSheet) {
+    for (const [k, v] of Object.entries(locationSheet)) {
+      addFromText(k);
+      addFromText(v);
+    }
+  }
+  if (characterSheet) {
+    const entries = Object.values(characterSheet);
+    if (entries.length > 1) {
+      const charTokenFreq = new Map<string, number>();
+      for (const desc of entries) {
+        const uniq = new Set(
+          (desc || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, ' ')
+            .split(/\s+/)
+            .filter((w) => w.length > 3 && !STOP_WORDS.has(w) && !ACTION_OR_BODY_KEEP_WORDS.has(w))
+        );
+        for (const t of uniq) {
+          charTokenFreq.set(t, (charTokenFreq.get(t) || 0) + 1);
+        }
+      }
+      for (const [t, freq] of charTokenFreq.entries()) {
+        if (freq >= 2) ignore.add(t);
+      }
+    }
+  }
+
+  return ignore;
+}
 
 /**
  * Normalizes Unicode non-breaking spaces, non-breaking hyphens, and en/em dashes
@@ -226,9 +290,13 @@ export function sanitizeFakePrecisionMath(prompt: string): string {
 
 /**
  * Computes semantic similarity between two visual prompts (3-gram shingles + token overlap),
- * ignoring framing boilerplate and style suffix so true content clones are caught reliably.
+ * ignoring framing boilerplate, style/location context noise, and optics so true action clones are caught reliably.
  */
-export function computeVisualPromptSimilarity(a: string, b: string): number {
+export function computeVisualPromptSimilarity(
+  a: string,
+  b: string,
+  ignoredTokens?: Set<string>
+): number {
   const tokenize = (raw: string): string[] => {
     let clean = raw || '';
     for (const pat of BOILERPLATE_STRIP_PATTERNS) {
@@ -238,7 +306,7 @@ export function computeVisualPromptSimilarity(a: string, b: string): number {
       .toLowerCase()
       .replace(/[^a-z0-9\s]/g, ' ')
       .split(/\s+/)
-      .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
+      .filter((w) => w.length > 2 && !STOP_WORDS.has(w) && !(ignoredTokens && ignoredTokens.has(w)));
   };
 
   const tokensA = tokenize(a);
@@ -612,6 +680,9 @@ const GENERIC_VISUAL_TRAIT_WORDS = new Set([
   'companion', 'artist', 'edges', 'surface', 'textures',
   'adult', 'back', 'weathered', 'worn', 'fair', 'brown', 'yellow', 'navy', 'green',
   'rolled', 'tanned', 'buttoned', 'striped', 'over', 'under', 'coastal', 'neatly', 'tied',
+  'clay', 'handcrafted', 'miniature', 'miniatures', 'figure', 'figures', 'figurine',
+  'sculpted', 'matte', 'proportions', 'planes', 'rounded', 'angular', 'tailored',
+  'crisp', 'polished', 'sturdy', 'diorama', 'porcelain', 'puppet', 'plush', 'human', 'tone',
 ]);
 
 export function injectCompactCharacterLocks(
@@ -634,6 +705,28 @@ export function injectCompactCharacterLocks(
   const singleLeadChar = charEntries.length === 1 ? charEntries[0] : null;
   const spanLower = (textSpan || '').toLowerCase();
 
+  // Compute tokens shared across multiple characters in the cast (e.g. shared clay/robot/knight traits)
+  // so shared cast medium adjectives never cross-trigger an absent character
+  const sharedCastTokens = new Set<string>();
+  if (charEntries.length > 1) {
+    const tokenFreq = new Map<string, number>();
+    for (const [, desc] of charEntries) {
+      const uniq = new Set(
+        (desc || '')
+          .toLowerCase()
+          .replace(/[^a-z0-9\s-]/g, ' ')
+          .split(/[\s-]+/)
+          .filter((w) => w.length > 3 && !STOP_WORDS.has(w))
+      );
+      for (const tok of uniq) {
+        tokenFreq.set(tok, (tokenFreq.get(tok) || 0) + 1);
+      }
+    }
+    for (const [tok, count] of tokenFreq.entries()) {
+      if (count >= 2) sharedCastTokens.add(tok);
+    }
+  }
+
   // Strip Visual Style and --ar suffixes before scanning visual character traits so style keywords never trigger phantom casts
   const bodyWithoutStyleOrAr = updated
     .replace(/\s*--ar\s+[0-9:]+.*$/i, '')
@@ -647,7 +740,7 @@ export function injectCompactCharacterLocks(
       .filter(Boolean)
   );
   const bodyHasCharacterSubject =
-    /\b(?:man|woman|boy|girl|child|baby|infant|person|figure|silhouette|stickman|cat|dog|inventor|artist|soldier|enforcer|enforcers|operative|operatives|scientist|engineer|astronaut|astronauts|photographer|detective|archivist|entity|creature|creatures|sketches|drawings|crowd|people|eyes|face|hands|fingers|shoulders|boots|feet|hair)\b/i.test(
+    /\b(?:man|woman|boy|girl|child|baby|infant|person|figure|silhouette|stickman|cat|dog|inventor|artist|soldier|enforcer|enforcers|operative|operatives|scientist|engineer|astronaut|astronauts|photographer|detective|archivist|homeowner|lender|entity|creature|creatures|sketches|drawings|crowd|people|eyes|face|hands|fingers|shoulders|boots|feet|hair)\b/i.test(
       bodyLower
     );
 
@@ -698,7 +791,9 @@ export function injectCompactCharacterLocks(
     for (const t of tokens) {
       if (tokenMatchesBody(t)) {
         count++;
-        if (!GENERIC_VISUAL_TRAIT_WORDS.has(t)) distinctiveCount++;
+        if (!GENERIC_VISUAL_TRAIT_WORDS.has(t) && !sharedCastTokens.has(t)) {
+          distinctiveCount++;
+        }
       }
     }
     tokenMatchCounts.set(charName, count);
@@ -737,9 +832,10 @@ export function injectCompactCharacterLocks(
       .replace(/[^a-z0-9\s-]/g, ' ')
       .split(/[\s-]+/)
       .filter((w) => w.length > 3 && !STOP_WORDS.has(w));
+    const matchedAnchorTokens = anchorTokens.filter((t) => tokenMatchesBody(t)).length;
     const matchedTokens = tokenMatchCounts.get(charName) || 0;
     const distinctiveTokens = distinctiveMatchCounts.get(charName) || 0;
-    const coverageRatio = anchorTokens.length > 0 ? matchedTokens / anchorTokens.length : 1;
+    const coverageRatio = anchorTokens.length > 0 ? matchedAnchorTokens / anchorTokens.length : 1;
 
     // Determine gender/plurality/age compatibility to prevent stamping mismatched subjects onto solo beats
     const isPluralChar =
@@ -833,8 +929,8 @@ export function injectCompactCharacterLocks(
       continue;
     }
 
-    // If prompt already mentions character and embeds >= 50% of hyphen-aware compact lock tokens, skip redundant inline parenthesis
-    if (promptMentionsName && coverageRatio >= 0.5) {
+    // If the prompt already embeds the identity inline (>= 50% when named, or >= 72% verbatim inline when unnamed), skip duplicate lock
+    if ((promptMentionsName && coverageRatio >= 0.5) || coverageRatio >= 0.72) {
       continue;
     }
 
@@ -1141,6 +1237,8 @@ export function formatFinalBeatPrompt(
   // Final punctuation, dangling preposition & spacing cleanup
   body = body
     .replace(/\b(?:in|with)\s+a\s+(?=(?:from\s+a|at\s+eye[-\s]*level|at\s+(?:low|high)[-\s]*angle|with\s+a\s+(?:tense\s+)?dutch|birds?[-\s]*eye|worms?[-\s]*eye)\b)/gi, '')
+    .replace(/\),\s+(Shot\s+on\b|Visual\s+Style:)/g, '). $1')
+    .replace(/,\s+(Shot\s+on\s+\d{2,3}mm\b)/g, '. $1')
     .replace(/\.{2,}/g, '.')
     .replace(/,\s*,+/g, ',')
     .replace(/\s+([,.;!?])/g, '$1')
@@ -1433,6 +1531,9 @@ function isShortConnectiveFragment(beat: Beat): boolean {
   }
   const words = getWordCount(beat.textSpan);
   const secs = beat.estimatedSeconds || 1.5;
+  if (words <= 2 && secs <= 1.8 && !extractTemporalAnchor(beat.textSpan) && !extractGeographicAnchor(beat.textSpan)) {
+    return true;
+  }
   if (words > FILLER_FRAGMENT_MAX_WORDS && secs > FILLER_FRAGMENT_MAX_SECONDS) {
     return false;
   }
@@ -1467,15 +1568,16 @@ function buildContextPreservingProgressionBeat(
     : 'the protagonist';
 
   const locEntries = Object.entries(locationSheet);
-  const locPhrase = locEntries[0]
+  const rawLocPhrase = locEntries[0]
     ? buildCompactCharacterAnchor(locEntries[0][1], 14) || locEntries[0][0]
     : styleProfile.eraAndSetting || 'the surrounding room';
+  const locPhrase = rawLocPhrase.replace(/^(A|An|The)\s+(?=[a-z])/i, (m) => m.toLowerCase()).replace(/[.!?]+$/, '').trim();
 
   const isBarefoot = leadChar ? /\bbarefoot\b/i.test(leadChar[1]) : false;
   const stanceNote = isBarefoot ? 'bare feet planted firmly on the floor' : 'stance planted steadily on the ground';
 
   const lowerSpan = (beat.textSpan || '').toLowerCase();
-  const variant = duplicateIdxInScene % 4;
+  const variant = (Math.max(0, (scene.index || 1) - 1) + duplicateIdxInScene) % 4;
   let shotType = 'Close-Up';
   let cameraAngle = 'low-angle';
   let cameraMovement = 'Static Frame';
@@ -1551,7 +1653,7 @@ function buildContextPreservingProgressionBeat(
     shotType = 'Close-Up';
     cameraAngle = 'eye-level';
     cameraMovement = isVideoMode ? 'Slow Push-In' : 'Static Frame';
-    actionDescription = `tight facial study on ${charPhrase}, brow furrowed in grim calculation with shallow background focus blurring ${locPhrase}`;
+    actionDescription = `showing a tight facial study on ${charPhrase}, brow furrowed in grim calculation with shallow background focus blurring ${locPhrase}`;
   } else if (/\b(?:endless wars|swords|castles|battle|fire|ammo|bullet|weapon)\b/i.test(lowerSpan)) {
     shotType = 'Low-Angle Hero Shot';
     cameraAngle = 'low-angle';
@@ -1561,22 +1663,22 @@ function buildContextPreservingProgressionBeat(
     shotType = 'Close-Up';
     cameraAngle = 'eye-level';
     cameraMovement = isVideoMode ? 'Slow Push-In' : 'Static Frame';
-    actionDescription = `tight portrait study framing ${charPhrase} inside ${locPhrase}, tense stillness in shoulders and eyes fixed intently forward`;
+    actionDescription = `showing a tight portrait study framing ${charPhrase} inside ${locPhrase}, tense stillness in shoulders and eyes fixed intently forward`;
   } else if (variant === 1) {
     shotType = 'Low-Angle Hero Shot';
     cameraAngle = 'low-angle';
     cameraMovement = isVideoMode ? 'Tracking Subject' : 'Static Frame';
-    actionDescription = `low-angle perspective framing ${charPhrase} within ${locPhrase} with ${stanceNote}, towering shadows stretching across the background surfaces`;
+    actionDescription = `capturing a low-angle perspective framing ${charPhrase} within ${locPhrase} with ${stanceNote}, towering shadows stretching across the background surfaces`;
   } else if (variant === 2) {
     shotType = 'Over-the-Shoulder (OTS)';
     cameraAngle = 'high-angle';
     cameraMovement = isVideoMode ? 'Smooth Pan' : 'Static Frame';
-    actionDescription = `over-the-shoulder angle across ${locPhrase}, revealing surrounding depth, structural details, and shadows ahead of ${charPhrase}`;
+    actionDescription = `over-the-shoulder framing across ${locPhrase}, revealing surrounding depth, structural details, and shadows ahead of ${charPhrase}`;
   } else {
     shotType = 'Medium Close-Up';
     cameraAngle = 'dutch-tilt';
     cameraMovement = isVideoMode ? 'Handheld Cinematic Drift' : 'Static Frame';
-    actionDescription = `canted medium close-up capturing ${charPhrase} bracing in quiet unease inside ${locPhrase}, stark directional contrast across facial contours`;
+    actionDescription = `capturing a canted medium close-up of ${charPhrase} bracing in quiet unease inside ${locPhrase}, stark directional contrast across facial contours`;
   }
 
   const optics =
@@ -1584,8 +1686,14 @@ function buildContextPreservingProgressionBeat(
       ? 'Shot on 85mm f/1.8 portrait prime lens with shallow depth of field'
       : 'Shot on 35mm f/4 cinema lens with atmospheric depth';
 
-  const cleanLighting = sanitizeMonochromeLighting(styleProfile.lighting, styleProfile);
-  const fullBody = `${actionDescription}, ${cleanLighting}, ${styleProfile.colorPalette} palette, ${optics}, Visual Style: ${styleProfile.artStyle}.`;
+  const cleanLighting = sanitizeMonochromeLighting(
+    (buildCompactCharacterAnchor(styleProfile.lighting, 16) || styleProfile.lighting).replace(/[.!?]+$/, '').trim(),
+    styleProfile
+  );
+  const compactStyle = (buildCompactCharacterAnchor(styleProfile.artStyle, 14) || styleProfile.artStyle)
+    .replace(/[.!?]+$/, '')
+    .trim();
+  const fullBody = `${actionDescription}, ${cleanLighting}. ${optics}. Visual Style: ${compactStyle}.`;
 
   return formatFinalBeatPrompt(
     {
@@ -1635,6 +1743,11 @@ export function deduplicateAndProgressSceneBeats(
   };
   const characterSheet = context?.characterSheet || {};
   const locationSheet = context?.locationSheet || {};
+  const ignoredSimilarityTokens = buildSharedContextIgnoreTokens(
+    styleProfile,
+    locationSheet,
+    characterSheet
+  );
   const fallbackScene: Scene = context?.scene || {
     index: 1,
     narratorLine: beats.map((b) => b.textSpan).join(' '),
@@ -1682,7 +1795,11 @@ export function deduplicateAndProgressSceneBeats(
     }
 
     const prev = merged[merged.length - 1];
-    const sim = computeVisualPromptSimilarity(prev.imagePrompt, curr.imagePrompt);
+    const sim = computeVisualPromptSimilarity(
+      prev.imagePrompt,
+      curr.imagePrompt,
+      ignoredSimilarityTokens
+    );
     const combinedSeconds = Math.round(((prev.estimatedSeconds || 1.5) + (curr.estimatedSeconds || 1.5)) * 10) / 10;
     const combinedWords = getWordCount(`${prev.textSpan} ${curr.textSpan}`);
 
@@ -1726,7 +1843,11 @@ export function deduplicateAndProgressSceneBeats(
     // Compare against ALL prior beats in finalized (not just i-1!)
     let hasDuplicateInScene = false;
     for (let j = 0; j < finalized.length; j++) {
-      const sim = computeVisualPromptSimilarity(finalized[j].imagePrompt, beat.imagePrompt);
+      const sim = computeVisualPromptSimilarity(
+        finalized[j].imagePrompt,
+        beat.imagePrompt,
+        ignoredSimilarityTokens
+      );
       const distinctMontage = hasDistinctMontageFocalSubject(finalized[j], beat);
       const cloneThreshold = distinctMontage ? 0.68 : 0.48;
       if (sim >= cloneThreshold) {
@@ -1768,9 +1889,16 @@ export function auditScenesForRepair(
   scenes: Scene[],
   styleProfile: StyleProfile,
   isVideoMode: boolean,
-  targetVideoDuration?: number
+  targetVideoDuration?: number,
+  characterSheet?: Record<string, string>,
+  locationSheet?: Record<string, string>
 ): Array<{ sceneIndex: number; reasons: string[] }> {
   const flagged: Array<{ sceneIndex: number; reasons: string[] }> = [];
+  const ignoredSimilarityTokens = buildSharedContextIgnoreTokens(
+    styleProfile,
+    locationSheet,
+    characterSheet
+  );
   let enteredHistoricalPast = false;
 
   scenes.forEach((scene) => {
@@ -1785,7 +1913,11 @@ export function auditScenesForRepair(
     // 1. Check all pairs (i, j) within scene for clones (raising ceiling when distinct montage subjects apply)
     for (let i = 0; i < beats.length; i++) {
       for (let j = i + 1; j < beats.length; j++) {
-        const sim = computeVisualPromptSimilarity(beats[i].imagePrompt, beats[j].imagePrompt);
+        const sim = computeVisualPromptSimilarity(
+          beats[i].imagePrompt,
+          beats[j].imagePrompt,
+          ignoredSimilarityTokens
+        );
         const cloneThreshold = hasDistinctMontageFocalSubject(beats[i], beats[j]) ? 0.68 : 0.50;
         if (sim >= cloneThreshold) {
           reasons.push(`Beats ${i + 1} and ${j + 1} have near-identical visual prompts (${Math.round(sim * 100)}% overlap)`);
@@ -1941,7 +2073,14 @@ export async function runTwoPhaseProgressionAndRepair(
   );
 
   // Step 4: Audit scenes for clones, oversized run-on beats, or era bleed
-  const flaggedScenes = auditScenesForRepair(workingScenes, styleProfile, isVideoMode, targetVideoDuration);
+  const flaggedScenes = auditScenesForRepair(
+    workingScenes,
+    styleProfile,
+    isVideoMode,
+    targetVideoDuration,
+    characterSheet,
+    locationSheet
+  );
 
   const hasLiveApiKey =
     typeof apiKey === 'string' &&
@@ -2056,6 +2195,7 @@ STRICT REPAIR RULES:
         userSignal,
         temperature: 0.25,
         topP: 0.85,
+        thinkingLevel: 'minimal',
       });
 
       if (repairedData && Array.isArray(repairedData.scenes)) {

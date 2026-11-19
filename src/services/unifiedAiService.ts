@@ -14,6 +14,7 @@ export interface UnifiedJsonRequest {
   temperature?: number;
   topP?: number;
   maxTokens?: number;
+  thinkingLevel?: 'minimal' | 'low' | 'medium' | 'high';
 }
 
 /**
@@ -95,6 +96,7 @@ export async function executeJsonLlmCall<T = any>(params: UnifiedJsonRequest): P
     temperature = 0.3,
     topP = 0.85,
     maxTokens,
+    thinkingLevel,
   } = params;
 
   if (userSignal?.aborted) {
@@ -143,37 +145,46 @@ export async function executeJsonLlmCall<T = any>(params: UnifiedJsonRequest): P
   const targetModel = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-4-hydrogen';
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${trimmedKey}`;
 
-  const generationConfig: Record<string, any> = {
-    responseMimeType: 'application/json',
-  };
+  const buildGeminiPayload = (includeThinking: boolean): Record<string, any> => {
+    const generationConfig: Record<string, any> = {
+      responseMimeType: 'application/json',
+    };
 
-  // Gemini 4 models (gemini-4-hydrogen) do not accept deprecated sampling parameters
-  if (targetModel !== 'gemini-4-hydrogen') {
-    generationConfig.temperature = temperature;
-    generationConfig.topP = topP;
-  }
+    // Gemini 4 models (gemini-4-hydrogen) do not accept deprecated sampling parameters;
+    // cap thinkingLevel to avoid multi-minute reasoning stalls on structured JSON breakdowns
+    if (targetModel === 'gemini-4-hydrogen') {
+      if (includeThinking) {
+        generationConfig.thinkingConfig = {
+          thinkingLevel: thinkingLevel || 'low',
+        };
+      }
+    } else {
+      generationConfig.temperature = temperature;
+      generationConfig.topP = topP;
+    }
 
-  if (typeof maxTokens === 'number' && maxTokens > 0) {
-    generationConfig.maxOutputTokens = maxTokens;
-  }
+    if (typeof maxTokens === 'number' && maxTokens > 0) {
+      generationConfig.maxOutputTokens = maxTokens;
+    }
 
-  const payload: Record<string, any> = {
-    contents: [
-      {
-        role: 'user',
-        parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
-      },
-    ],
-    generationConfig,
+    return {
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
+        },
+      ],
+      generationConfig,
+    };
   };
 
   try {
-    const resp = await fetchWithExponentialBackoff(
+    let resp = await fetchWithExponentialBackoff(
       () =>
         fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+          body: JSON.stringify(buildGeminiPayload(true)),
           signal: userSignal,
         }),
       {
@@ -185,6 +196,20 @@ export async function executeJsonLlmCall<T = any>(params: UnifiedJsonRequest): P
         },
       }
     );
+
+    if (!resp.ok && resp.status === 400 && targetModel === 'gemini-4-hydrogen') {
+      const firstErrText = await resp.text().catch(() => '');
+      if (/\bthink/i.test(firstErrText)) {
+        resp = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(buildGeminiPayload(false)),
+          signal: userSignal,
+        });
+      } else {
+        throw new Error(`API error (${resp.status}): ${firstErrText}`);
+      }
+    }
 
     if (!resp.ok) {
       const errText = await resp.text().catch(() => '');

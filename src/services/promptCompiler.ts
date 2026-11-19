@@ -598,7 +598,7 @@ export function compileThumbnailPrompt(params: {
   if (characters.length > 0) {
     const [name, desc] = characters[0];
     primaryName = name;
-    const cleanIdentityDesc = stripTransientExpressionsAndPoses(desc) || desc;
+    const cleanIdentityDesc = (stripTransientExpressionsAndPoses(desc) || desc).replace(/[.!?]+$/, '').trim();
     const displayName = formatSheetSubjectName(name, true);
     primaryCharClause = `${displayName} (locked visual identity: ${cleanIdentityDesc})`;
   }
@@ -631,18 +631,24 @@ export function compileThumbnailPrompt(params: {
     ? 'flashback'
     : 'present';
 
-  const cleanThumbArtStyle =
+  const cleanThumbArtStyle = (
     sanitizeStyleForEra(params.styleProfile?.artStyle || 'Cinematic realistic', thumbEra) ||
     params.styleProfile?.artStyle ||
-    'Cinematic realistic';
-  const cleanPalette =
+    'Cinematic realistic'
+  )
+    .replace(/[.!?]+$/, '')
+    .trim();
+  const cleanPalette = (
     sanitizeStyleForEra(
       sanitizeMonochromeLighting(
         params.styleProfile?.colorPalette || 'high-contrast dramatic lighting',
         params.styleProfile
       ),
       thumbEra
-    ) || 'high-contrast dramatic lighting';
+    ) || 'high-contrast dramatic lighting'
+  )
+    .replace(/[.!?]+$/, '')
+    .trim();
 
   const cleanExpression = expression.replace(/[.!?]+$/, '').trim();
   let cleanHeroMoment = heroMoment.replace(/[.!?]+$/, '').trim();
@@ -782,9 +788,10 @@ export function inferStoryAdaptiveCtaQuestion(storyPremise?: string, characterNa
   }
 
   const isSciFiPremise =
-    /\b(?:ai|robot|future|space|cyber|cyberpunk|dystopian|simulation|alien|tech|memory-chip|hologram|neon|enforcers|android|neural)\b/i.test(
+    /\b(?:ai|robot|space|cyber|cyberpunk|dystopian|simulation|alien|tech|technology|memory-chip|hologram|neon|enforcers|android|neural)\b/i.test(
       text
-    );
+    ) ||
+    /\b(?:distant\s+future|far\s+future|future\s+world|year\s+2\d{3}|time\s+travel)\b/i.test(text);
 
   const isFuturisticSciFi =
     /\b(?:cyber|cyberpunk|dystopian|simulation|alien|memory-chip|hologram|neon|enforcers|android|neural|robot|ai)\b/i.test(
@@ -805,6 +812,24 @@ export function inferStoryAdaptiveCtaQuestion(storyPremise?: string, characterNa
         'How different would today look if this moment had turned out differently?',
         'What detail from this true story surprised you the most?',
         'Should more real-life history stories be told like this?',
+      ],
+    };
+  }
+
+  // Finance / Mortgage / Contract Trap / Consumer Protection
+  if (
+    !isFuturisticSciFi &&
+    /\b(?:mortgage|prepayment\s+penalty|loan\s+contract|home\s+loan|lender|lenders|interest\s+payments|principal|zero-penalty|credit\s+score|credit\s+card|hidden\s+fee|penalty\s+fee|clear\s+your\s+debt|out\s+of\s+debt)\b/i.test(
+      text
+    )
+  ) {
+    return {
+      primaryQuestion: 'Did you check your own loan contract for a hidden penalty clause before signing?',
+      alternateQuestions: [
+        'Have you ever been hit with an unexpected early-payoff fee or contract fine?',
+        'Should prepayment penalty clauses be banned in home loan contracts?',
+        'How many borrowers actually read the fine print before signing on the dotted line?',
+        'What financial trap caught you by surprise the hardest?',
       ],
     };
   }
@@ -956,7 +981,7 @@ export function compileCtaPrompt(params: {
   let primaryCharClause = 'the protagonist';
   if (characters.length > 0) {
     const [rawName, rawDesc] = characters[0];
-    const cleanDesc = stripTransientExpressionsAndPoses(rawDesc) || rawDesc;
+    const cleanDesc = (stripTransientExpressionsAndPoses(rawDesc) || rawDesc).replace(/[.!?]+$/, '').trim();
     const formattedName = formatCtaRoleName(rawName);
     primaryCharName = formattedName;
     primaryCharClause = `${formattedName} (locked visual identity: ${cleanDesc})`;
@@ -971,12 +996,16 @@ export function compileCtaPrompt(params: {
 
   const isMono = isMonochromeStyle(params.styleProfile);
   const rawArtStyle = params.styleProfile?.artStyle || 'Cinematic realistic';
-  const artStyle = sanitizeStyleForEra(rawArtStyle, 'present') || rawArtStyle;
+  const artStyle = (sanitizeStyleForEra(rawArtStyle, 'present') || rawArtStyle).replace(/[.!?]+$/, '').trim();
   const rawPalette = params.styleProfile?.colorPalette || 'high-contrast dramatic lighting, rich atmospheric haze';
-  const colorPalette = sanitizeStyleForEra(
-    sanitizeMonochromeLighting(rawPalette, params.styleProfile),
-    'present'
-  ) || sanitizeMonochromeLighting(rawPalette, params.styleProfile);
+  const colorPalette = (
+    sanitizeStyleForEra(
+      sanitizeMonochromeLighting(rawPalette, params.styleProfile),
+      'present'
+    ) || sanitizeMonochromeLighting(rawPalette, params.styleProfile)
+  )
+    .replace(/[.!?]+$/, '')
+    .trim();
   const rawLighting =
     params.styleProfile?.lighting || 'deep directional key light with saturated rim backlight';
   const staticSafeLighting =
@@ -989,10 +1018,14 @@ export function compileCtaPrompt(params: {
           'present'
         )
       : sanitizeStyleForEra(rawLighting, 'present');
-  const lighting = isMono
-    ? sanitizeMonochromeLighting(staticSafeLighting, params.styleProfile) ||
-      'stark chiaroscuro contrast lighting with deep ink shadows'
-    : staticSafeLighting || rawLighting;
+  const lighting = (
+    isMono
+      ? sanitizeMonochromeLighting(staticSafeLighting, params.styleProfile) ||
+        'stark chiaroscuro contrast lighting with deep ink shadows'
+      : staticSafeLighting || rawLighting
+  )
+    .replace(/[.!?]+$/, '')
+    .trim();
 
   // Platform specific safe zone rules & UI annotations
   let platformLabel = 'TikTok';
