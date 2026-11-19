@@ -12,14 +12,13 @@ import {
   extractTemporalAnchor,
 } from './beatSplitting';
 import {
-  enrichStartFramePrompt,
   expandEntityKeysInPrompt,
   isMonochromeStyle,
   normalizeContinuitySheetKeys,
   normalizeUnicodeAndDashes,
   runTwoPhaseProgressionAndRepair,
-  sanitizeMasterVideoPrompt,
   sanitizeMonochromeLighting,
+  sanitizeSharedVisualStyle,
   sanitizeStillImageMotionAndOptics,
   synchronizeCharacterSheetWithFirstAppearances,
 } from './beatProgressionEngine';
@@ -190,7 +189,7 @@ export async function generateEnhancedStory(
 
   let durationInstruction = '';
   if (isVideoMode) {
-    durationInstruction = `Generation mode is Text to Video. Target single video clip duration is strictly ${targetVideoDuration} seconds per scene. Break the story into distinct visual scenes that can each be captured in a single ${targetVideoDuration}-second AI video shot. Each scene's master "videoPrompt" MUST state Duration: ${targetVideoDuration} seconds.`;
+    durationInstruction = `Generation mode is Text to Video (Google Flow / Veo / Kling). Target single video clip cadence is ${targetVideoDuration} seconds per scene. Break the story into distinct visual scenes with self-contained standalone video beat prompts in beats[].imagePrompt.`;
   } else if (durationMode === 'automatic') {
     durationInstruction = `Duration mode is Automatic. Break the story into however many scenes it naturally requires. Estimate realistic narration pacing with a floor of 3 to 6 seconds of spoken narration per scene. Calculate and return totalDurationSeconds accurately based on the scene pacing.`;
   } else if (durationSeconds && durationSeconds > 0) {
@@ -278,7 +277,7 @@ You MUST take their raw premise, question, draft, or concept and perform compreh
 
 10. MODE ISOLATION FOR AUDIO & FOLEY CUES & PHANTOM TEXT:
     ${isVideoMode
-      ? `- VIDEO MODE MANDATORY SOUND DESIGN: Every video prompt and video beat MUST specify ambient foley, sound effects, footsteps, or handling cues (e.g. "Audio: muffled footsteps in wet gravel, metallic coin drop, no dialogue, ambient foley only").`
+      ? `- VIDEO MODE MANDATORY SOUND DESIGN: Every beat's video prompt MUST specify ambient foley, sound effects, footsteps, or handling cues (e.g. "Audio: muffled footsteps on wet gravel, metallic coin drop, no dialogue, ambient foley only").`
       : `- IMAGE MODE STRICT AUDIO PROHIBITION: Diffusion image models (Midjourney, Flux) cannot render sound. DO NOT include audio descriptions, sound cues ("listening to an unseen whisper"), or invented etched text date timelines.`}
 
 11. KINETIC PROGRESSION & VELOCITY TEMPO:
@@ -336,28 +335,14 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    Generate the full breakdown in one model call that has the entire story in view.
    - "characterSheet": Create a top-level object mapping EVERY recurring human character, secondary role/antagonist (e.g. both "Homeowner" AND "Bank Lender" / "Bank Clerk"), AND recurring non-human entity/creature to ONE fixed, highly detailed expression-free visual description resolving face, hair, eyewear, and PERMANENT WARDROBE/SILHOUETTE without "neutral facial features" or stance sentences ("Stance is natural..."). Keep infant flashbacks free of adult clothing!
    - "locationSheet": Create a top-level object mapping any specific place returned to more than once to ONE fixed, highly detailed visual description.
-   - CRITICAL WARDROBE LOCK & STRICT BAN ON "MATCHING ESTABLISHED LOOK":
-     * Downstream diffusion models (Kling, Runway, Sora, Midjourney, Flux) render each shot independently and have NO memory of prior scenes.
-     * You are STRICTLY FORBIDDEN from writing shortcut phrases like "(matching established look from Scene 1)" or "(matching established look)"!
-     * In EVERY beat's "imagePrompt", every scene's "videoPrompt", and "startFramePrompt", you MUST explicitly repeat the character's locked clothing and eyewear. NEVER allow clothes to morph or change without story reason!
+    - CRITICAL WARDROBE LOCK & STRICT BAN ON "MATCHING ESTABLISHED LOOK":
+      * Downstream AI video generators (Google Flow, Veo, Kling, Runway, Sora) render each shot independently and have NO memory of prior scenes.
+      * You are STRICTLY FORBIDDEN from writing shortcut phrases like "(matching established look from Scene 1)" or "(matching established look)"!
+      * In EVERY beat's "imagePrompt" where a character appears, you MUST explicitly repeat the character's locked clothing and eyewear. NEVER allow clothes to morph or change without story reason!
+      * NEVER embed hero-pronoun wardrobe sentences ("He wears...", "His face...") inside "styleProfile.artStyle": keep artStyle strictly focused on medium, materials, and rendering aesthetics.
 
-3. Mandatory 8-Part Master Scene "videoPrompt" Structure:
-   For EACH scene, construct "videoPrompt" adhering strictly to these exact 8 components:
-   - subject: full concrete visual description with locked clothing (e.g. "Kael, Filipino male in his 20s, wearing plain crewneck white t-shirt"). NEVER write "(matching established look)".
-   - action: described in temporal order with anatomical & kinematic specificity.
-   - camera: exactly ONE shot type, exactly ONE camera angle, and exactly ONE movement.
-   - lighting and environment: atmospheric lighting and environment details.
-   - style: styleProfile artStyle plus lens descriptor.
-   - physics: concrete physical dynamics.
-   - audio: ALWAYS state "no dialogue, ambient sound only" or "silent".
-   - duration: in seconds matching ${targetVideoDuration} seconds.
-
-4. Start Frame Ingredients (Text to Image Prompt):
-   For each scene, provide "startFramePrompt": initial reference keyframe image formatted as:
-   [Shot framing and angle] of [Subject with exact details], [Initial frame pose] in [Setting Details], [Lighting & Color palette], ${defaultAspectRatio}, ${characterStyle || 'cinematic rendering'}.
-
-5. Smart Video Beats Array ("beats"):
-   For each scene, provide an array of fine-grained video beats representing the temporal subdivisions of this ${targetVideoDuration}-second clip.
+3. Smart Video Beats Array ("beats"):
+   For each scene, provide an array of fine-grained video beats representing the temporal subdivisions of this ${targetVideoDuration}-second clip. Every beat's "imagePrompt" is a standalone Google Flow / AI video generation prompt.
    Each beat MUST contain:
    - "beatIndex": integer (1, 2, 3...)
    - "textSpan": specific phrase or spoken clause from the narrator line. Every beat MUST correspond to actual spoken words from the narrator line. DO NOT create artificial extra beats with empty textSpan ("") or ghost beats. Distribute the ${targetVideoDuration} seconds across the actual phrases of the sentence (e.g. 2 beats of 2.0s each for a 4-second clip).
@@ -366,7 +351,7 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - "cameraAngle": explicit camera angle
    - "cameraMovement": cinematic camera motion cue
    - "temporalAnchor": optional string for explicit year/date/duration
-  - "imagePrompt": Concise, standalone text-to-video prompt capturing this specific beat's action (35 to 65 words). Open cleanly with ONE shot size matching "shotType" and ONE camera angle matching "cameraAngle" (never mix "Close-Up" and "extreme-close-up"), Audio: [foley, no dialogue]. Do NOT embed "9:16 vertical" or duplicate "Visual Style:" tags.
+   - "imagePrompt": Self-contained Google Flow / AI text-to-video prompt capturing this specific beat's action (45 to 70 words). Open cleanly once with ONE shot size matching "shotType", ONE camera angle matching "cameraAngle", and camera motion (never repeat framing openers or mix "Close-Up" and "extreme-close-up"), followed by [Subject with locked outfit when character is present] performing [grounded action with velocity], environmental physics, Kelvin lighting, optics, and Audio: [foley, no dialogue]. Do NOT embed "9:16 vertical", "--ar 9:16", or duplicate "Visual Style:" tags.
 
 6. VISUAL INFORMATION BUDGET & REVEAL DISCIPLINE (STRICT NO-LEAKAGE RULE):
    - In multi-beat sentences (e.g. "If you pour tea into a harbor, something terrifying happens"):
@@ -424,8 +409,6 @@ STRICT CONSTRAINTS:
       "index": number,
       "narratorLine": string,
       "estimatedSeconds": number,
-      "videoPrompt": "string",
-      "startFramePrompt": "string",
       "establishedCharacters": ["Name"],
       "establishedSettings": ["Setting"],
       "beats": [
@@ -565,10 +548,11 @@ ${durationInstruction}`;
     topP: 0.85,
   });
 
-  // Sanitize styleProfile (enforce monochrome lighting purity when style is B&W / monochrome)
+  // Sanitize styleProfile (strip hero pronoun wardrobe leaks from shared artStyle, and enforce monochrome lighting purity)
   const rawStyleProfile = parsedData.styleProfile || {};
+  const cleanedArtStyle = sanitizeSharedVisualStyle(removeEmDashes(rawStyleProfile.artStyle || characterStyle || 'Cinematic Rendering'));
   const preliminaryStyleProfile: StyleProfile = {
-    artStyle: removeEmDashes(rawStyleProfile.artStyle || characterStyle || 'Cinematic Rendering'),
+    artStyle: cleanedArtStyle || removeEmDashes(characterStyle || 'Cinematic Rendering'),
     colorPalette: removeEmDashes(rawStyleProfile.colorPalette || 'Harmonious color grading matching narrative tone'),
     lighting: removeEmDashes(rawStyleProfile.lighting || 'Cinematic three-point lighting with soft rim fill'),
     eraAndSetting: removeEmDashes(rawStyleProfile.eraAndSetting || 'Contemporary atmospheric setting'),
@@ -666,34 +650,6 @@ Return ONLY valid JSON with "scenes": [ ...starting at index ${nextSceneIndex}..
     const sceneIndex = typeof scene.index === 'number' ? scene.index : sIdx + 1;
     const narratorLine = removeEmDashes(scene.narratorLine || '');
 
-    let videoPrompt = scene.videoPrompt ? removeEmDashes(scene.videoPrompt) : undefined;
-    let startFramePrompt = scene.startFramePrompt ? removeEmDashes(scene.startFramePrompt) : undefined;
-
-    if (videoPrompt) {
-      videoPrompt = resolveEstablishedLookPlaceholders(videoPrompt, sanitizedCharacterSheet, sanitizedLocationSheet);
-      videoPrompt = resolveDisjunctivePhrasing(videoPrompt);
-      videoPrompt = isVideoMode
-        ? sanitizeMasterVideoPrompt(videoPrompt, {
-            targetVideoDuration,
-            calculatedSceneSeconds: targetVideoDuration,
-            styleProfile: sanitizedStyleProfile,
-            characterSheet: sanitizedCharacterSheet,
-            narratorLine,
-            defaultAspectRatio,
-          })
-        : cleanAndDeduplicatePrompt(videoPrompt, true);
-    }
-    if (startFramePrompt) {
-      startFramePrompt = resolveEstablishedLookPlaceholders(startFramePrompt, sanitizedCharacterSheet, sanitizedLocationSheet);
-      startFramePrompt = resolveDisjunctivePhrasing(startFramePrompt);
-      startFramePrompt = enrichStartFramePrompt(startFramePrompt, {
-        styleProfile: sanitizedStyleProfile,
-        characterSheet: sanitizedCharacterSheet,
-        narratorLine,
-        defaultAspectRatio,
-      });
-    }
-
     const rawBeats = Array.isArray(scene.beats) ? scene.beats : [];
     const sanitizedBeats: Beat[] = rawBeats.map((beat: any, bIdx: number) => {
       const beatIndex = typeof beat.beatIndex === 'number' ? beat.beatIndex : bIdx + 1;
@@ -761,8 +717,6 @@ Return ONLY valid JSON with "scenes": [ ...starting at index ${nextSceneIndex}..
       narratorLine,
       estimatedSeconds: isVideoMode ? targetVideoDuration : Math.round(sanitizedBeats.reduce((s, b) => s + (b.estimatedSeconds || 1.5), 0)),
       beats: sanitizedBeats,
-      videoPrompt,
-      startFramePrompt,
       establishedCharacters: Array.isArray(scene.establishedCharacters) ? scene.establishedCharacters : [],
       establishedSettings: Array.isArray(scene.establishedSettings) ? scene.establishedSettings : [],
       isAnchorScene: sIdx === 0,
@@ -775,32 +729,8 @@ Return ONLY valid JSON with "scenes": [ ...starting at index ${nextSceneIndex}..
   );
   const readableLocationSheet = normalizeContinuitySheetKeys(sanitizedLocationSheet);
 
-  const castSyncedScenes = isVideoMode
-    ? sanitizedScenes.map((sc: any) => ({
-        ...sc,
-        videoPrompt: sc.videoPrompt
-          ? sanitizeMasterVideoPrompt(sc.videoPrompt, {
-              targetVideoDuration,
-              calculatedSceneSeconds: targetVideoDuration,
-              styleProfile: sanitizedStyleProfile,
-              characterSheet: readableCharacterSheet,
-              narratorLine: sc.narratorLine,
-              defaultAspectRatio,
-            })
-          : sc.videoPrompt,
-        startFramePrompt: sc.startFramePrompt
-          ? enrichStartFramePrompt(sc.startFramePrompt, {
-              styleProfile: sanitizedStyleProfile,
-              characterSheet: readableCharacterSheet,
-              narratorLine: sc.narratorLine,
-              defaultAspectRatio,
-            })
-          : sc.startFramePrompt,
-      }))
-    : sanitizedScenes;
-
   const scenesWithHints = await runTwoPhaseProgressionAndRepair({
-    scenes: castSyncedScenes,
+    scenes: sanitizedScenes,
     styleProfile: sanitizedStyleProfile,
     characterSheet: readableCharacterSheet,
     locationSheet: readableLocationSheet,

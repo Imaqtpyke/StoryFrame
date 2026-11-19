@@ -498,11 +498,16 @@ export function sanitizeStillImageMotionAndOptics(
   cleaned = cleaned.replace(/\b(\d{2,3}mm)\s+\1\b/gi, '$1');
 
   if (!isVideoMode) {
-    // Strip kinetic camera tracking directives that induce motion blur in Text-to-Image renders
+    // Strip kinetic camera tracking directives and fast continuous motion adverbs that induce blur in Text-to-Image renders
     cleaned = cleaned
       .replace(/\btracking\s+(?:left|right|upward|downward|forward|back)\s+to\s+reveal\b/gi, 'revealing')
       .replace(/\btracking\s+(?:left|right|upward|downward|forward|back)\s+as\b/gi, 'as')
       .replace(/\btracking\s+(?:left|right|upward|downward|across|subject)\b/gi, '')
+      .replace(/\bunfurl\s+dramatically\b/gi, 'frozen mid-unfurl')
+      .replace(/\btip\s+over\s+and\s+slide\s+rapidly\b/gi, 'tipped over mid-slide')
+      .replace(/\bslide\s+rapidly\b/gi, 'frozen mid-slide')
+      .replace(/\bswing\s+abruptly\s+inward\b/gi, 'angled sharply inward')
+      .replace(/\bcompress\s+shut\b/gi, 'tightly compressed')
       .replace(/\b(crisp|clean|sharp|frozen|single)\s+static\s+frame\s+of\b/gi, '$1 view of')
       .replace(/\bstatic\s+frame\s+of\b/gi, 'of')
       .replace(/\b(?:eye-level|low-angle|high-angle)\s+static\s+frame\s+showing\b/gi, '$1 showing')
@@ -776,6 +781,11 @@ const GENERIC_ALIAS_WORDS = new Set([
   'the', 'a', 'an', 'young', 'old', 'tall', 'tiny', 'dark', 'bright', 'chrome', 'chrome-faced',
   'street', 'shadow', 'neon', 'black', 'white', 'red', 'blue', 'cyber', 'armored', 'masked',
   'lead', 'main', 'unknown', 'stranger', 'figure', 'person', 'man', 'woman', 'boy', 'girl',
+  'brass', 'bronze', 'copper', 'gold', 'golden', 'silver', 'iron', 'steel', 'titanium',
+  'metal', 'metallic', 'amber', 'resin', 'clay', 'porcelain', 'ceramic', 'glass', 'frosted',
+  'obsidian', 'marble', 'stone', 'wood', 'wooden', 'oak', 'paper', 'cardstock', 'cloth',
+  'wool', 'velvet', 'leather', 'plastic', 'mechanical', 'clockwork', 'translucent', 'brushed',
+  'articulated', 'matte', 'heavy', 'short', 'ancient', 'modern', 'antique', 'polymer',
 ]);
 
 function buildCharacterAliasRegex(charName: string, allCharNames: string[]): RegExp | null {
@@ -812,6 +822,8 @@ const GENERIC_VISUAL_TRAIT_WORDS = new Set([
   'clay', 'handcrafted', 'miniature', 'miniatures', 'figure', 'figures', 'figurine',
   'sculpted', 'matte', 'proportions', 'planes', 'rounded', 'angular', 'tailored',
   'crisp', 'polished', 'sturdy', 'diorama', 'porcelain', 'puppet', 'plush', 'human', 'tone',
+  'brass', 'brushed', 'articulated', 'translucent', 'resin', 'mechanical', 'clockwork',
+  'frosted', 'obsidian', 'marble', 'oak', 'wool', 'smooth', 'minimal', 'waistcoat', 'cotton',
 ]);
 
 export function injectCompactCharacterLocks(
@@ -1066,6 +1078,31 @@ export function injectCompactCharacterLocks(
       continue;
     }
 
+    // Detect tight extremity close-ups (hands/fingers/cuffs or feet/shoes) so unrelated hair/trousers/shoes do not break tight framing
+    const isHandDetailCloseUp =
+      isCloseUpOrEcu &&
+      /\b(?:hand|hands|finger|fingers|palm|knuckles|wrist|cuff|cuffs|sleeve|sleeves|thumb)\b/i.test(bodyLower) &&
+      !/\b(?:face|head|hair|eyes|shoulders|torso|chest|standing|stands|sits|sitting|looms)\b/i.test(bodyLower);
+    const isFootDetailCloseUp =
+      isCloseUpOrEcu &&
+      /\b(?:foot|feet|shoe|shoes|boot|boots|heel|sole|ankle|ankles)\b/i.test(bodyLower) &&
+      !/\b(?:face|head|hair|eyes|shoulders|torso|chest|hand|hands|fingers|standing|stands|sits|sitting|looms)\b/i.test(bodyLower);
+
+    const bodyHasUpperGarmentOrCuff =
+      /\b(?:suit|sweater|cardigan|jacket|coat|trench|blazer|shirt|blouse|hoodie|cloak|robe|sleeve|sleeves|cuff|cuffs|collar)\b/i.test(
+        bodyLower
+      );
+    const bodyHasFootwear = /\b(?:boots|shoes|sneakers|heels|sandals|loafers)\b/i.test(bodyLower);
+
+    // Skip injecting full-body locks onto tight hand/foot close-ups that already carry matching material/garment cues
+    if (
+      !promptMentionsName &&
+      ((isHandDetailCloseUp && bodyHasUpperGarmentOrCuff && matchedTokens >= 2) ||
+        (isFootDetailCloseUp && bodyHasFootwear && matchedTokens >= 2))
+    ) {
+      continue;
+    }
+
     // Verify signature eyewear/garment nouns (glasses/spectacles, suit, sweater, tie, etc.) are present before skipping
     const extractSignatureNouns = (txt: string): string[] => {
       const matches =
@@ -1079,7 +1116,12 @@ export function injectCompactCharacterLocks(
       );
     };
     const bodySigSet = new Set(extractSignatureNouns(bodyLower));
-    const missingSigItems = extractSignatureNouns(compactAnchor).filter((item) => !bodySigSet.has(item));
+    const missingSigItems = extractSignatureNouns(compactAnchor).filter((item) => {
+      if (isHandDetailCloseUp && /\b(?:boots|shoes|sneakers|trousers|pants|jeans|skirt)\b/i.test(item)) {
+        return false;
+      }
+      return !bodySigSet.has(item);
+    });
 
     // Skip duplicate lock only when inline prompt already preserves the character AND all signature eyewear/garments
     if (
@@ -1089,17 +1131,35 @@ export function injectCompactCharacterLocks(
       continue;
     }
 
+    // For tight hand-only close-ups without inline sleeve cues (e.g. "Homeowner's hand"), scope lock to upper-body/skin clauses
+    let scopedAnchor = compactAnchor;
+    if (isHandDetailCloseUp) {
+      const handClauses = compactAnchor
+        .split(/,\s*/)
+        .filter((c) => !/\b(?:hair|trousers|pants|jeans|skirt|boots|shoes|sneakers|barefoot|tall|short|stature)\b/i.test(c));
+      if (handClauses.length > 0) {
+        scopedAnchor = handClauses.join(', ').trim();
+      }
+    } else if (isFootDetailCloseUp) {
+      const footClauses = compactAnchor
+        .split(/,\s*/)
+        .filter((c) => !/\b(?:hair|eyes|glasses|spectacles|eyewear|hat|cap|helmet|collar)\b/i.test(c));
+      if (footClauses.length > 0) {
+        scopedAnchor = footClauses.join(', ').trim();
+      }
+    }
+
     if (promptMentionsName) {
       // Attach compact visual anchor right after the first non-possessive mention, or wrap cleanly as Featuring when only possessive ('s) appears
       const nonPossessiveRegex = new RegExp(`\\b(${escapedName})\\b(?!'s|\\s*\\()`, nameFlags);
       if (nonPossessiveRegex.test(updated)) {
-        updated = updated.replace(nonPossessiveRegex, `$1 (${compactAnchor})`);
+        updated = updated.replace(nonPossessiveRegex, `$1 (${scopedAnchor})`);
       } else {
-        updated = insertClauseBeforeStyleOrAr(updated, `Featuring ${charName} (${compactAnchor})`);
+        updated = insertClauseBeforeStyleOrAr(updated, `Featuring ${charName} (${scopedAnchor})`);
       }
     } else {
       // Character is active in the beat via alias, pronoun, or visual traits: inject canonical identity anchor cleanly
-      updated = insertClauseBeforeStyleOrAr(updated, `Featuring ${charName} (${compactAnchor})`);
+      updated = insertClauseBeforeStyleOrAr(updated, `Featuring ${charName} (${scopedAnchor})`);
     }
   }
 
@@ -1198,6 +1258,7 @@ export function synchronizeBeatMetadataWithPrompt(beat: Beat): Beat {
   };
 
   const detectShotFromWindow = (win: string): string => {
+    if (/\bwhip[-\s]*pan\b/i.test(win)) return 'Whip-Pan';
     if (/\b(?:over[-\s]*the[-\s]*shoulder|ots)\b/i.test(win)) return 'Over-the-Shoulder (OTS)';
     if (/\b(?:point[-\s]*of[-\s]*view|first[-\s]*person|pov)\b/i.test(win)) return 'Point-of-View (POV)';
     if (/\bmedium\s+close[-\s]*up\b/i.test(win)) return 'Medium Close-Up';
@@ -1211,17 +1272,18 @@ export function synchronizeBeatMetadataWithPrompt(beat: Beat): Beat {
 
   // Detect shot size explicitly present in prompt opening first, then explicit Camera directive / full body
   const leadingMatch = openingWindow.match(
-    /^(?:(medium\s+close[-\s]*up)|(extreme[-\s]*close[-\s]*up)|(close[-\s]*up)|(extreme[-\s]*wide)|(wide\s+(?:establishing\s+)?(?:shot|view|high-angle|low-angle|eye-level))|(medium\s+(?:shot|view|high-angle|low-angle|eye-level))|(over[-\s]*the[-\s]*shoulder|ots)|(point[-\s]*of[-\s]*view|pov))/i
+    /^(?:(whip[-\s]*pan)|(medium\s+close[-\s]*up)|(extreme[-\s]*close[-\s]*up)|(close[-\s]*up)|(extreme[-\s]*wide)|(wide\s+(?:establishing\s+)?(?:shot|view|high-angle|low-angle|eye-level))|(medium\s+(?:shot|view|high-angle|low-angle|eye-level))|(over[-\s]*the[-\s]*shoulder|ots)|(point[-\s]*of[-\s]*view|pov))/i
   );
   if (leadingMatch) {
-    if (leadingMatch[1]) syncedShotType = 'Medium Close-Up';
-    else if (leadingMatch[2]) syncedShotType = 'Extreme Close-Up';
-    else if (leadingMatch[3]) syncedShotType = 'Close-Up';
-    else if (leadingMatch[4]) syncedShotType = 'Extreme Wide Shot';
-    else if (leadingMatch[5]) syncedShotType = 'Wide Establishing Shot';
-    else if (leadingMatch[6]) syncedShotType = 'Medium Shot';
-    else if (leadingMatch[7]) syncedShotType = 'Over-the-Shoulder (OTS)';
-    else if (leadingMatch[8]) syncedShotType = 'Point-of-View (POV)';
+    if (leadingMatch[1]) syncedShotType = 'Whip-Pan';
+    else if (leadingMatch[2]) syncedShotType = 'Medium Close-Up';
+    else if (leadingMatch[3]) syncedShotType = 'Extreme Close-Up';
+    else if (leadingMatch[4]) syncedShotType = 'Close-Up';
+    else if (leadingMatch[5]) syncedShotType = 'Extreme Wide Shot';
+    else if (leadingMatch[6]) syncedShotType = 'Wide Establishing Shot';
+    else if (leadingMatch[7]) syncedShotType = 'Medium Shot';
+    else if (leadingMatch[8]) syncedShotType = 'Over-the-Shoulder (OTS)';
+    else if (leadingMatch[9]) syncedShotType = 'Point-of-View (POV)';
   } else {
     syncedShotType =
       detectShotFromWindow(openingWindow) ||
@@ -1231,7 +1293,7 @@ export function synchronizeBeatMetadataWithPrompt(beat: Beat): Beat {
       normalizeRawShot(beat.shotType || '');
   }
 
-  // Detect ONLY valid vertical/tilt camera angles in prompt (checking opening first, then full body)
+  // Detect ONLY valid vertical/tilt camera angles in prompt (prioritizing explicit hyphenated angles ahead of loose prop nouns like "overhead tube")
   const normalizeValidAngle = (raw: string): string => {
     const r = raw.trim().toLowerCase();
     if (r === 'birds-eye' || r === 'worms-eye' || r === 'low-angle' || r === 'high-angle' || r === 'dutch-tilt' || r === 'eye-level') {
@@ -1245,24 +1307,37 @@ export function synchronizeBeatMetadataWithPrompt(beat: Beat): Beat {
     return 'eye-level';
   };
 
-  const angleWindow = /\b(?:birds?[-\s]*eye|overhead|top[-\s]*down|worms?[-\s]*eye|ground[-\s]*level|low[-\s]*angle|high[-\s]*angle|elevated\s+angle|dutch[-\s]*angle|dutch[-\s]*tilt|canted|eye[-\s]*level|straight[-\s]*on)\b/i.test(
-    openingWindow
-  )
-    ? openingWindow
-    : fullWindow;
+  const explicitAngleRegex =
+    /\b(?:birds?[-\s]*eye|top[-\s]*down|worms?[-\s]*eye|ground[-\s]*level|low[-\s]*angle|high[-\s]*angle|elevated\s+angle|dutch[-\s]*angle|dutch[-\s]*tilt|canted|eye[-\s]*level|straight[-\s]*on)\b/i;
+  const looseAngleRegex =
+    /\b(?:birds?[-\s]*eye|overhead|top[-\s]*down|worms?[-\s]*eye|ground[-\s]*level|low[-\s]*angle|high[-\s]*angle|elevated\s+angle|dutch[-\s]*angle|dutch[-\s]*tilt|canted|eye[-\s]*level|straight[-\s]*on)\b/i;
 
-  if (/\b(?:birds?[-\s]*eye|overhead|top[-\s]*down)\b/i.test(angleWindow)) {
+  const angleWindow = explicitAngleRegex.test(openingWindow)
+    ? openingWindow
+    : explicitAngleRegex.test(fullWindow)
+      ? fullWindow
+      : looseAngleRegex.test(openingWindow)
+        ? openingWindow
+        : fullWindow;
+
+  if (/\b(?:birds?[-\s]*eye|top[-\s]*down)\b/i.test(angleWindow)) {
     syncedAngle = 'birds-eye';
   } else if (/\b(?:worms?[-\s]*eye|ground[-\s]*level)\b/i.test(angleWindow)) {
     syncedAngle = 'worms-eye';
-  } else if (/\b(?:low[-\s]*angle|slightly\s+low\s+angle|looking\s+up)\b/i.test(angleWindow)) {
+  } else if (/\b(?:low[-\s]*angle|slightly\s+low\s+angle)\b/i.test(angleWindow)) {
     syncedAngle = 'low-angle';
-  } else if (/\b(?:high[-\s]*angle|slightly\s+elevated\s+angle|elevated\s+angle|looking\s+down)\b/i.test(angleWindow)) {
+  } else if (/\b(?:high[-\s]*angle|slightly\s+elevated\s+angle|elevated\s+angle)\b/i.test(angleWindow)) {
     syncedAngle = 'high-angle';
   } else if (/\b(?:dutch[-\s]*angle|dutch[-\s]*tilt|canted)\b/i.test(angleWindow)) {
     syncedAngle = 'dutch-tilt';
   } else if (/\b(?:eye[-\s]*level|straight[-\s]*on)\b/i.test(angleWindow)) {
     syncedAngle = 'eye-level';
+  } else if (/\boverhead\b/i.test(angleWindow)) {
+    syncedAngle = 'birds-eye';
+  } else if (/\blooking\s+up\b/i.test(angleWindow)) {
+    syncedAngle = 'low-angle';
+  } else if (/\blooking\s+down\b/i.test(angleWindow)) {
+    syncedAngle = 'high-angle';
   } else {
     syncedAngle = normalizeValidAngle(beat.cameraAngle || 'eye-level');
   }
@@ -1326,6 +1401,33 @@ export function sanitizeStyleForEra(
 }
 
 /**
+ * Removes hero-specific pronoun/wardrobe/body sentences (e.g. "He wears a fitted wool jacket.",
+ * "His face has minimal features...") from shared world Visual Style descriptors so they do not bleed
+ * onto secondary characters, empty rooms, or prop close-ups.
+ */
+export function sanitizeSharedVisualStyle(artStyle: string): string {
+  if (!artStyle || typeof artStyle !== 'string') return '';
+  const sentences = artStyle
+    .trim()
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (sentences.length <= 1) return artStyle.trim();
+
+  const nonHeroSentences = sentences.filter((sent) => {
+    const hasHeroPronounOutfit =
+      /\b(?:he|she)\s+(?:wears?|has|is)\b/i.test(sent) ||
+      /\b(?:his|her)\s+(?:face|eyes|skin|hair|chest|shirt|jacket|coat|suit|trousers|boots|shoes)\b/i.test(sent);
+    return !hasHeroPronounOutfit;
+  });
+
+  if (nonHeroSentences.length > 0) {
+    return nonHeroSentences.join(' ').replace(/\s{2,}/g, ' ').trim();
+  }
+  return artStyle.trim();
+}
+
+/**
  * Formats a beat prompt with a single clean orientation declaration, synchronized framing opening
  * when none is present in the prose, expanded entity keys, monochrome-safe lighting, still-image
  * motion filtering, cleaned punctuation, and exact --ar parameter flag.
@@ -1342,6 +1444,12 @@ export function formatFinalBeatPrompt(
 ): Beat {
   const synced = synchronizeBeatMetadataWithPrompt(beat);
   let body = stripLeadingOrientationPrefixes(synced.imagePrompt || '');
+
+  // Collapse any stacked duplicate framing openers regardless of delimiter mix (e.g. "Whip-Pan, eye-level: Whip-Pan, eye-level, ...")
+  body = body.replace(
+    /^((?:Whip[-\s]*Pan|Over-the-Shoulder \(OTS\)|Point-of-View \(POV\)|Medium Close-Up|Extreme Close-Up|Close-Up|Extreme Wide Shot|Wide Establishing Shot|Medium Shot)(?:\s*,\s*[a-z-]+)?)(?:\s*[:,-]\s*\1)+(?=\s*[:,-]|\s|$)/i,
+    '$1'
+  );
 
   // Strip stray ar flags anywhere in body
   body = body
@@ -1377,18 +1485,19 @@ export function formatFinalBeatPrompt(
     : 'present';
 
   body = body.replace(/\bVisual Style:\s*([^.]+(?:\.[^.]*)?)/gi, (_match, rawStylePart: string) => {
-    const cleanedStyle = sanitizeStyleForEra(rawStylePart.replace(/\.$/, ''), beatEra);
+    const sharedSafe = sanitizeSharedVisualStyle(rawStylePart.replace(/\.$/, ''));
+    const cleanedStyle = sanitizeStyleForEra(sharedSafe, beatEra);
     return cleanedStyle ? `Visual Style: ${cleanedStyle}.` : '';
   });
 
   if (options?.styleProfile?.artStyle && !/\bVisual Style:/i.test(body)) {
-    const cleanedArt = sanitizeStyleForEra(options.styleProfile.artStyle, beatEra) || options.styleProfile.artStyle;
+    const sharedSafeStyle = sanitizeSharedVisualStyle(options.styleProfile.artStyle);
+    const cleanedArt = sanitizeStyleForEra(sharedSafeStyle, beatEra) || sharedSafeStyle;
     const eraArtStyle =
       getWordCount(cleanedArt) <= 34
         ? cleanedArt.replace(/[.!?]+$/, '').trim()
         : sanitizeStyleForEra(
-            buildCompactCharacterAnchor(options.styleProfile.artStyle, STYLE_ANCHOR_MAX_WORDS) ||
-              options.styleProfile.artStyle,
+            buildCompactCharacterAnchor(sharedSafeStyle, STYLE_ANCHOR_MAX_WORDS) || sharedSafeStyle,
             beatEra
           );
     if (eraArtStyle) {
@@ -1398,7 +1507,7 @@ export function formatFinalBeatPrompt(
 
   // Check if prose already opens with shot framing; strip contradictory trailing shot-size labels, or prepend framing when absent
   const hasOpeningFraming =
-    /^(?:Extreme\s+Wide|Wide\s+Establishing|Wide|Medium\s+Close-Up|Medium|Extreme\s+Close-Up|Close-Up|Macro|Over-the-Shoulder|Point-of-View|First-person|Low-angle|High-angle|Birds-eye|Worms-eye|Dutch)/i.test(
+    /^(?:Extreme\s+Wide|Wide\s+Establishing|Wide|Medium\s+Close-Up|Medium|Extreme\s+Close-Up|Close-Up|Macro|Over-the-Shoulder|Point-of-View|First-person|Whip[-\s]*Pan|Low-angle|High-angle|Birds-eye|Worms-eye|Dutch)/i.test(
       body
     );
 

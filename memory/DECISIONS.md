@@ -305,4 +305,10 @@
 - **Date:** 2026-11-19
 - **Status:** Active
 
+## Google Flow Video Beat Streamlining (Option 2) & Video Export Hygiene
+- **Fact/Decision:** Removed per-scene `videoPrompt` and `startFramePrompt` generation from AI Text-to-Video pipelines (`geminiClient.ts`, `enhanceStoryArchitect.ts`), Beat Inspector UI, and CSV/Markdown exports (`ResultsView.tsx`), preserving `scriptParser.ts` for pre-written manuscript ingestion. Made every Video Beat prompt (`Video Beat Prompt` / `Visual Video Prompt`) standalone for direct Google Flow usage, blocked material nouns (`brass`, `amber`, `resin`) from triggering character aliases, deduplicated `Whip-Pan` framing openers, prioritized explicit `-angle` tags over `overhead` prop nouns, stripped hero pronoun/wardrobe sentences from shared `styleProfile.artStyle` via `sanitizeSharedVisualStyle`, and expanded Finance CTA rules to capture banking deposit/structuring stories.
+- **Context:** Eliminates redundant per-scene token bloat and generation latency for creators generating individual beats directly in Google Flow while resolving all 5 defects identified in the Text-to-Video Markdown audit.
+- **Date:** 2026-11-19
+- **Status:** Active
+
 

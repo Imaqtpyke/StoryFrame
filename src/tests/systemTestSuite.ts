@@ -47,6 +47,7 @@ import {
   sanitizeMasterVideoPrompt,
   enrichStartFramePrompt,
   synchronizeBeatMetadataWithPrompt,
+  sanitizeSharedVisualStyle,
 } from '../services/beatProgressionEngine';
 import { sanitizeGroqErrorMessage, extractCleanJson, GROQ_API_BASE_URL, sanitizePromptText, tryRepairTruncatedJson } from '../services/groqClient';
 import { robustJsonParse } from '../services/unifiedAiService';
@@ -3122,6 +3123,245 @@ function runTestSuite30() {
   );
 }
 
+// ============================================================================
+// 31. CLOSE-UP DETAIL LOCK SCOPING, MOTION FREEZE, THUMBNAIL & CTA POLISH
+// ============================================================================
+function runTestSuite31() {
+  console.log('\n--- Running Test Suite 31: Detail Close-Up Locks, Motion Freeze & Export Polish ---');
+
+  const clayCast = {
+    'Clay Homeowner':
+      'Handcrafted soft-matte clay figure with warm terracotta-toned skin, sculpted dark brown hair, wearing a textured heather-gray clay sweater, dark navy clay trousers, and brown clay boots',
+    'Clay Banker':
+      'Tall handcrafted soft-matte clay figure with pale ivory-toned skin, neatly sculpted silver-gray hair, wearing a tailored charcoal clay suit, crisp white clay collar, and black clay shoes',
+  };
+
+  // 31.1 Tight hand close-up already wearing matching clay skin & suit sleeve skips full-body hair/shoes injection
+  const bankerHandCloseUp = injectCompactCharacterLocks(
+    'Vertical 9:16 portrait composition, Extreme Close-Up, eye-level, pale ivory-toned clay fingers in a tailored charcoal clay suit sleeve with a crisp white clay collar press a thick raised crimson wax seal. Shot on 85mm f/1.4 portrait prime lens. Visual Style: Handcrafted clay diorama. --ar 9:16',
+    'to lock in their long-term profit margins.',
+    'When you sign a home loan, the bank calculates profit.',
+    clayCast
+  );
+  const sparseHandPossessive = injectCompactCharacterLocks(
+    "Vertical 9:16 portrait composition, Close-Up, eye-level, Clay Homeowner's hand holds a tiny brass key. Visual Style: Handcrafted clay diorama. --ar 9:16",
+    'effectively punishing you',
+    'effectively punishing you',
+    clayCast
+  );
+  assert(
+    !bankerHandCloseUp.includes('Featuring Clay Banker') &&
+      !bankerHandCloseUp.includes('black clay shoes') &&
+      sparseHandPossessive.includes('Featuring Clay Homeowner (') &&
+      !sparseHandPossessive.includes('brown clay boots') &&
+      sparseHandPossessive.includes('heather-gray clay sweater'),
+    'Suite 31: Detail Close-Up Locks, Motion Freeze & Export Polish',
+    '31.1 Scopes Hand Detail Close-Ups Without Injecting Hair/Trousers/Shoes Onto Tight Extremity Frames',
+    `banker=${bankerHandCloseUp} | sparse=${sparseHandPossessive}`
+  );
+
+  // 31.2 Freezes dynamic adverbs in Image mode without touching Video mode
+  const frozenImage = sanitizeStillImageMotionAndOptics(
+    'Vertical 9:16 portrait composition, Wide Establishing Shot, accordion contracts unfurl dramatically while coins tip over and slide rapidly as walls compress shut and swing abruptly inward. Shot on 24mm f/4 wide lens. --ar 9:16',
+    'Wide Establishing Shot',
+    false
+  );
+  const dynamicVideo = sanitizeStillImageMotionAndOptics(
+    'Vertical 9:16 portrait composition, Wide Establishing Shot, accordion contracts unfurl dramatically across the desk. --ar 9:16',
+    'Wide Establishing Shot',
+    true
+  );
+  assert(
+    frozenImage.includes('frozen mid-unfurl') &&
+      frozenImage.includes('tipped over mid-slide') &&
+      frozenImage.includes('tightly compressed') &&
+      frozenImage.includes('angled sharply inward') &&
+      dynamicVideo.includes('unfurl dramatically'),
+    'Suite 31: Detail Close-Up Locks, Motion Freeze & Export Polish',
+    '31.2 Freezes Fast Motion Adverbs in Text-to-Image Mode While Preserving Video Mode Motion',
+    `img=${frozenImage} | vid=${dynamicVideo}`
+  );
+
+  // 31.3 Thumbnail & CTA clean grammar: no Part 2 hype, no "separation separating", no redundant rim light colon splice
+  const mortgageStyle: StyleProfile = {
+    artStyle: 'Handcrafted miniature stop-motion world built from soft-matte clay and heavy ivory cardstock',
+    colorPalette: 'Warm ivory cardstock, rich weathered oak brown, deep crimson wax accents',
+    lighting: 'Warm 3200K studio key lights with deep directional shadows and crisp rim separation',
+    eraAndSetting: 'Timeless miniature financial desktop',
+  };
+  const cleanThumb = compileThumbnailPrompt({
+    rawThumbnail: {
+      heroMoment: 'Contract slamming down over a clay homeowner',
+      bgDescription: 'Dark weathered oak shadows with warm studio rim light separating the ivory paper folds',
+      accentColor: 'crimson',
+      hookText: 'HIDDEN MORTGAGE TRAP',
+    },
+    styleProfile: mortgageStyle,
+    characterSheet: { 'Clay Homeowner': clayCast['Clay Homeowner'] },
+    storyPremise: 'If you pay off your mortgage ten years early, your lender hits you with a prepayment penalty fee.',
+    format: 'short',
+    platform: 'TikTok',
+  });
+  const cleanCta = compileCtaPrompt({
+    storyPremise: 'If you pay off your mortgage ten years early, your lender hits you with a prepayment penalty fee.',
+    styleProfile: mortgageStyle,
+    characterSheet: { 'Clay Homeowner': clayCast['Clay Homeowner'] },
+    format: 'short',
+    platform: 'tiktok',
+    modality: 'image',
+    engagementType: 'question',
+  });
+  assert(
+    !cleanThumb.compiledPrompt.includes('separating the subject from the background:') &&
+      !cleanCta.compiledPrompt.includes('Part 2 coming soon') &&
+      !cleanCta.compiledPrompt.includes('separation separating') &&
+      !cleanCta.compiledPrompt.includes(', Warm 3200K'),
+    'Suite 31: Detail Close-Up Locks, Motion Freeze & Export Polish',
+    '31.3 Removes Part 2 Hype, Rim-Light Colon Splice, and "separation separating" Stutter From Thumbnail & CTA',
+    `thumb=${cleanThumb.compiledPrompt} | cta=${cleanCta.compiledPrompt}`
+  );
+}
+
+// ============================================================================
+// 32. VIDEO MODE GOOGLE FLOW HYGIENE, ALIAS ISOLATION & ANGLE/CTA ACCURACY
+// ============================================================================
+function runTestSuite32() {
+  console.log('\n--- Running Test Suite 32: Video Mode Hygiene, Alias Isolation & Angle/CTA Accuracy ---');
+
+  // 32.1 Material nouns in character names ("Brass Bank Clerk", "Amber Resin Depositor") must NOT leak onto props
+  const bankingCast = {
+    'Brass Bank Clerk': 'Sculpted brass figure wearing dark charcoal tweed waistcoat and wire spectacles',
+    'Amber Resin Depositor': 'Articulated translucent amber resin figure in wool slate jacket and corduroy trousers',
+  };
+  const vaultPropPrompt = injectCompactCharacterLocks(
+    'Extreme Close-Up, eye-level, heavy brass vault bolts sliding shut beside an amber resin capsule and brass balance scale. Audio: metallic lock click, no dialogue.',
+    'triggering frozen accounts',
+    'Federal banks lock suspicious cash deposits.',
+    bankingCast
+  );
+  const clerkBeatPrompt = injectCompactCharacterLocks(
+    'Medium Shot, eye-level, the Brass Bank Clerk stamps a heavy federal form across the mahogany desk.',
+    'flagging your deposit',
+    'The clerk flags your deposit.',
+    bankingCast
+  );
+  assert(
+    !vaultPropPrompt.includes('Featuring Brass Bank Clerk') &&
+      !vaultPropPrompt.includes('Featuring Amber Resin Depositor') &&
+      clerkBeatPrompt.includes('Brass Bank Clerk (Sculpted brass figure'),
+    'Suite 32: Video Mode Hygiene, Alias Isolation & Angle/CTA Accuracy',
+    '32.1 Prevents Material Words (Brass/Amber/Resin) From Leaking Cast Locks Onto Props While Preserving Named Cast',
+    `prop=${vaultPropPrompt} | clerk=${clerkBeatPrompt}`
+  );
+
+  // 32.2 Collapses repeated Whip-Pan, eye-level framing prefixes cleanly
+  const dedupedWhipBeat = formatFinalBeatPrompt(
+    {
+      beatIndex: 1,
+      textSpan: 'federal compliance alert',
+      shotType: 'Whip-Pan',
+      cameraAngle: 'eye-level',
+      cameraMovement: 'Whip-Pan',
+      imagePrompt:
+        'Whip-Pan, eye-level: Whip-Pan, eye-level: Whip-Pan, eye-level, camera whips sharply left across a frosted bank pneumatic tube. Audio: pneumatic whoosh, no dialogue.',
+      estimatedSeconds: 2,
+    },
+    false,
+    true,
+    {
+      styleProfile: {
+        artStyle: 'Tactile stop-motion miniature diorama',
+        colorPalette: 'Slate and muted amber',
+        lighting: '3200K warm desk lamp',
+        eraAndSetting: 'Vintage bank hall',
+      },
+    }
+  );
+  const whipCount = (dedupedWhipBeat.imagePrompt.match(/Whip-Pan,\s*eye-level/gi) || []).length;
+  assert(
+    whipCount === 1 && !dedupedWhipBeat.imagePrompt.includes('Whip-Pan, eye-level: Whip-Pan'),
+    'Suite 32: Video Mode Hygiene, Alias Isolation & Angle/CTA Accuracy',
+    '32.2 Deduplicates Stacked Whip-Pan Framing Openers Into a Single Clean Prefix',
+    dedupedWhipBeat.imagePrompt
+  );
+
+  // 32.3 Explicit -angle tags win over loose spatial prop nouns like "overhead glass tube"
+  const syncedLowAngle = synchronizeBeatMetadataWithPrompt({
+    beatIndex: 1,
+    textSpan: 'federal compliance radar',
+    shotType: 'Low-Angle Shot',
+    cameraAngle: 'birds-eye',
+    cameraMovement: 'Slow Push-In',
+    imagePrompt:
+      'Low-Angle Shot, low-angle view looking sharply upward at an overhead glass pneumatic tube and overhead brushed-brass radar dial. Audio: hum, no dialogue.',
+    estimatedSeconds: 2,
+  });
+  const syncedHighAngle = synchronizeBeatMetadataWithPrompt({
+    beatIndex: 2,
+    textSpan: 'accounts locked tight',
+    shotType: 'High-Angle Shot',
+    cameraAngle: 'birds-eye',
+    cameraMovement: 'Static Frame',
+    imagePrompt:
+      'High-Angle Shot, high-angle framing gazing downward over frozen ledger books beneath overhead tungsten bulbs. Audio: paper rustle, no dialogue.',
+    estimatedSeconds: 2,
+  });
+  assert(
+    syncedLowAngle.cameraAngle === 'low-angle' && syncedHighAngle.cameraAngle === 'high-angle',
+    'Suite 32: Video Mode Hygiene, Alias Isolation & Angle/CTA Accuracy',
+    '32.3 Prioritizes Explicit Low/High Camera Angle Over Prop Words Like Overhead Tube',
+    `low=${syncedLowAngle.cameraAngle} | high=${syncedHighAngle.cameraAngle}`
+  );
+
+  // 32.4 sanitizeSharedVisualStyle strips hero pronouns & wardrobe leaks while keeping world medium
+  const rawLeakyStyle =
+    'Handcrafted miniature diorama crafted from translucent amber resin and matte clay. He wears a fitted wool-textured dark slate jacket with rolled-up cuffs and dark brown trousers. His face has carved plane facets and obsidian eyes. Lit by warm 3200K brass desk lamps.';
+  const cleanStyle = sanitizeSharedVisualStyle(rawLeakyStyle);
+  const compiledCleanVideo = compileBeatPrompt(
+    {
+      beatIndex: 1,
+      textSpan: 'triggering an alert',
+      shotType: 'Close-Up',
+      cameraAngle: 'eye-level',
+      cameraMovement: 'Slow Push-In',
+      imagePrompt: 'Close-Up, eye-level, red ink stamp pressing crisply onto ledger paper. Audio: thud, no dialogue.',
+      estimatedSeconds: 2,
+    },
+    { index: 1, narratorLine: 'triggering an alert', estimatedSeconds: 2, beats: [] },
+    {
+      artStyle: rawLeakyStyle,
+      colorPalette: 'Muted amber and slate',
+      lighting: 'Warm 3200K key',
+      eraAndSetting: 'Vintage bank interior',
+    },
+    undefined,
+    'short',
+    'video'
+  );
+  assert(
+    cleanStyle.includes('translucent amber resin') &&
+      cleanStyle.includes('brass desk lamps') &&
+      !cleanStyle.includes('He wears') &&
+      !cleanStyle.includes('His face') &&
+      !compiledCleanVideo.promptText.includes('slate jacket'),
+    'Suite 32: Video Mode Hygiene, Alias Isolation & Angle/CTA Accuracy',
+    '32.4 Strips Hero Pronoun Wardrobe Sentences From Shared Visual Style Across Beats',
+    `cleanStyle=${cleanStyle} | compiled=${compiledCleanVideo.promptText}`
+  );
+
+  // 32.5 Deposit structuring scripts classify as Finance Banking CTA, never Mystery Secret CTA
+  const structuringCta = inferStoryAdaptiveCtaQuestion(
+    'If you secretly deposit $9,900 in cash to stay under the limit, federal structuring rules still trigger frozen accounts and asset seizures.'
+  );
+  assert(
+    /deposit|10,000|bank flag/i.test(structuringCta.primaryQuestion) &&
+      !/mystery|clue/i.test(structuringCta.primaryQuestion),
+    'Suite 32: Video Mode Hygiene, Alias Isolation & Angle/CTA Accuracy',
+    '32.5 Routes Cash Deposit & Structuring Scripts to Banking Compliance CTA Instead of Mystery',
+    `q=${structuringCta.primaryQuestion}`
+  );
+}
+
 runTestSuite21().then(() => {
   runTestSuite23();
   runTestSuite24();
@@ -3131,6 +3371,8 @@ runTestSuite21().then(() => {
   runTestSuite28();
   runTestSuite29();
   runTestSuite30();
+  runTestSuite31();
+  runTestSuite32();
   console.log('\n====================================================================');
   console.log('                  FULL-SYSTEM VERIFICATION REPORT                  ');
   console.log('====================================================================');

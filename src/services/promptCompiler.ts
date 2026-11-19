@@ -10,6 +10,7 @@ import {
   isMonochromeStyle,
   normalizeUnicodeAndDashes,
   sanitizeMonochromeLighting,
+  sanitizeSharedVisualStyle,
   sanitizeStyleForEra,
   stripLeadingOrientationPrefixes,
   stripTransientExpressionsAndPoses,
@@ -140,8 +141,8 @@ export function compileBeatPrompt(
     ? 'Cinematic 16:9 widescreen composition'
     : 'Vertical 9:16 portrait composition';
 
-  // 1. Resolve Style vs Casting Compatibility
-  const rawArtStyle = styleProfile?.artStyle || 'Cinematic photorealism';
+  // 1. Resolve Style vs Casting Compatibility & strip hero pronoun wardrobe leaks from shared artStyle
+  const rawArtStyle = sanitizeSharedVisualStyle(styleProfile?.artStyle || 'Cinematic photorealism') || 'Cinematic photorealism';
   const { prompt: promptWithoutStyleConflict, artStyle } = resolveStyleAndCastingCompatibility(rawBasePrompt, rawArtStyle);
 
   // 2. Sanitize kinetic process verbs for image mode and strip duplicate orientation prefix
@@ -650,14 +651,13 @@ export function compileThumbnailPrompt(params: {
     ? 'flashback'
     : 'present';
 
+  const sharedThumbStyle = sanitizeSharedVisualStyle(params.styleProfile?.artStyle || 'Cinematic realistic') || 'Cinematic realistic';
   const cleanThumbArtStyle = (
-    sanitizeStyleForEra(params.styleProfile?.artStyle || 'Cinematic realistic', thumbEra) ||
-    params.styleProfile?.artStyle ||
-    'Cinematic realistic'
+    sanitizeStyleForEra(sharedThumbStyle, thumbEra) || sharedThumbStyle
   )
     .replace(/[.!?]+$/, '')
     .trim();
-  const cleanPalette = (
+  const rawCleanPalette = (
     sanitizeStyleForEra(
       sanitizeMonochromeLighting(
         params.styleProfile?.colorPalette || 'high-contrast dramatic lighting',
@@ -668,6 +668,9 @@ export function compileThumbnailPrompt(params: {
   )
     .replace(/[.!?]+$/, '')
     .trim();
+  const cleanPalette = /^[A-Z][a-z]/.test(rawCleanPalette)
+    ? rawCleanPalette[0].toLowerCase() + rawCleanPalette.slice(1)
+    : rawCleanPalette;
 
   const cleanExpression = expression.replace(/[.!?]+$/, '').trim();
   let cleanHeroMoment = heroMoment.replace(/[.!?]+$/, '').trim();
@@ -709,13 +712,20 @@ export function compileThumbnailPrompt(params: {
     }
   }
 
+  const bgAlreadyHasRimOrSeparating = /\b(?:rim\s+light|rim\s+lighting|separat(?:ing|ion))\b/i.test(
+    cleanBgDescription
+  );
+  const bgLightingSentence = bgAlreadyHasRimOrSeparating
+    ? `Background setting: ${cleanBgDescription}, accented with deep shadows and ${cleanAccentColor} highlights.`
+    : `Deep shadows, ${rimLightPhrase}: ${cleanBgDescription}.`;
+
   // Full compiled prompt with typography
   const compiledPrompt = normalizeUnicodeAndDashes([
     `STATIC THUMBNAIL IMAGE ONLY. Single high-impact cover frame. No animation, video, camera movement, or motion blur.`,
     `Framed in ${aspectRatio} aspect ratio for a high-CTR ${targetPlatform} cover.`,
     `Style continuity: ${cleanThumbArtStyle}, ${cleanPalette}.`,
     `Hero Subject: ${primaryCharClause}, expression: ${cleanExpression}. ${subjectPlacement}.`,
-    `Visual Conflict: Climactic turning point: ${cleanHeroMoment}. Deep shadows, ${rimLightPhrase}: ${cleanBgDescription}.`,
+    `Visual Conflict: Climactic turning point: ${cleanHeroMoment}. ${bgLightingSentence}`,
     `${safeZoneGuidance}`,
     `Typography & Text Overlay: Graphic headline text "${cleanHook}" rendered in ${storyAdaptiveFont}, in bold uppercase with a thick dark outline and high-contrast fill, positioned ${textPlacement}. Text appears exactly once, perfectly spelled, perfectly legible at small mobile thumbnail scale. No other lettering, subtitles, dialogue, or watermarks.`,
     `--ar ${aspectRatio}`,
@@ -727,7 +737,7 @@ export function compileThumbnailPrompt(params: {
     `Framed in ${aspectRatio} aspect ratio for a ${targetPlatform} cover.`,
     `Style continuity: ${cleanThumbArtStyle}, ${cleanPalette}.`,
     `Hero Subject: ${primaryCharClause}, expression: ${cleanExpression}. ${subjectPlacement}.`,
-    `Visual Conflict: Climactic turning point: ${cleanHeroMoment}. Deep shadows, ${rimLightPhrase}: ${cleanBgDescription}.`,
+    `Visual Conflict: Climactic turning point: ${cleanHeroMoment}. ${bgLightingSentence}`,
     `${safeZoneGuidance}`,
     `Negative Space & Clean Plate: Clean negative space ${textPlacement} left completely empty without any text, lettering, words, watermarks, or logos, designed as a clean text-free background plate for custom graphic overlay.`,
     `--ar ${aspectRatio}`,
@@ -838,13 +848,27 @@ export function inferStoryAdaptiveCtaQuestion(storyPremise?: string, characterNa
     };
   }
 
-  // Finance / Mortgage / Contract Trap / Consumer Protection
+  // Finance / Banking / Compliance / Mortgage / Contract Trap / Consumer Protection
   if (
     !isFuturisticSciFi &&
-    /\b(?:mortgage|prepayment\s+penalty|loan\s+contract|home\s+loan|lender|lenders|interest\s+payments|principal|zero-penalty|credit\s+score|credit\s+card|hidden\s+fee|penalty\s+fee|clear\s+your\s+debt|out\s+of\s+debt)\b/i.test(
+    /\b(?:mortgage|prepayment\s+penalty|loan\s+contract|home\s+loan|lender|lenders|interest\s+payments|principal|zero-penalty|credit\s+score|credit\s+card|hidden\s+fee|penalty\s+fee|clear\s+your\s+debt|out\s+of\s+debt|deposit|deposits|structuring|currency\s+transaction|suspicious\s+activity|anti-money\s+laundering|asset\s+seizures?|frozen\s+accounts?|federal\s+disclosures?|federal\s+crime|compliance\s+officers?|reporting\s+rules)\b/i.test(
       text
     )
   ) {
+    const isDepositBanking = /\b(?:deposit|deposits|structuring|currency\s+transaction|suspicious\s+activity|anti-money\s+laundering|asset\s+seizures?|frozen\s+accounts?)\b/i.test(
+      text
+    );
+    if (isDepositBanking) {
+      return {
+        primaryQuestion: 'Did you know splitting cash deposits under $10,000 can still trigger a federal bank flag?',
+        alternateQuestions: [
+          'Would you keep large cash savings at home, or deposit everything at once with full paperwork?',
+          'Have you ever had a bank freeze or flag a normal cash transaction without warning?',
+          'Should banks be required to notify customers before filing an automated report?',
+          'What financial reporting rule surprised you the most?',
+        ],
+      };
+    }
     return {
       primaryQuestion: 'Did you check your own loan contract for a hidden penalty clause before signing?',
       alternateQuestions: [
@@ -1017,10 +1041,10 @@ export function compileCtaPrompt(params: {
       : primaryQuestion;
 
   const isMono = isMonochromeStyle(params.styleProfile);
-  const rawArtStyle = params.styleProfile?.artStyle || 'Cinematic realistic';
+  const rawArtStyle = sanitizeSharedVisualStyle(params.styleProfile?.artStyle || 'Cinematic realistic') || 'Cinematic realistic';
   const artStyle = (sanitizeStyleForEra(rawArtStyle, 'present') || rawArtStyle).replace(/[.!?]+$/, '').trim();
   const rawPalette = params.styleProfile?.colorPalette || 'high-contrast dramatic lighting, rich atmospheric haze';
-  const colorPalette = (
+  const rawColorPalette = (
     sanitizeStyleForEra(
       sanitizeMonochromeLighting(rawPalette, params.styleProfile),
       'present'
@@ -1028,6 +1052,9 @@ export function compileCtaPrompt(params: {
   )
     .replace(/[.!?]+$/, '')
     .trim();
+  const colorPalette = /^[A-Z][a-z]/.test(rawColorPalette)
+    ? rawColorPalette[0].toLowerCase() + rawColorPalette.slice(1)
+    : rawColorPalette;
   const rawLighting =
     params.styleProfile?.lighting || 'deep directional key light with saturated rim backlight';
   const staticSafeLighting =
@@ -1061,9 +1088,9 @@ export function compileCtaPrompt(params: {
       'TikTok safe zone layout: Keep the right 18% completely empty to avoid overlap with vertical like, comment, bookmark, and share icon buttons. Keep the bottom 22% clear for account name, video caption lines, and audio disc. Keep top 12% clear for search and feed tabs.';
 
     if (engagementType === 'question') {
-      uiCalloutGuidance = `UI Engagement Callout: Center safe-zone graphic card displaying the intriguing question "${activeQuestion}" in bold readable sans-serif, with a subtle dark backdrop bar. Below the question, an action tag: "Drop your verdict in the comments · Part 2 coming soon". Positioned safely in the center vertical band (y: 35% to 65%), strictly clear of the right icon column and bottom caption area.`;
+      uiCalloutGuidance = `UI Engagement Callout: Center safe-zone graphic card displaying the intriguing question "${activeQuestion}" in bold readable sans-serif, with a subtle dark backdrop bar. Below the question, an action tag: "Drop your verdict in the comments". Positioned safely in the center vertical band (y: 35% to 65%), strictly clear of the right icon column and bottom caption area.`;
     } else if (engagementType === 'follow_subscribe') {
-      uiCalloutGuidance = `UI Engagement Callout: Center safe-zone graphic card displaying "${activeQuestion}" with a prominent follow badge: "[+] Follow for Episode 2" and comment cue "What would you do?", positioned in the safe center-left quadrant, strictly clear of the right action rail and bottom caption.`;
+      uiCalloutGuidance = `UI Engagement Callout: Center safe-zone graphic card displaying "${activeQuestion}" with a prominent follow badge: "[+] Follow for more" and comment cue "What would you do?", positioned in the safe center-left quadrant, strictly clear of the right action rail and bottom caption.`;
     } else {
       uiCalloutGuidance = `UI Engagement Callout: Center safe-zone graphic card displaying the moral dilemma "${activeQuestion}" with voting tags "[Option A] vs [Option B] · Comment your choice", positioned in the center vertical safe zone.`;
     }
@@ -1100,12 +1127,19 @@ export function compileCtaPrompt(params: {
   let modalityHeader = '';
   let visualActionClause = '';
 
+  const inlineLighting = /^[A-Z][a-z]/.test(lighting)
+    ? lighting[0].toLowerCase() + lighting.slice(1)
+    : lighting;
+
   if (modality === 'video') {
     modalityHeader = `CINEMATIC 3-SECOND OUTRO VIDEO LOOP. ${platformLabel} moving video plate. Continuous seamless atmospheric loop. No jump cuts, no flashing strobes.`;
-    visualActionClause = `Camera motion: slow subtle cinematic dolly in pushing slowly toward ${primaryCharClause}. Atmospheric ambient dust particles drift through ${lighting}. The subject holds a lingering, unresolved, emotionally resonant gaze directly into the camera lens, breaking the fourth wall in quiet suspense as the scene holds tension.`;
+    visualActionClause = `Camera motion: slow subtle cinematic dolly in pushing slowly toward ${primaryCharClause}. Atmospheric ambient dust particles drift through ${inlineLighting}. The subject holds a lingering, unresolved, emotionally resonant gaze directly into the camera lens, breaking the fourth wall in quiet suspense as the scene holds tension.`;
   } else {
     modalityHeader = `STATIC OUTRO FRAME ONLY. ${platformLabel} closing freeze frame. Single high-tension still image. Zero camera movement, no motion blur, no video, no multiple frames.`;
-    visualActionClause = `Composition: Freeze-frame closing portrait of ${primaryCharClause} locked in an intense climactic pause, eyes meeting the lens with deep emotional gravity. Shallow depth of field, sharp cinematic focus on facial expression, ${lighting} separating the hero from atmospheric background shadows.`;
+    const ctaBackdropPhrase = /\bseparat(?:ion|ing)\b/i.test(inlineLighting)
+      ? `${inlineLighting} against atmospheric background shadows`
+      : `${inlineLighting} separating the hero from atmospheric background shadows`;
+    visualActionClause = `Composition: Freeze-frame closing portrait of ${primaryCharClause} locked in an intense climactic pause, eyes meeting the lens with deep emotional gravity. Shallow depth of field, sharp cinematic focus on facial expression, ${ctaBackdropPhrase}.`;
   }
 
   // Full compiled prompt with typography (universal clean flags without legacy --style raw --v 6.1)

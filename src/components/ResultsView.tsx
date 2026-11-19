@@ -432,15 +432,22 @@ export default function ResultsView({
 
   const downloadCsvExport = () => {
     setIsExportMenuOpen(false);
-    const hasVideo = result.generationMode === 'video' || normalizedScenes.some((s) => s.videoPrompt);
-    const headers = ['Scene', 'Roman Scene', 'Beat', 'Estimated Seconds', 'Shot Type', 'Camera Angle', 'Camera Movement', 'Spoken Narration', 'Visual Image Prompt'];
-    if (hasVideo) {
-      headers.push('Scene Video Prompt (8-Part)', 'Start Frame Keyframe Prompt');
-    }
+    const isVideoExport = result.generationMode === 'video';
+    const headers = [
+      'Scene',
+      'Roman Scene',
+      'Beat',
+      'Estimated Seconds',
+      'Shot Type',
+      'Camera Angle',
+      'Camera Movement',
+      'Spoken Narration',
+      isVideoExport ? 'Visual Video Prompt' : 'Visual Image Prompt',
+    ];
     const rows: string[][] = [headers];
 
     normalizedScenes.forEach((scene) => {
-      (scene.beats || []).forEach((beat, bIdx) => {
+      (scene.beats || []).forEach((beat) => {
         const row = [
           `Scene ${scene.index}`,
           `SCENE ${toRomanNumeral(scene.index)}`,
@@ -452,12 +459,6 @@ export default function ResultsView({
           `"${beat.textSpan.replace(/"/g, '""')}"`,
           `"${beat.imagePrompt.replace(/"/g, '""')}"`,
         ];
-        if (hasVideo) {
-          row.push(
-            bIdx === 0 ? `"${(scene.videoPrompt || '').replace(/"/g, '""')}"` : '""',
-            bIdx === 0 ? `"${(scene.startFramePrompt || '').replace(/"/g, '""')}"` : '""'
-          );
-        }
         rows.push(row);
       });
     });
@@ -523,25 +524,23 @@ export default function ResultsView({
     normalizedScenes.forEach((scene) => {
       const sceneBeatSum = (scene.beats || []).reduce((acc, b) => acc + (b.estimatedSeconds || 0), 0);
       const effectiveSec = sceneBeatSum > 0 ? Math.round(sceneBeatSum * 10) / 10 : scene.estimatedSeconds;
+      const isVideoExport = result.generationMode === 'video';
       md += `### SCENE ${toRomanNumeral(scene.index)} (~${effectiveSec}s)\n`;
       md += `**Narrator Line**:\n"${scene.narratorLine}"\n\n`;
 
-      if (scene.videoPrompt) {
-        md += `#### AI Video Generation Prompt (~${result.targetVideoDuration || 5}s Clip)\n\`\`\`text\n${scene.videoPrompt}\n\`\`\`\n\n`;
-      }
-      if (scene.startFramePrompt) {
-        md += `#### Start Frame Keyframe Prompt (Image Ingredient)\n\`\`\`text\n${scene.startFramePrompt}\n\`\`\`\n\n`;
-      }
-
-      md += `| Beat | Duration | Shot Size | Angle | Movement | Spoken Words | Visual Image Prompt |\n`;
+      md += `| Beat | Duration | Shot Size | Angle | Movement | Spoken Words | ${isVideoExport ? 'Visual Video Prompt' : 'Visual Image Prompt'} |\n`;
       md += `| :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n`;
       (scene.beats || []).forEach((b) => {
         let cleanPrompt = (b.imagePrompt || '').replace(/\|/g, '-');
         cleanPrompt = cleanPrompt.replace(/\s*--ar\s+[0-9:]+/gi, '').replace(/,\s*ar\s+[0-9:]+[.,]?/gi, '').replace(/\bar\s+[0-9:]+[.,]?/gi, '').trim();
         cleanPrompt = cleanPrompt.replace(/\s+([,.;!?])/g, '$1').replace(/\s{2,}/g, ' ').trim();
         if (cleanPrompt && !/[.!?]$/.test(cleanPrompt)) cleanPrompt += '.';
-        const promptWithAr = cleanPrompt ? `${cleanPrompt} --ar ${format === 'long' ? '16:9' : '9:16'}` : '';
-        md += `| Beat ${b.beatIndex} | ~${b.estimatedSeconds}s | ${b.shotType || 'Medium Shot'} | ${b.cameraAngle || 'Eye-level'} | ${b.cameraMovement || 'Static'} | "${b.textSpan.replace(/\|/g, '-')}" | ${promptWithAr} |\n`;
+        const formattedPrompt = isVideoExport
+          ? cleanPrompt
+          : cleanPrompt
+          ? `${cleanPrompt} --ar ${format === 'long' ? '16:9' : '9:16'}`
+          : '';
+        md += `| Beat ${b.beatIndex} | ~${b.estimatedSeconds}s | ${b.shotType || 'Medium Shot'} | ${b.cameraAngle || 'Eye-level'} | ${b.cameraMovement || 'Static'} | "${b.textSpan.replace(/\|/g, '-')}" | ${formattedPrompt} |\n`;
       });
       md += `\n`;
     });
@@ -1698,7 +1697,7 @@ export default function ResultsView({
                           {isVideoMode ? (
                             <>
                               <Clapperboard size={13} className="text-amber-400" />
-                              <span className="text-amber-300">Beat Shot Prompt</span>
+                              <span className="text-amber-300">Video Beat Prompt</span>
                             </>
                           ) : (
                             <>
@@ -1724,7 +1723,7 @@ export default function ResultsView({
                           ) : (
                             <>
                               <Copy size={12} className="text-black" />
-                              <span>Copy Prompt</span>
+                              <span>{isVideoMode ? 'Copy Video Prompt' : 'Copy Prompt'}</span>
                             </>
                           )}
                         </button>
@@ -1739,67 +1738,6 @@ export default function ResultsView({
                         {compiled.promptText}
                       </div>
                     </div>
-
-                    {/* Scene 8-Part Video Prompt & Start Keyframe (Video Mode Only) */}
-                    {isVideoMode && inspScene.videoPrompt && (
-                      <div className="pt-3 border-t border-white/10 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="font-display text-xs font-medium text-amber-300">
-                            Scene {inspRoman} Video Prompt ({result.targetVideoDuration || 5}s Clip)
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => copyToClipboard(inspScene.videoPrompt || '', `video-prompt-${inspScene.index}`)}
-                            className="font-display text-xs px-2.5 py-1 bg-amber-400/15 hover:bg-amber-400/25 text-amber-200 border border-amber-500/40 rounded-[3px] inline-flex items-center gap-1 cursor-pointer"
-                          >
-                            {copiedIndex === `video-prompt-${inspScene.index}` ? (
-                              <>
-                                <Check size={11} />
-                                <span>Copied</span>
-                              </>
-                            ) : (
-                              <>
-                                <Copy size={11} />
-                                <span>Copy Clip Prompt</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
-                        <div className="p-3 bg-[#0C0C0B] border border-amber-700/35 rounded-[3px] font-mono text-xs text-[#F0EFEA] leading-relaxed">
-                          {inspScene.videoPrompt}
-                        </div>
-                      </div>
-                    )}
-
-                    {isVideoMode && inspScene.startFramePrompt && (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="font-display text-xs font-medium text-[#C4C4BE]">
-                            Start Frame Keyframe (I2V Anchor)
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => copyToClipboard(inspScene.startFramePrompt || '', `start-frame-${inspScene.index}`)}
-                            className="font-display text-xs px-2.5 py-1 bg-white/5 hover:bg-white/15 text-[#E6E6E1] border border-white/15 rounded-[3px] inline-flex items-center gap-1 cursor-pointer"
-                          >
-                            {copiedIndex === `start-frame-${inspScene.index}` ? (
-                              <>
-                                <Check size={11} className="text-emerald-400" />
-                                <span>Copied</span>
-                              </>
-                            ) : (
-                              <>
-                                <Copy size={11} />
-                                <span>Copy Frame</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
-                        <div className="p-3 bg-[#0C0C0B] border border-white/10 rounded-[3px] font-mono text-xs text-[#D4D4D0] leading-relaxed">
-                          {inspScene.startFramePrompt}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </div>
               );
