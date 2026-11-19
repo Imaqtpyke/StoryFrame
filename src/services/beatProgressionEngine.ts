@@ -199,23 +199,8 @@ export function buildSharedContextIgnoreTokens(
   }
   if (characterSheet) {
     const entries = Object.values(characterSheet);
-    if (entries.length > 1) {
-      const charTokenFreq = new Map<string, number>();
-      for (const desc of entries) {
-        const uniq = new Set(
-          (desc || '')
-            .toLowerCase()
-            .replace(/[^a-z0-9\s]/g, ' ')
-            .split(/\s+/)
-            .filter((w) => w.length > 3 && !STOP_WORDS.has(w) && !ACTION_OR_BODY_KEEP_WORDS.has(w))
-        );
-        for (const t of uniq) {
-          charTokenFreq.set(t, (charTokenFreq.get(t) || 0) + 1);
-        }
-      }
-      for (const [t, freq] of charTokenFreq.entries()) {
-        if (freq >= 2) ignore.add(t);
-      }
+    for (const desc of entries) {
+      addFromText(desc);
     }
   }
 
@@ -557,11 +542,14 @@ export function sanitizeStillImageMotionAndOptics(
   return cleaned.replace(/\s{2,}/g, ' ').trim();
 }
 
+export const CHARACTER_ANCHOR_MAX_WORDS = 40;
+export const STYLE_ANCHOR_MAX_WORDS = 28;
+
 /**
- * Option A: Builds a compact, high-signal 14-20 word visual identity + outfit/gear anchor
- * breaking strictly at complete comma/clause boundaries so descriptions never truncate mid-phrase.
+ * Option A: Builds a compact, high-signal visual identity + eyewear + outfit/gear anchor
+ * breaking strictly at complete comma/clause boundaries so descriptions never truncate glasses or outfits.
  */
-export function buildCompactCharacterAnchor(fullDesc: string, maxWords: number = 20): string {
+export function buildCompactCharacterAnchor(fullDesc: string, maxWords: number = 40): string {
   if (!fullDesc || typeof fullDesc !== 'string') return '';
   let clean = stripTransientExpressionsAndPoses(fullDesc)
     .replace(/^(?:[A-Z][a-zA-Z0-9_-]*)\s+(?:has|is|wears|wearing)\s+/i, '')
@@ -603,6 +591,141 @@ export function buildCompactCharacterAnchor(fullDesc: string, maxWords: number =
     summary = clean.split(/\s+/).slice(0, maxWords).join(' ').replace(/[,:;.\s]+$/, '').trim();
   }
   return summary;
+}
+
+const SIGNATURE_TRAIT_CLAUSE_REGEX =
+  /\b(?:glasses|spectacles|eyeglasses|goggles|monocle|sunglasses|beard|mustache|scar|freckles|hair|suit|sweater|cardigan|jacket|coat|trench|blazer|shirt|blouse|tie|bowtie|dress|gown|hoodie|cloak|robe|apron|vest|uniform|boots|shoes|sneakers|hat|cap|helmet|scarf)\b/i;
+
+/**
+ * Reconciles each character's Continuity Sheet entry with their first clean appearance in the storyboard
+ * (typically Scene 1 Beat 1 for the protagonist, Scene 1 Beat 2 for secondary cast), copying concrete
+ * fixed visual traits (hair, eyewear/glasses, outfit, footwear) without pulling transient actions or scenes.
+ */
+export function synchronizeCharacterSheetWithFirstAppearances(
+  scenes: Scene[],
+  characterSheet: Record<string, string>
+): Record<string, string> {
+  if (!characterSheet || Object.keys(characterSheet).length === 0) {
+    return characterSheet || {};
+  }
+
+  const synced: Record<string, string> = {};
+  for (const [k, v] of Object.entries(characterSheet)) {
+    synced[k] = (stripTransientExpressionsAndPoses(v || '') || v || '').replace(/\s+/g, ' ').trim();
+  }
+
+  if (!Array.isArray(scenes) || scenes.length === 0) {
+    return synced;
+  }
+
+  const allBeats: Beat[] = [];
+  for (const sc of scenes) {
+    for (const b of sc.beats || []) {
+      allBeats.push(b);
+    }
+  }
+  if (allBeats.length === 0) return synced;
+
+  const charEntries = Object.entries(synced);
+  const allCharNames = charEntries.map(([name]) => name);
+
+  for (const [charName, baseDesc] of charEntries) {
+    if (!baseDesc) continue;
+    const escapedName = charName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const nameRegex = new RegExp(`\\b${escapedName}(?:'s)?\\b`, 'i');
+    const aliasRegex = buildCharacterAliasRegex(charName, allCharNames);
+    const charIsChild = /\b(?:child|nine-year-old|\d+-year-old\s+(?:boy|girl|child)|young\s+(?:boy|girl)|little\s+(?:boy|girl))\b/i.test(
+      `${charName} ${baseDesc}`
+    );
+
+    let firstBeat: Beat | undefined;
+    for (const b of allBeats) {
+      const p = b.imagePrompt || '';
+      if (!p || isCharacterFreeBeat(p, b.textSpan || '')) continue;
+      const bodyOnly = p.replace(/\s*--ar\s+[0-9:]+.*$/i, '').replace(/\bVisual Style:[^.]*\.?/gi, '');
+      const beatIsFlashback = isInfancyOrChildhoodFlashback(b.textSpan || '', bodyOnly);
+      if (beatIsFlashback && !charIsChild) continue;
+      if (!beatIsFlashback && charIsChild && !/\b(?:girl|boy|child|young)\b/i.test(bodyOnly)) continue;
+
+      const mentionsSelf =
+        nameRegex.test(bodyOnly) ||
+        nameRegex.test(b.textSpan || '') ||
+        (aliasRegex ? aliasRegex.test(bodyOnly) || aliasRegex.test(b.textSpan || '') : false) ||
+        (charEntries.length === 1 && allBeats[0] === b);
+
+      if (!mentionsSelf) continue;
+
+      const mentionsOtherChar = charEntries.some(([otherName]) => {
+        if (otherName === charName) return false;
+        const escOther = otherName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const otherAlias = buildCharacterAliasRegex(otherName, allCharNames);
+        return (
+          new RegExp(`\\b${escOther}(?:'s)?\\b`, 'i').test(bodyOnly) ||
+          (otherAlias ? otherAlias.test(bodyOnly) : false)
+        );
+      });
+      if (mentionsOtherChar) continue;
+
+      firstBeat = b;
+      break;
+    }
+
+    if (!firstBeat) continue;
+
+    const firstBody = (firstBeat.imagePrompt || '')
+      .replace(/\s*--ar\s+[0-9:]+.*$/i, '')
+      .replace(/\bVisual Style:[^.]*\.?/gi, '')
+      .replace(/\bShot on\s+\d{2,3}mm[^.]*\.?/gi, '')
+      .trim();
+
+    const appositiveRegex = new RegExp(
+      `(?:the\\s+)?${escapedName}\\s*,\\s*(?:an?\\s+[^.;]+?)(?=\\s+(?:leans|stands|looms|sits|walks|steps|runs|adjusts|tucks|holds|pulls|reaches|places|spreads|poises|stares|looks|grips|signs|checks|opens|closes|turns|braces|moves|catches|smiles|frowns|writes)\\b|[.;])`,
+      'i'
+    );
+    const appositiveMatch = firstBody.match(appositiveRegex);
+    const parentheticalMatch = firstBody.match(new RegExp(`\\b${escapedName}\\s*\\(([^)]+)\\)`, 'i'));
+
+    const extractedRaw =
+      parentheticalMatch?.[1] ||
+      (appositiveMatch ? appositiveMatch[0].replace(new RegExp(`^(?:the\\s+)?${escapedName}\\s*,\\s*`, 'i'), '') : '');
+    if (!extractedRaw) continue;
+
+    const cleanedExtracted = (stripTransientExpressionsAndPoses(extractedRaw) || extractedRaw)
+      .replace(/\bplanted on[^,.;]+/gi, '')
+      .trim();
+    if (!cleanedExtracted) continue;
+
+    const baseLower = baseDesc.toLowerCase();
+    const extractedClauses = cleanedExtracted
+      .split(/[,;]+/)
+      .map((c) => c.trim())
+      .filter((c) => c.length >= 4 && SIGNATURE_TRAIT_CLAUSE_REGEX.test(c));
+
+    const missingClauses: string[] = [];
+    for (const clause of extractedClauses) {
+      const sigWords = clause
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, ' ')
+        .split(/[\s-]+/)
+        .filter((w) => w.length > 3 && SIGNATURE_TRAIT_CLAUSE_REGEX.test(w));
+      const alreadyCovered = sigWords.some((sw) => {
+        if (sw === 'glasses' || sw === 'spectacles' || sw === 'eyeglasses') {
+          return /\b(?:glasses|spectacles|eyeglasses)\b/i.test(baseLower);
+        }
+        return new RegExp(`\\b${sw}\\b`, 'i').test(baseLower);
+      });
+      if (!alreadyCovered) {
+        missingClauses.push(clause);
+      }
+    }
+
+    if (missingClauses.length > 0) {
+      const combined = `${baseDesc.replace(/[.,;]+$/, '')}, ${missingClauses.join(', ')}`;
+      synced[charName] = buildCompactCharacterAnchor(combined, CHARACTER_ANCHOR_MAX_WORDS + 4) || combined;
+    }
+  }
+
+  return synced;
 }
 
 /**
@@ -779,7 +902,7 @@ export function injectCompactCharacterLocks(
   let maxMatchedTokens = 0;
   for (const [charName, fullDesc] of charEntries) {
     if (!fullDesc || fullDesc.trim().length < 6) continue;
-    const compact = buildCompactCharacterAnchor(fullDesc, 36);
+    const compact = buildCompactCharacterAnchor(fullDesc, CHARACTER_ANCHOR_MAX_WORDS + 4);
     if (!compact) continue;
     const tokens = compact
       .toLowerCase()
@@ -824,7 +947,7 @@ export function injectCompactCharacterLocks(
     const narrationMentionsName =
       nameRegex.test(sceneNarration) || (aliasRegex ? aliasRegex.test(sceneNarration) : false);
 
-    const compactAnchor = buildCompactCharacterAnchor(fullDesc, 18);
+    const compactAnchor = buildCompactCharacterAnchor(fullDesc, CHARACTER_ANCHOR_MAX_WORDS);
     if (!compactAnchor) continue;
 
     const anchorTokens = compactAnchor
@@ -929,8 +1052,26 @@ export function injectCompactCharacterLocks(
       continue;
     }
 
-    // If the prompt already embeds the identity inline (>= 50% when named, or >= 72% verbatim inline when unnamed), skip duplicate lock
-    if ((promptMentionsName && coverageRatio >= 0.5) || coverageRatio >= 0.72) {
+    // Verify signature eyewear/garment nouns (glasses/spectacles, suit, sweater, tie, etc.) are present before skipping
+    const extractSignatureNouns = (txt: string): string[] => {
+      const matches =
+        (txt || '')
+          .toLowerCase()
+          .match(
+            /\b(?:glasses|spectacles|eyeglasses|goggles|monocle|sunglasses|suit|sweater|cardigan|jacket|coat|trench|blazer|shirt|blouse|tie|bowtie|dress|gown|hoodie|cloak|robe|apron|vest|uniform)\b/g
+          ) || [];
+      return Array.from(
+        new Set(matches.map((m) => (m === 'glasses' || m === 'eyeglasses' ? 'spectacles' : m)))
+      );
+    };
+    const bodySigSet = new Set(extractSignatureNouns(bodyLower));
+    const missingSigItems = extractSignatureNouns(compactAnchor).filter((item) => !bodySigSet.has(item));
+
+    // Skip duplicate lock only when inline prompt already preserves the character AND all signature eyewear/garments
+    if (
+      missingSigItems.length === 0 &&
+      ((promptMentionsName && coverageRatio >= 0.5) || coverageRatio >= 0.72)
+    ) {
       continue;
     }
 
@@ -943,7 +1084,7 @@ export function injectCompactCharacterLocks(
         updated = insertClauseBeforeStyleOrAr(updated, `${charName} (${compactAnchor})`);
       }
     } else {
-      // Character is active in the beat via alias, pronoun, or visual traits: inject compact identity anchor cleanly
+      // Character is active in the beat via alias, pronoun, or visual traits: inject canonical identity anchor cleanly
       updated = insertClauseBeforeStyleOrAr(updated, `Featuring ${charName} (${compactAnchor})`);
     }
   }
@@ -1211,10 +1352,15 @@ export function formatFinalBeatPrompt(
   });
 
   if (options?.styleProfile?.artStyle && !/\bVisual Style:/i.test(body)) {
-    const eraArtStyle = sanitizeStyleForEra(
-      buildCompactCharacterAnchor(options.styleProfile.artStyle, 14) || options.styleProfile.artStyle,
-      beatEra
-    );
+    const cleanedArt = sanitizeStyleForEra(options.styleProfile.artStyle, beatEra) || options.styleProfile.artStyle;
+    const eraArtStyle =
+      getWordCount(cleanedArt) <= 34
+        ? cleanedArt.replace(/[.!?]+$/, '').trim()
+        : sanitizeStyleForEra(
+            buildCompactCharacterAnchor(options.styleProfile.artStyle, STYLE_ANCHOR_MAX_WORDS) ||
+              options.styleProfile.artStyle,
+            beatEra
+          );
     if (eraArtStyle) {
       body = `${body.replace(/[.,\s]+$/, '')}. Visual Style: ${eraArtStyle}.`;
     }
@@ -1391,12 +1537,12 @@ export function verifyAndRepairSceneNarrationCoverage(
       ? (/^(?:protagonist|narrator|subject|character)$/i.test(leadCharEntry[0]) ? 'the protagonist' : leadCharEntry[0])
       : 'the solitary protagonist';
     const leadCharClause = leadCharEntry
-      ? `${leadCharLabel} (${buildCompactCharacterAnchor(leadCharEntry[1], 18)})`
+      ? `${leadCharLabel} (${buildCompactCharacterAnchor(leadCharEntry[1], CHARACTER_ANCHOR_MAX_WORDS)})`
       : 'the solitary protagonist';
 
     const locEntry = Object.entries(locationSheet)[0];
     const activeLocDesc = locEntry
-      ? `${buildCompactCharacterAnchor(locEntry[1], 16) || locEntry[0]}`
+      ? `${buildCompactCharacterAnchor(locEntry[1], 24) || locEntry[0]}`
       : styleProfile.eraAndSetting || 'a dimly lit interior room';
 
     const cleanLighting = sanitizeMonochromeLighting(styleProfile.lighting, styleProfile);
@@ -1564,12 +1710,12 @@ function buildContextPreservingProgressionBeat(
     ? (/^(?:protagonist|narrator|subject|character)$/i.test(leadChar[0]) ? 'the protagonist' : leadChar[0])
     : 'the protagonist';
   const charPhrase = leadChar
-    ? `${charLabel} (${buildCompactCharacterAnchor(leadChar[1], 18)})`
+    ? `${charLabel} (${buildCompactCharacterAnchor(leadChar[1], CHARACTER_ANCHOR_MAX_WORDS)})`
     : 'the protagonist';
 
   const locEntries = Object.entries(locationSheet);
   const rawLocPhrase = locEntries[0]
-    ? buildCompactCharacterAnchor(locEntries[0][1], 14) || locEntries[0][0]
+    ? buildCompactCharacterAnchor(locEntries[0][1], 24) || locEntries[0][0]
     : styleProfile.eraAndSetting || 'the surrounding room';
   const locPhrase = rawLocPhrase.replace(/^(A|An|The)\s+(?=[a-z])/i, (m) => m.toLowerCase()).replace(/[.!?]+$/, '').trim();
 
@@ -1687,10 +1833,10 @@ function buildContextPreservingProgressionBeat(
       : 'Shot on 35mm f/4 cinema lens with atmospheric depth';
 
   const cleanLighting = sanitizeMonochromeLighting(
-    (buildCompactCharacterAnchor(styleProfile.lighting, 16) || styleProfile.lighting).replace(/[.!?]+$/, '').trim(),
+    (buildCompactCharacterAnchor(styleProfile.lighting, 24) || styleProfile.lighting).replace(/[.!?]+$/, '').trim(),
     styleProfile
   );
-  const compactStyle = (buildCompactCharacterAnchor(styleProfile.artStyle, 14) || styleProfile.artStyle)
+  const compactStyle = (buildCompactCharacterAnchor(styleProfile.artStyle, STYLE_ANCHOR_MAX_WORDS) || styleProfile.artStyle)
     .replace(/[.!?]+$/, '')
     .trim();
   const fullBody = `${actionDescription}, ${cleanLighting}. ${optics}. Visual Style: ${compactStyle}.`;
@@ -2063,11 +2209,14 @@ export async function runTwoPhaseProgressionAndRepair(
   // Step 2: Scrub chronological era bleed
   workingScenes = sanitizeEraBleedAcrossScenes(workingScenes, styleProfile, locationSheet);
 
+  // Step 2b: Synchronize canonical character sheet with concrete details established on each cast member's first appearance
+  const activeCharacterSheet = synchronizeCharacterSheetWithFirstAppearances(workingScenes, characterSheet);
+
   // Step 3: Verify & repair 100% spoken narration word coverage in every scene
   workingScenes = verifyAndRepairSceneNarrationCoverage(
     workingScenes,
     styleProfile,
-    characterSheet,
+    activeCharacterSheet,
     locationSheet,
     { isLongForm, isVideoMode }
   );
@@ -2078,7 +2227,7 @@ export async function runTwoPhaseProgressionAndRepair(
     styleProfile,
     isVideoMode,
     targetVideoDuration,
-    characterSheet,
+    activeCharacterSheet,
     locationSheet
   );
 
@@ -2094,11 +2243,11 @@ export async function runTwoPhaseProgressionAndRepair(
         onStatusMessage('Refining beat-to-beat visual progression and continuity...');
       }
 
-      const compactCastSummary = Object.entries(characterSheet)
-        .map(([name, desc]) => `- ${name}: ${buildCompactCharacterAnchor(desc, 22)}`)
+      const compactCastSummary = Object.entries(activeCharacterSheet)
+        .map(([name, desc]) => `- ${name}: ${buildCompactCharacterAnchor(desc, CHARACTER_ANCHOR_MAX_WORDS)}`)
         .join('\n');
       const compactLocSummary = Object.entries(locationSheet)
-        .map(([name, desc]) => `- ${name}: ${buildCompactCharacterAnchor(desc, 22)}`)
+        .map(([name, desc]) => `- ${name}: ${buildCompactCharacterAnchor(desc, 30)}`)
         .join('\n');
 
       const orientationText = isLongForm
@@ -2236,7 +2385,7 @@ STRICT REPAIR RULES:
         workingScenes = verifyAndRepairSceneNarrationCoverage(
           workingScenes,
           styleProfile,
-          characterSheet,
+          activeCharacterSheet,
           locationSheet,
           { isLongForm, isVideoMode }
         );
@@ -2251,7 +2400,7 @@ STRICT REPAIR RULES:
     const progressedBeats = deduplicateAndProgressSceneBeats(scene.beats || [], {
       scene,
       styleProfile,
-      characterSheet,
+      characterSheet: activeCharacterSheet,
       locationSheet,
       isLongForm,
       isVideoMode,
@@ -2275,7 +2424,7 @@ STRICT REPAIR RULES:
         beat.imagePrompt,
         beat.textSpan,
         scene.narratorLine,
-        characterSheet
+        activeCharacterSheet
       );
 
       const formatted = formatFinalBeatPrompt(
@@ -2288,7 +2437,7 @@ STRICT REPAIR RULES:
         isVideoMode,
         {
           styleProfile,
-          characterSheet,
+          characterSheet: activeCharacterSheet,
           locationSheet,
         }
       );

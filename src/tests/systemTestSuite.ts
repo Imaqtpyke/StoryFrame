@@ -42,6 +42,7 @@ import {
   sanitizeStillImageMotionAndOptics,
   buildSharedContextIgnoreTokens,
   computeVisualPromptSimilarity,
+  synchronizeCharacterSheetWithFirstAppearances,
 } from '../services/beatProgressionEngine';
 import { sanitizeGroqErrorMessage, extractCleanJson, GROQ_API_BASE_URL, sanitizePromptText, tryRepairTruncatedJson } from '../services/groqClient';
 import { robustJsonParse } from '../services/unifiedAiService';
@@ -2776,6 +2777,198 @@ function runTestSuite28() {
   );
 }
 
+// ============================================================================
+// 29. FULL-DETAIL FIRST-APPEARANCE CHARACTER LOCKS & PERSISTENT VISUAL STYLE
+// ============================================================================
+function runTestSuite29() {
+  console.log('\n--- Running Test Suite 29: First-Appearance Eyewear/Outfit Locks & Persistent Style ---');
+
+  const richDioramaStyle: StyleProfile = {
+    artStyle:
+      'Handcrafted miniature stop-motion diorama built from soft-matte sculpted clay, weathered oak, and heavy ivory cardstock with crimson wax seals',
+    colorPalette: 'Warm ivory cardstock, weathered oak browns, soft-matte terracotta clay, crimson wax, brushed antique brass',
+    lighting: 'Warm 3200K studio tungsten key lights with subtle 5200K cool rim highlights',
+    eraAndSetting: 'Miniature financial diorama combining a cardstock home studio and weathered oak bank hall',
+  };
+
+  const fullMortgageCast: Record<string, string> = {
+    'Clay Homeowner':
+      'A handcrafted soft-matte clay miniature figure with rounded human proportions, warm terracotta clay skin tone, short sculpted dark brown clay hair, wearing a slate-blue knitted wool miniature sweater, charcoal trousers, and sturdy brown leather clay boots',
+    'Clay Bank Lender':
+      'A tall, rigid soft-matte clay miniature figure with sharp angular facial planes, sleek silver-gray sculpted hair, wire-rimmed brass spectacles, wearing a tailored pinstripe charcoal clay suit, crisp ivory shirt, crimson silk tie, and polished black clay dress shoes',
+  };
+
+  // 29.1 Missing glasses/outfit on later beat and Thumbnail secondary character must NEVER clip at 18 words
+  const partialLenderBeat = injectCompactCharacterLocks(
+    'Vertical 9:16 portrait composition, Medium Shot, low-angle inside the imposing oak bank hall, a tall rigid soft-matte clay miniature figure with sharp angular facial planes, sleek silver-gray sculpted hair, and wire-rimmed brass spectacles sliding antique brass abacus beads. Shot on 50mm f/2.0 prime lens. --ar 9:16',
+    'the bank calculates',
+    'When you sign a home loan, the bank calculates decades of interest.',
+    fullMortgageCast
+  );
+  const richThumb = compileThumbnailPrompt({
+    rawThumbnail: {
+      heroMoment: 'Clay Bank Lender slams a heavy brass stamp onto a folded ivory contract beside Clay Homeowner.',
+      expression: 'Shocked wide-eyed urgency.',
+      bgDescription: 'Weathered oak columns and crimson wax shards.',
+      accentColor: 'Crimson rim lighting',
+      hookText: 'MORTGAGE TRAP EXPOSED',
+    },
+    styleProfile: richDioramaStyle,
+    characterSheet: {
+      'Clay Homeowner': fullMortgageCast['Clay Homeowner'],
+      'Clay Bank Lender': fullMortgageCast['Clay Bank Lender'],
+    },
+    format: 'short',
+    platform: 'tiktok',
+  });
+  assert(
+    partialLenderBeat.includes('wire-rimmed brass spectacles') &&
+      partialLenderBeat.includes('pinstripe charcoal clay suit') &&
+      partialLenderBeat.includes('crimson silk tie') &&
+      richThumb.compiledPrompt.includes('wire-rimmed brass spectacles') &&
+      richThumb.compiledPrompt.includes('pinstripe charcoal clay suit'),
+    'Suite 29: First-Appearance Eyewear/Outfit Locks & Persistent Style',
+    '29.1 Preserves Full Eyewear and Pinstripe Suit/Crimson Tie Without 18-Word Clipping in Beats & Thumbnail',
+    `beat=${partialLenderBeat} | thumb=${richThumb.compiledPrompt}`
+  );
+
+  // 29.2 First-appearance synchronization harvests Beat 1 glasses without bleeding Beat 1 coin action or prop shots
+  const sparseCast: Record<string, string> = {
+    'Clay Homeowner':
+      'A handcrafted soft-matte clay miniature figure with warm terracotta clay skin tone and slate-blue knitted wool sweater',
+  };
+  const firstAppearanceScenes: Scene[] = [
+    {
+      index: 1,
+      narratorLine: 'If you pay early, the stamp hits.',
+      estimatedSeconds: 4.5,
+      beats: [
+        {
+          beatIndex: 1,
+          textSpan: 'If you pay early,',
+          shotType: 'Medium Shot',
+          cameraAngle: 'eye-level',
+          cameraMovement: 'Static Frame',
+          imagePrompt:
+            'Vertical 9:16 portrait composition, Medium Shot, eye-level, Clay Homeowner, a soft-matte terracotta clay figure with round wire-rimmed glasses and brown leather clay boots, leans forward to stack gold clay coins onto a mortgage ledger. --ar 9:16',
+          estimatedSeconds: 2.3,
+        },
+        {
+          beatIndex: 2,
+          textSpan: 'the stamp hits.',
+          shotType: 'Close-Up',
+          cameraAngle: 'high-angle',
+          cameraMovement: 'Static Frame',
+          imagePrompt:
+            'Vertical 9:16 portrait composition, Close-Up, high-angle, A heavy brass stamp shatters a crimson wax seal across ivory cardstock folds, no characters in frame. --ar 9:16',
+          estimatedSeconds: 2.2,
+        },
+      ],
+    },
+    {
+      index: 2,
+      narratorLine: 'Then he reads the page.',
+      estimatedSeconds: 2.4,
+      beats: [
+        {
+          beatIndex: 1,
+          textSpan: 'Then he reads the page.',
+          shotType: 'Medium Close-Up',
+          cameraAngle: 'eye-level',
+          cameraMovement: 'Static Frame',
+          imagePrompt:
+            'Vertical 9:16 portrait composition, Medium Close-Up, eye-level showing him opening a folded paper contract at the oak desk. --ar 9:16',
+          estimatedSeconds: 2.4,
+        },
+      ],
+    },
+  ];
+  const syncedCast = synchronizeCharacterSheetWithFirstAppearances(firstAppearanceScenes, sparseCast);
+  const beat2Locked = injectCompactCharacterLocks(
+    firstAppearanceScenes[1].beats[0].imagePrompt,
+    firstAppearanceScenes[1].beats[0].textSpan,
+    firstAppearanceScenes[1].narratorLine,
+    syncedCast
+  );
+  const propBeatLocked = injectCompactCharacterLocks(
+    firstAppearanceScenes[0].beats[1].imagePrompt,
+    firstAppearanceScenes[0].beats[1].textSpan,
+    firstAppearanceScenes[0].narratorLine,
+    syncedCast
+  );
+  assert(
+    syncedCast['Clay Homeowner'].includes('round wire-rimmed glasses') &&
+      beat2Locked.includes('round wire-rimmed glasses') &&
+      beat2Locked.includes('slate-blue knitted wool sweater') &&
+      !beat2Locked.includes('stack gold clay coins') &&
+      !propBeatLocked.includes('Clay Homeowner'),
+    'Suite 29: First-Appearance Eyewear/Outfit Locks & Persistent Style',
+    '29.2 Syncs Scene 1 Beat 1 Glasses & Wardrobe Across Later Beats Without Leaking Action or Photobombing Prop Shots',
+    `synced=${syncedCast['Clay Homeowner']} | beat2=${beat2Locked} | prop=${propBeatLocked}`
+  );
+
+  // 29.3 Beat Visual Style preserves key diorama materials beyond 14 words
+  const styledBeat = formatFinalBeatPrompt(
+    {
+      beatIndex: 1,
+      textSpan: 'Check every clause first.',
+      shotType: 'Close-Up',
+      cameraAngle: 'eye-level',
+      cameraMovement: 'Static Frame',
+      imagePrompt:
+        'Vertical 9:16 portrait composition, Close-Up, eye-level, A brushed antique brass magnifying glass rests over ivory cardstock lettering. Shot on 85mm f/1.8 portrait lens. --ar 9:16',
+      estimatedSeconds: 2.2,
+    },
+    false,
+    false,
+    { styleProfile: richDioramaStyle, characterSheet: fullMortgageCast }
+  );
+  assert(
+    styledBeat.imagePrompt.includes('Visual Style:') &&
+      styledBeat.imagePrompt.includes('heavy ivory cardstock') &&
+      styledBeat.imagePrompt.includes('crimson wax seals'),
+    'Suite 29: First-Appearance Eyewear/Outfit Locks & Persistent Style',
+    '29.3 Preserves Full Multi-Material Visual Style Beyond Former 14-Word Truncation',
+    `Styled: ${styledBeat.imagePrompt}`
+  );
+
+  // 29.4 Full 40-word canonical locks on distinct action beats must not trigger L10 false duplicates
+  const distinctLockedScene: Scene = {
+    index: 4,
+    narratorLine: 'He adjusted his spectacles and hid the slip deep in the folder.',
+    estimatedSeconds: 4.0,
+    beats: [
+      {
+        beatIndex: 1,
+        textSpan: 'He adjusted his spectacles',
+        shotType: 'Close-Up',
+        cameraAngle: 'eye-level',
+        cameraMovement: 'Static Frame',
+        imagePrompt: `Vertical 9:16 portrait composition, Close-Up, eye-level, Clay Bank Lender (${fullMortgageCast['Clay Bank Lender']}) adjusts his glasses in deep charcoal shadow beneath a desk lamp. Shot on 85mm f/1.4 portrait lens. --ar 9:16`,
+        estimatedSeconds: 2.0,
+      },
+      {
+        beatIndex: 2,
+        textSpan: 'and hid the slip deep in the folder.',
+        shotType: 'Medium Shot',
+        cameraAngle: 'low-angle',
+        cameraMovement: 'Static Frame',
+        imagePrompt: `Vertical 9:16 portrait composition, Medium Shot, low-angle, Clay Bank Lender (${fullMortgageCast['Clay Bank Lender']}) slides a tiny folded ivory slip between towering accordion ledger stacks. Shot on 50mm f/2.0 prime lens. --ar 9:16`,
+        estimatedSeconds: 2.0,
+      },
+    ],
+  };
+  const l10Issues = lintStoryboard([distinctLockedScene], fullMortgageCast, richDioramaStyle).filter((i) =>
+    i.id.startsWith('L10')
+  );
+  assert(
+    l10Issues.length === 0,
+    'Suite 29: First-Appearance Eyewear/Outfit Locks & Persistent Style',
+    '29.4 Full Canonical Character Locks Across Different Actions Do Not Trigger False L10 Duplicate Warnings',
+    `L10 issues: ${JSON.stringify(l10Issues)}`
+  );
+}
+
 runTestSuite21().then(() => {
   runTestSuite23();
   runTestSuite24();
@@ -2783,6 +2976,7 @@ runTestSuite21().then(() => {
   runTestSuite26();
   runTestSuite27();
   runTestSuite28();
+  runTestSuite29();
   console.log('\n====================================================================');
   console.log('                  FULL-SYSTEM VERIFICATION REPORT                  ');
   console.log('====================================================================');

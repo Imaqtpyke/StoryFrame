@@ -22,6 +22,8 @@ import {
   sanitizeStillImageMotionAndOptics,
   stripLeadingOrientationPrefixes,
   stripTransientExpressionsAndPoses,
+  STYLE_ANCHOR_MAX_WORDS,
+  synchronizeCharacterSheetWithFirstAppearances,
 } from './beatProgressionEngine';
 import { generateEnhancedStory } from './enhanceStoryArchitect';
 import { updateVideoPromptDuration } from './videoSuitability';
@@ -925,7 +927,9 @@ ${durationInstruction}${customBeatsPrompt}`;
         !finalImagePrompt.toLowerCase().includes(sanitizedStyleProfile.artStyle.toLowerCase().slice(0, 15)) &&
         !finalImagePrompt.toLowerCase().includes('visual style:')
       ) {
-        const compactBeatStyle = buildCompactCharacterAnchor(sanitizedStyleProfile.artStyle, 14) || sanitizedStyleProfile.artStyle;
+        const compactBeatStyle =
+          buildCompactCharacterAnchor(sanitizedStyleProfile.artStyle, STYLE_ANCHOR_MAX_WORDS) ||
+          sanitizedStyleProfile.artStyle;
         finalImagePrompt += ` Visual Style: ${compactBeatStyle}.`;
       }
 
@@ -1115,7 +1119,10 @@ ${durationInstruction}${customBeatsPrompt}`;
     }),
   }));
 
-  const readableCharacterSheet = normalizeContinuitySheetKeys(sanitizedCharacterSheet);
+  const readableCharacterSheet = synchronizeCharacterSheetWithFirstAppearances(
+    preppedScenes,
+    normalizeContinuitySheetKeys(sanitizedCharacterSheet)
+  );
   const readableLocationSheet = normalizeContinuitySheetKeys(sanitizedLocationSheet);
 
   const scenesWithTransitionHints = await runTwoPhaseProgressionAndRepair({

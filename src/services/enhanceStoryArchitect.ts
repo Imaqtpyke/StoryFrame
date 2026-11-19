@@ -19,6 +19,7 @@ import {
   runTwoPhaseProgressionAndRepair,
   sanitizeMonochromeLighting,
   sanitizeStillImageMotionAndOptics,
+  synchronizeCharacterSheetWithFirstAppearances,
 } from './beatProgressionEngine';
 import { updateVideoPromptDuration } from './videoSuitability';
 import { cleanAndDeduplicatePrompt, assembleCleanPrompt, sanitizeCharacterIdentitySheet } from './geminiClient';
@@ -677,7 +678,10 @@ ${durationInstruction}`;
     };
   });
 
-  const readableCharacterSheet = normalizeContinuitySheetKeys(sanitizedCharacterSheet);
+  const readableCharacterSheet = synchronizeCharacterSheetWithFirstAppearances(
+    sanitizedScenes,
+    normalizeContinuitySheetKeys(sanitizedCharacterSheet)
+  );
   const readableLocationSheet = normalizeContinuitySheetKeys(sanitizedLocationSheet);
 
   const scenesWithHints = await runTwoPhaseProgressionAndRepair({

@@ -1,5 +1,5 @@
 import { ActivePage } from '../types';
-import { History as HistoryIcon, BookOpen, KeyRound } from 'lucide-react';
+import { History as HistoryIcon } from 'lucide-react';
 
 interface HeaderProps {
   activePage: ActivePage;
@@ -10,7 +10,7 @@ interface HeaderProps {
 }
 
 export default function Header({
-  activePage,
+  activePage: _activePage,
   onNavigate,
   onOpenHistory,
   onOpenAssistant,
@@ -34,34 +34,6 @@ export default function Header({
         </button>
 
         <nav className="flex items-center gap-1 sm:gap-2 font-display text-xs sm:text-sm">
-          <button
-            type="button"
-            id="header-nav-guide"
-            onClick={() => onNavigate('guide')}
-            className={`hidden md:inline-flex items-center gap-1.5 min-h-[38px] px-3 rounded-[3px] transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-white cursor-pointer ${
-              activePage === 'guide'
-                ? 'bg-white/10 text-white font-medium'
-                : 'text-[#A0A09A] hover:text-white hover:bg-white/[0.04]'
-            }`}
-          >
-            <BookOpen className="w-3.5 h-3.5 text-[#8C8C86]" />
-            <span>Help &amp; Guide</span>
-          </button>
-
-          <button
-            type="button"
-            id="header-nav-byok"
-            onClick={() => onNavigate('byok-security')}
-            className={`hidden md:inline-flex items-center gap-1.5 min-h-[38px] px-3 rounded-[3px] transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-white cursor-pointer ${
-              activePage === 'byok-security'
-                ? 'bg-white/10 text-white font-medium'
-                : 'text-[#A0A09A] hover:text-white hover:bg-white/[0.04]'
-            }`}
-          >
-            <KeyRound className="w-3.5 h-3.5 text-[#8C8C86]" />
-            <span>API Keys</span>
-          </button>
-
           <button
             type="button"
             id="nav-assistant-btn"

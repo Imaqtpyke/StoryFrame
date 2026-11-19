@@ -227,6 +227,11 @@
   - Fixed comma-before-lens punctuation, restricted connector auto-merges (`<= 2` words / `<= 1.8s`), cleaned duplicate fallback grammar (`inside A`, `of tight portrait study`, `. palette`), and stripped double periods (`..`) in `compileThumbnailPrompt` / `compileCtaPrompt`.
   - Scoped `isSciFiPremise` away from standalone `"future"` phrases like `"future income stream"` and added a dedicated Finance / Mortgage / Contract Trap CTA branch in `inferStoryAdaptiveCtaQuestion` (`promptCompiler.ts`).
 
+- [x] **Canonical First-Appearance Eyewear/Outfit Locks, Persistent Style & Header/Results Declutter (Suite 29):**
+  - Added `synchronizeCharacterSheetWithFirstAppearances` (`beatProgressionEngine.ts`, wired into `geminiClient.ts`, `enhanceStoryArchitect.ts`, and `runTwoPhaseProgressionAndRepair`) to pull fixed facial/eyewear/wardrobe details established on a character's first appearance cleanly into their canonical lock without carrying over Scene 1 actions or leaking onto prop-only beats.
+  - Raised character identity anchor limits from `18` (`16` in Thumbnail / `22` in Repair) to `40` words (`CHARACTER_ANCHOR_MAX_WORDS`) and required signature eyewear/garment matching (`spectacles`/`glasses`, `suit`, `sweater`, `tie`, etc.) before skipping locks, plus raised per-beat `Visual Style:` limit from `14` to `28`/`34` words (`STYLE_ANCHOR_MAX_WORDS`) and filtered full characterSheet wardrobe tokens in `lintStoryboard` L10 and `buildSharedContextIgnoreTokens`.
+  - Removed `Help & Guide` and `API Keys` from the desktop/laptop `Header.tsx` navigation bar (both remain in `Footer.tsx`) and hid `#open-style-cast-btn` (`Style & Cast`) across all screen sizes in `ResultsView.tsx`.
+
 ## Active Testing & Planned Future Roadmap (Post-Testing)
 - [ ] **Genre Stress-Testing Loop (In Progress):**
   - Completed: **Sci-Fi**, **Documentary / History**, **Horror / Psychological Thriller**, **Stylized Art**, **Multi-Character + Flashbacks**, and **130-Word Finance/Diorama Stress Test**.

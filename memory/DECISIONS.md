@@ -287,3 +287,11 @@
 - **Date:** 2026-11-14
 - **Status:** Active
 
+## Full Canonical First-Appearance Character Locks & Minimal Header/Results Toolbar
+- **Fact/Decision:**
+  1. Removed `Help & Guide` and `API Keys` navigation links from the top `Header.tsx` bar on desktop/laptop screens (`Footer.tsx` still provides both routes), and hid the `Style & Cast` toolbar button (`#open-style-cast-btn`) across all screen sizes in `ResultsView.tsx` while preserving underlying `styleProfile`, `characterSheet`, `locationSheet`, Thumbnail, CTA, and Markdown/JSON continuity exports.
+  2. Implemented `synchronizeCharacterSheetWithFirstAppearances` (`beatProgressionEngine.ts`) paired with `CHARACTER_ANCHOR_MAX_WORDS = 40` and `STYLE_ANCHOR_MAX_WORDS = 28` so distinctive face/eyewear/wardrobe details (such as wire-rimmed spectacles, suits, sweaters, and ties) established in first appearances or continuity sheets persist verbatim across every character beat and Thumbnail without 18-word truncation or action leakage.
+- **Context:** Resolves clipped character eyewear/clothing across beats, eliminates redundant top-bar chrome on laptops, and ensures every copied beat prompt is self-contained without needing the `Style & Cast` modal.
+- **Date:** 2026-11-19
+- **Status:** Active
+

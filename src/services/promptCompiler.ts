@@ -2,6 +2,8 @@ import { Beat, Scene, StyleProfile, StoryFormat, GenerationMode, ThumbnailData, 
 import { extractGeographicAnchor } from './beatSplitting';
 import {
   buildCompactCharacterAnchor,
+  buildSharedContextIgnoreTokens,
+  CHARACTER_ANCHOR_MAX_WORDS,
   computeVisualPromptSimilarity,
   expandEntityKeysInPrompt,
   hasDistinctMontageFocalSubject,
@@ -395,9 +397,14 @@ export function lintStoryboard(
 
     // Rule L10: Intra-Scene Near-Duplicate Beat Detection
     const sceneBeats = scene.beats || [];
+    const ignoredLintTokens = buildSharedContextIgnoreTokens(styleProfile, undefined, characterSheet);
     for (let i = 0; i < sceneBeats.length; i++) {
       for (let j = i + 1; j < sceneBeats.length; j++) {
-        const sim = computeVisualPromptSimilarity(sceneBeats[i].imagePrompt || '', sceneBeats[j].imagePrompt || '');
+        const sim = computeVisualPromptSimilarity(
+          sceneBeats[i].imagePrompt || '',
+          sceneBeats[j].imagePrompt || '',
+          ignoredLintTokens
+        );
         const threshold = hasDistinctMontageFocalSubject(sceneBeats[i], sceneBeats[j]) ? 0.68 : 0.52;
         if (sim >= threshold) {
           issues.push({
@@ -663,7 +670,10 @@ export function compileThumbnailPrompt(params: {
       const isSecAdult = !isSecChild && /\b(?:adult|mid-thirties|thirties|forties|older)\b/i.test(`${secName} ${secDesc}`);
       if ((isChildMoment && isSecAdult) || (!isChildMoment && isSecChild)) continue;
 
-      const compactSec = buildCompactCharacterAnchor(stripTransientExpressionsAndPoses(secDesc) || secDesc, 16);
+      const compactSec = buildCompactCharacterAnchor(
+        stripTransientExpressionsAndPoses(secDesc) || secDesc,
+        CHARACTER_ANCHOR_MAX_WORDS
+      );
       if (!compactSec) continue;
 
       const escapedFull = secName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
