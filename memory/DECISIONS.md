@@ -311,4 +311,10 @@
 - **Date:** 2026-11-19
 - **Status:** Active
 
+## Long-Form 16:9 Batch Speed Optimization & Per-Batch Checkpointing
+- **Fact/Decision:** Added local checkpoint persistence (`src/services/groundedCheckpoint.ts`) saving Stage 1 Story Bible, Stage 2 Beat Plan, and completed scene batches in `localStorage`, surfaced a `Resume Breakdown` / `Start Fresh` banner in `ResultsErrorView.tsx` (`App.tsx`), batched Stage 3 writing to 4 scenes per LLM call (`stage3WriteScenePromptsBatch`), skipped redundant LLM critic passes when all 7 deterministic Stage 4 checks pass, and added story-specific `thumbnailHook` extraction in `stage1StoryBible.ts`.
+- **Context:** Prevents 50-80 sequential API calls (~9 minute runs) from hitting Free Tier throttling on 500+ word Long-Form scripts and guarantees transient "model is busy" failures resume directly from the next incomplete scene instead of restarting from Scene 1.
+- **Date:** 2026-11-19
+- **Status:** Active
+
 

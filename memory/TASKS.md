@@ -247,6 +247,11 @@
   - Updated `synchronizeBeatMetadataWithPrompt` and `formatFinalBeatPrompt` (`beatProgressionEngine.ts`) to detect and deduplicate `Whip-Pan` framing prefixes and prioritize explicit `-angle` tags (`low-angle`, `high-angle`) over prop nouns (`overhead glass tube`).
   - Added `sanitizeSharedVisualStyle` (`beatProgressionEngine.ts`, wired across `geminiClient.ts`, `enhanceStoryArchitect.ts`, and `promptCompiler.ts`) to strip hero pronoun/wardrobe sentences from shared `Visual Style:` blocks.
   - Expanded Finance CTA branch in `inferStoryAdaptiveCtaQuestion` (`promptCompiler.ts`) to route cash deposit & structuring scripts (`$9,900`, `structuring`, `frozen accounts`) to banking compliance questions ahead of Mystery (`secretly`).
+- [x] **Long-Form 16:9 Checkpoint-Resume & Batched Stage 3/4 Speed Upgrade (Suite 33):**
+  - Created `src/services/groundedCheckpoint.ts` persisting Stage 1 (`bible`), Stage 2 (`plannedScenes`), and completed `Stage 3/4` scene batches to `localStorage` (with Node.js test fallback and 24-hour TTL).
+  - Added batched Stage 3 writing (`stage3WriteScenePromptsBatch`, 4 scenes per LLM call) in `src/services/stage3PromptWriter.ts` and skipped redundant LLM critic calls when all 7 deterministic Stage 4 checks pass (`src/services/stage4VerifyRepair.ts`), cutting ~50-80 sequential calls on 577-word scripts down to ~8-12 calls.
+  - Added story-specific `thumbnailHook` output to Stage 1 (`stage1StoryBible.ts`) replacing the hardcoded `"THE UNTOLD STORY"` fallback in `groundedPipeline.ts`.
+  - Updated `ResultsErrorView.tsx` and `App.tsx` to display saved scene progress (`X of Y scenes completed`) with `Resume Breakdown` and `Start Fresh` actions.
 
 ## Active Testing & Planned Future Roadmap (Post-Testing)
 - [ ] **Genre Stress-Testing Loop (In Progress):**

@@ -1,10 +1,13 @@
 import React from 'react';
-import { AlertCircle, ArrowLeft, RefreshCw, Sliders } from 'lucide-react';
+import { AlertCircle, ArrowLeft, RefreshCw, RotateCcw, Sliders } from 'lucide-react';
+import { GroundedCheckpointProgress } from '../services/groundedCheckpoint';
 
 interface ResultsErrorViewProps {
   errorMessage: string;
   onBackToEdit: () => void;
   onRetry: () => void;
+  onStartFresh?: () => void;
+  resumeProgress?: GroundedCheckpointProgress | null;
   onOpenModelOptions?: () => void;
 }
 
@@ -12,6 +15,8 @@ export default function ResultsErrorView({
   errorMessage,
   onBackToEdit,
   onRetry,
+  onStartFresh,
+  resumeProgress,
   onOpenModelOptions,
 }: ResultsErrorViewProps) {
   const isKeyError =
@@ -19,6 +24,10 @@ export default function ResultsErrorView({
     errorMessage.toLowerCase().includes('quota') ||
     errorMessage.toLowerCase().includes('unauthenticated') ||
     errorMessage.toLowerCase().includes('permission');
+
+  const hasSavedProgress = Boolean(
+    resumeProgress && (resumeProgress.completedScenes > 0 || resumeProgress.totalScenes > 0 || resumeProgress.hasBible)
+  );
 
   return (
     <div className="w-full max-w-3xl mx-auto space-y-6 font-narrative text-[#F5F5F0] py-6 sm:py-10">
@@ -50,6 +59,25 @@ export default function ResultsErrorView({
           </div>
         </div>
 
+        {/* Saved Checkpoint Notice */}
+        {hasSavedProgress && resumeProgress && (
+          <div className="p-3.5 bg-emerald-950/25 border border-emerald-500/35 rounded-[2px] text-xs text-emerald-200 leading-relaxed">
+            {resumeProgress.totalScenes > 0 && resumeProgress.completedScenes > 0 ? (
+              <p>
+                Saved checkpoint: {resumeProgress.completedScenes} of {resumeProgress.totalScenes} scenes completed. Click Resume Breakdown to continue directly from Scene {resumeProgress.completedScenes + 1} without re-running finished scenes.
+              </p>
+            ) : resumeProgress.totalScenes > 0 ? (
+              <p>
+                Saved checkpoint: Story Bible and Beat Plan ({resumeProgress.totalScenes} scenes) are saved. Click Resume Breakdown to continue directly at Scene 1.
+              </p>
+            ) : (
+              <p>
+                Saved checkpoint: Stage 1 Story Bible is saved. Click Resume Breakdown to continue directly from Stage 2.
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Suggestion & Next Steps */}
         <div className="p-3.5 bg-[#171715] border border-white/10 rounded-[2px] text-xs text-[#9C9C96] leading-relaxed">
           {isKeyError ? (
@@ -58,7 +86,7 @@ export default function ResultsErrorView({
             </p>
           ) : (
             <p>
-              Your narrative input and selected settings were preserved. You can retry immediately or return to the editor to make adjustments.
+              Your narrative input and selected settings were preserved. You can resume immediately or return to the editor to make adjustments.
             </p>
           )}
         </div>
@@ -71,8 +99,19 @@ export default function ResultsErrorView({
             className="inline-flex items-center px-4 py-2 bg-white text-black font-semibold text-xs rounded-[2px] hover:bg-[#EAEAE5] transition-colors cursor-pointer"
           >
             <RefreshCw size={13} className="mr-1.5" />
-            Retry Breakdown
+            {hasSavedProgress ? 'Resume Breakdown' : 'Retry Breakdown'}
           </button>
+
+          {hasSavedProgress && onStartFresh && (
+            <button
+              type="button"
+              onClick={onStartFresh}
+              className="inline-flex items-center px-4 py-2 bg-[#1A1A18] text-white border border-white/20 hover:border-white text-xs rounded-[2px] transition-colors cursor-pointer"
+            >
+              <RotateCcw size={13} className="mr-1.5" />
+              Start Fresh
+            </button>
+          )}
 
           <button
             type="button"

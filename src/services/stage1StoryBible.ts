@@ -99,6 +99,16 @@ export const STORY_BIBLE_SCHEMA = {
       items: { type: 'STRING' },
       description: 'Explicit list of assumptions made where the story was silent',
     },
+    thumbnailHook: {
+      type: 'OBJECT',
+      description: 'High-CTR YouTube cover thumbnail blueprint tailored specifically to this story',
+      properties: {
+        heroMoment: { type: 'STRING', description: 'One concise visual line showing the central peak conflict of this story' },
+        expression: { type: 'STRING', description: 'Intense facial expression of the lead subject' },
+        hookText: { type: 'STRING', description: 'Bold 2 to 4 word ALL CAPS curiosity headline grounded in THIS story' },
+        alternateHooks: { type: 'ARRAY', items: { type: 'STRING' } },
+      },
+    },
   },
   required: [
     'cast',
@@ -153,6 +163,7 @@ RULES FOR THE STORY BIBLE:
 8. FORBIDDEN: List forbidden anachronisms (e.g. 17th-century bottle glass or modern chalk crosses in 1348), plus invented monsters (e.g. 20-foot clawed shadows, black vortexes) not in the text.
 9. WORLD STYLE: Exactly one medium (either photographic film look OR stylized 3D animation, never both). Include palette, natural lighting words ("flickering tallow candles", "cold grey daylight"), and mood. Under 40 words.
 10. ASSUMPTIONS: Record every assumption you made to fill story gaps.
+11. THUMBNAIL HOOK: Populate "thumbnailHook" with a crisp, story-specific peak heroMoment, intense expression, 2-to-4 word ALL CAPS hookText (never generic like "THE UNTOLD STORY"), and 2 alternateHooks.
 
 Output valid JSON matching the schema.`;
 

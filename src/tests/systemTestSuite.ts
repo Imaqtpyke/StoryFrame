@@ -61,6 +61,14 @@ import {
   inferStoryAdaptiveCtaQuestion,
   compileCtaPrompt,
 } from '../services/promptCompiler';
+import {
+  buildCheckpointKey,
+  clearGroundedCheckpoint,
+  getGroundedCheckpoint,
+  saveGroundedCheckpoint,
+  summarizeGroundedCheckpoint,
+} from '../services/groundedCheckpoint';
+import { getGroundedProgressForRequest, clearGroundedProgressForRequest } from '../services/groundedPipeline';
 import { Scene, Beat, StyleProfile, StoryGenerationResult } from '../types';
 
 interface TestResult {
@@ -3362,6 +3370,89 @@ function runTestSuite32() {
   );
 }
 
+// ============================================================================
+// 33. LONG-FORM GROUNDED CHECKPOINT SAVE, RESUME & CLEANUP
+// ============================================================================
+function runTestSuite33() {
+  console.log('\n--- Running Test Suite 33: Long-Form Grounded Checkpoint & Resume ---');
+
+  const sampleStory = 'In the winter of 1899, three surveyors walked across the frozen ridge until their compass needles spun wild.';
+  const ckptKey = buildCheckpointKey(sampleStory, undefined, 'long', 'image', 'standard', 'Cinematic');
+  clearGroundedCheckpoint(ckptKey);
+
+  saveGroundedCheckpoint({
+    key: ckptKey,
+    totalWords: 19,
+    updatedAt: Date.now(),
+    bible: {
+      cast: [{ id: 'lead_surveyor', role: 'Lead Surveyor', visualLock: 'Weathered explorer in heavy wool parka' }],
+      threat: { canonicalLook: 'Magnetic anomaly', allowedVariants: [] },
+      locations: [{ id: 'frozen_ridge', visualLock: 'Wind-swept snowy ridge under pale grey overcast sky' }],
+      motifs: [],
+      events: ['Surveyors climb frozen ridge', 'Compass spins wild'],
+      referents: [],
+      withheld: ['Source of magnetic pull'],
+      forbidden: [],
+      worldStyle: 'Gritty historical realism on 35mm film, cold grey overcast light',
+      assumptions: [],
+      thumbnailHook: {
+        heroMoment: 'Surveyors staring down at wildly spinning brass compass on snowy cliff',
+        expression: 'shocked concentration',
+        hookText: 'THE COMPASS LIED',
+        alternateHooks: ['FROZEN RIDGE MYSTERY'],
+      },
+    },
+    plannedScenes: [
+      { index: 1, narratorLine: 'In the winter of 1899, three surveyors walked across the frozen ridge.', beats: [], estimatedSeconds: 4, averageBeatSeconds: 2, fastCutRatio: 0 },
+      { index: 2, narratorLine: 'until their compass needles spun wild.', beats: [], estimatedSeconds: 3, averageBeatSeconds: 1.5, fastCutRatio: 0 },
+    ],
+    completedScenes: [
+      {
+        index: 1,
+        narratorLine: 'In the winter of 1899, three surveyors walked across the frozen ridge.',
+        estimatedSeconds: 4,
+        beats: [{ beatIndex: 1, textSpan: 'In the winter of 1899', imagePrompt: 'Wide shot of frozen ridge', estimatedSeconds: 2 }],
+      },
+    ],
+  });
+
+  const summary = getGroundedProgressForRequest({
+    story: sampleStory,
+    characterStyle: 'Cinematic',
+    format: 'long',
+    platform: 'YouTube',
+    durationMode: 'automatic',
+    generationMode: 'image',
+    modelQuality: 'standard',
+  });
+  const stored = getGroundedCheckpoint(ckptKey);
+  const directSummary = summarizeGroundedCheckpoint(ckptKey);
+
+  clearGroundedProgressForRequest({
+    story: sampleStory,
+    characterStyle: 'Cinematic',
+    format: 'long',
+    platform: 'YouTube',
+    durationMode: 'automatic',
+    generationMode: 'image',
+    modelQuality: 'standard',
+  });
+  const afterClear = getGroundedCheckpoint(ckptKey);
+
+  assert(
+    Boolean(summary) &&
+      summary?.completedScenes === 1 &&
+      summary?.totalScenes === 2 &&
+      summary?.hasBible === true &&
+      stored?.completedScenes.length === 1 &&
+      directSummary?.completedScenes === 1 &&
+      afterClear === null,
+    'Suite 33: Long-Form Grounded Checkpoint & Resume',
+    '33.1 Saves, Summarizes, Resumes, and Clears Long-Form Story Checkpoints Cleanly',
+    `summary=${JSON.stringify(summary)} | afterClear=${String(afterClear)}`
+  );
+}
+
 runTestSuite21().then(() => {
   runTestSuite23();
   runTestSuite24();
@@ -3373,6 +3464,7 @@ runTestSuite21().then(() => {
   runTestSuite30();
   runTestSuite31();
   runTestSuite32();
+  runTestSuite33();
   console.log('\n====================================================================');
   console.log('                  FULL-SYSTEM VERIFICATION REPORT                  ');
   console.log('====================================================================');

@@ -47,6 +47,12 @@ export interface StoryBible {
   forbidden: string[];
   worldStyle: string;
   assumptions: string[];
+  thumbnailHook?: {
+    heroMoment?: string;
+    expression?: string;
+    hookText?: string;
+    alternateHooks?: string[];
+  };
 }
 
 export interface Beat {

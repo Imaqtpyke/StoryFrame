@@ -13,6 +13,7 @@ import HistoryModal from './components/HistoryModal';
 import AssistantChatDrawer from './components/AssistantChatDrawer';
 import { ApiKeyProvider, useApiKey } from './context/ApiKeyContext';
 import { generateStoryDirectly } from './services/geminiClient';
+import { getGroundedProgressForRequest, clearGroundedProgressForRequest } from './services/groundedPipeline';
 import { getHistoryItems, addHistoryItem, deleteHistoryItem, clearAllHistory, updateHistoryResult } from './services/historyStorage';
 import { ActivePage, GenerateStoryRequest, HistoryItem, StoryGenerationResult } from './types';
 
@@ -276,8 +277,15 @@ function StoryFrameMain() {
             <ResultsErrorView
               errorMessage={errorMessage}
               onBackToEdit={handleBackToEdit}
+              resumeProgress={getGroundedProgressForRequest(lastRequest)}
               onRetry={() => {
                 if (lastRequest) handleGenerateStory(lastRequest);
+              }}
+              onStartFresh={() => {
+                if (lastRequest) {
+                  clearGroundedProgressForRequest(lastRequest);
+                  handleGenerateStory(lastRequest);
+                }
               }}
               onOpenModelOptions={() => {
                 handleBackToEdit();

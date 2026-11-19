@@ -371,7 +371,8 @@ export async function repairFailingBeat(
   apiKey: string,
   modelQuality: 'standard' | 'high' = 'standard',
   provider: AiProvider = 'gemini',
-  groqModel?: string
+  groqModel?: string,
+  userSignal?: AbortSignal
 ): Promise<WrittenPromptBeat> {
   const prompt = `You are a prompt doctor. Fix this single AI image prompt which failed quality checks.
 
@@ -431,6 +432,7 @@ Return ONLY the corrected image prompt text as plain string with no markdown for
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
+          signal: userSignal,
         })
       );
 
@@ -445,7 +447,10 @@ Return ONLY the corrected image prompt text as plain string with no markdown for
         }
       }
     }
-  } catch {
+  } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      throw err;
+    }
     // If repair call fails, return original
   }
 
@@ -570,11 +575,16 @@ export async function stage4VerifyAndRepairScene(
   userSignal?: AbortSignal,
   onStatusMessage?: (msg: string) => void,
   provider: AiProvider = 'gemini',
-  groqModel?: string
+  groqModel?: string,
+  options?: { runLlmCritic?: boolean }
 ): Promise<WrittenPromptBeat[]> {
   const verifiedBeats: WrittenPromptBeat[] = [];
 
   for (let i = 0; i < beats.length; i++) {
+    if (userSignal?.aborted) {
+      throw new DOMException('Cancelled by user', 'AbortError');
+    }
+
     let currentBeat = beats[i];
     const initialCheck = verifyBeatCodeChecks(currentBeat, beats, bible, format);
 
@@ -584,12 +594,12 @@ export async function stage4VerifyAndRepairScene(
       }
 
       // Round 1 Repair
-      let repaired = await repairFailingBeat(currentBeat, initialCheck.issues, bible, apiKey, modelQuality, provider, groqModel);
+      let repaired = await repairFailingBeat(currentBeat, initialCheck.issues, bible, apiKey, modelQuality, provider, groqModel, userSignal);
       let secondCheck = verifyBeatCodeChecks(repaired, beats, bible, format);
 
       // Round 2 Repair if still failing
       if (!secondCheck.passed) {
-        repaired = await repairFailingBeat(repaired, secondCheck.issues, bible, apiKey, modelQuality, provider, groqModel);
+        repaired = await repairFailingBeat(repaired, secondCheck.issues, bible, apiKey, modelQuality, provider, groqModel, userSignal);
         secondCheck = verifyBeatCodeChecks(repaired, beats, bible, format);
       }
 
@@ -603,12 +613,14 @@ export async function stage4VerifyAndRepairScene(
     verifiedBeats.push(currentBeat);
   }
 
-  // Independent critic pass
-  const criticIssues = await runSceneCritic(sceneIndex, sceneNarration, verifiedBeats, bible, apiKey, modelQuality, provider, groqModel);
-  for (const b of verifiedBeats) {
-    const issues = criticIssues.get(b.beatIndex);
-    if (issues && issues.length > 0) {
-      b.flaggedIssue = b.flaggedIssue ? `${b.flaggedIssue}; Critic: ${issues.join(', ')}` : `Critic: ${issues.join(', ')}`;
+  // Independent LLM critic pass is opt-in to keep long-form execution fast on free-tier quotas
+  if (options?.runLlmCritic) {
+    const criticIssues = await runSceneCritic(sceneIndex, sceneNarration, verifiedBeats, bible, apiKey, modelQuality, provider, groqModel);
+    for (const b of verifiedBeats) {
+      const issues = criticIssues.get(b.beatIndex);
+      if (issues && issues.length > 0) {
+        b.flaggedIssue = b.flaggedIssue ? `${b.flaggedIssue}; Critic: ${issues.join(', ')}` : `Critic: ${issues.join(', ')}`;
+      }
     }
   }
 
