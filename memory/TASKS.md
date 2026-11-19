@@ -231,13 +231,19 @@
   - Added `synchronizeCharacterSheetWithFirstAppearances` (`beatProgressionEngine.ts`, wired into `geminiClient.ts`, `enhanceStoryArchitect.ts`, and `runTwoPhaseProgressionAndRepair`) to pull fixed facial/eyewear/wardrobe details established on a character's first appearance cleanly into their canonical lock without carrying over Scene 1 actions or leaking onto prop-only beats.
   - Raised character identity anchor limits from `18` (`16` in Thumbnail / `22` in Repair) to `40` words (`CHARACTER_ANCHOR_MAX_WORDS`) and required signature eyewear/garment matching (`spectacles`/`glasses`, `suit`, `sweater`, `tie`, etc.) before skipping locks, plus raised per-beat `Visual Style:` limit from `14` to `28`/`34` words (`STYLE_ANCHOR_MAX_WORDS`) and filtered full characterSheet wardrobe tokens in `lintStoryboard` L10 and `buildSharedContextIgnoreTokens`.
   - Removed `Help & Guide` and `API Keys` from the desktop/laptop `Header.tsx` navigation bar (both remain in `Footer.tsx`) and hid `#open-style-cast-btn` (`Style & Cast`) across all screen sizes in `ResultsView.tsx`.
+- [x] **Text-to-Video Completeness, Thumbnail Schema, Font Fix & Prompt Sanitizers (Suite 30):**
+  - Added `"thumbnail"` directly to the Text-to-Video JSON schemas (`geminiClient.ts` and `enhanceStoryArchitect.ts`) and fixed `inferStoryAdaptiveFont` (`promptCompiler.ts`) whole-word regex so `"future income stream"` routes to finance/diorama typography instead of cyberpunk neon.
+  - Implemented `findUncoveredTrailingScript` (`beatProgressionEngine.ts`), 2-pass multi-batch auto-continuation (`geminiClient.ts`, `enhanceStoryArchitect.ts`), and `#script-coverage-warning` (`ResultsView.tsx`) to prevent mid-script Video JSON truncation.
+  - Added `sanitizeMasterVideoPrompt` and `enrichStartFramePrompt` (`beatProgressionEngine.ts`) to eliminate post-`Duration:` style dumps, double `Lighting:` blocks, and `..` double periods, while scrubbing `"neutral facial features"` and stance boilerplate in `stripTransientExpressionsAndPoses`.
+  - Fixed `injectCompactCharacterLocks` prop-only close-up leakage (`bodyHasPersonOrSingularPronoun`), possessive character fallback formatting, duplicate `9:16 vertical` / `16:9 widescreen` tails, late Video framing directive syncing, and contradictory mid-sentence shot-size tags.
+  - Enforced currency fidelity (no unrequested `₱`), recurring cast inclusion, grounded physical VFX, and zero split-word text artifacts across Video prompts; verified with 203/203 passing tests in `src/tests/systemTestSuite.ts`.
 
 ## Active Testing & Planned Future Roadmap (Post-Testing)
 - [ ] **Genre Stress-Testing Loop (In Progress):**
-  - Completed: **Sci-Fi**, **Documentary / History**, **Horror / Psychological Thriller**, **Stylized Art**, **Multi-Character + Flashbacks**, and **130-Word Finance/Diorama Stress Test**.
+  - Completed: **Sci-Fi**, **Documentary / History**, **Horror / Psychological Thriller**, **Stylized Art**, **Multi-Character + Flashbacks**, **130-Word Finance/Diorama (Text-to-Image)**, and **Text-to-Video (4s Clip Mode)**.
   - Remaining stress categories:
     1. **No-Character / Object / Nature** (zero invented humans)
-    2. **Text-to-Video (4s/5s) & Long-Form 16:9**
+    2. **Long-Form 16:9**
 - [ ] **Post-Testing Feature & Product Recommendations (Saved for Later):**
   - **Silent / Visual-Only (No Narration) Mode:** Dedicated toggle so movement-only videos, silent FPS/GoPro POV, ASMR, ambient nature, action choreography, and product B-roll generate pure visual beats and camera motion without forcing text into `narratorLine`.
   - **Additional Format Support:** Multi-speaker screenplay dialogue and music/BPM-synced montages.

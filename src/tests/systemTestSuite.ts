@@ -43,6 +43,10 @@ import {
   buildSharedContextIgnoreTokens,
   computeVisualPromptSimilarity,
   synchronizeCharacterSheetWithFirstAppearances,
+  findUncoveredTrailingScript,
+  sanitizeMasterVideoPrompt,
+  enrichStartFramePrompt,
+  synchronizeBeatMetadataWithPrompt,
 } from '../services/beatProgressionEngine';
 import { sanitizeGroqErrorMessage, extractCleanJson, GROQ_API_BASE_URL, sanitizePromptText, tryRepairTruncatedJson } from '../services/groqClient';
 import { robustJsonParse } from '../services/unifiedAiService';
@@ -2969,6 +2973,155 @@ function runTestSuite29() {
   );
 }
 
+// ============================================================================
+// 30. TEXT-TO-VIDEO SCRIPT COMPLETENESS, FONT, EXPRESSION STRIP & SANITIZERS
+// ============================================================================
+function runTestSuite30() {
+  console.log('\n--- Running Test Suite 30: Text-to-Video Pipeline Completeness & Hygiene ---');
+
+  // 30.1 Detect truncated Video Mode output leaving remaining script words uncovered
+  const fullMortgageScript =
+    'If you pay off your mortgage ten years early, your lender might hit you with a massive prepayment penalty fee costing thousands of dollars. To prevent this loss, lenders often hide a prepayment penalty clause deep in your loan contract that triggers the exact moment you clear your debt before the term ends.';
+  const truncatedScenes = [
+    { index: 1, narratorLine: 'If you pay off your mortgage ten years early, your lender might hit you with a massive prepayment penalty fee costing thousands of dollars.' },
+    { index: 2, narratorLine: 'To prevent this loss, lenders often hide a prepayment penalty clause deep in your loan contract that triggers the' },
+  ];
+  const coverage = findUncoveredTrailingScript(fullMortgageScript, truncatedScenes);
+  assert(
+    coverage.missingWords === 10 &&
+      coverage.uncoveredText.startsWith('exact moment you clear your debt'),
+    'Suite 30: Text-to-Video Pipeline Completeness & Hygiene',
+    '30.1 Detects Uncovered Trailing Script Words When Long Video JSON Truncates Mid-Sentence',
+    `coverage=${JSON.stringify(coverage)}`
+  );
+
+  // 30.2 Finance / Mortgage clay diorama mentioning "future income stream" must NOT trigger futuristic neon font
+  const mortgageFont = inferStoryAdaptiveFont(
+    'handcrafted miniature world built from soft-matte clay, weathered oak, and heavy ivory cardstock',
+    "you suddenly cut off the bank's future income stream due to a prepayment penalty clause"
+  );
+  assert(
+    !mortgageFont.includes('futuristic') && !mortgageFont.includes('neon'),
+    'Suite 30: Text-to-Video Pipeline Completeness & Hygiene',
+    '30.2 Prevents "future income stream" From Triggering Cyberpunk Neon Thumbnail Font',
+    `font=${mortgageFont}`
+  );
+
+  // 30.3 Neutral facial features & natural stance phrases stripped from permanent identity & thumbnail/CTA
+  const noisyCharDesc =
+    'Adult, medium build, short textured dark hair, neutral facial features, wearing a plain gray sweater, blue jeans, and white sneakers. Stance is natural, feet planted firmly on the miniature floor.';
+  const cleanedIdentity = stripTransientExpressionsAndPoses(noisyCharDesc);
+  assert(
+    !cleanedIdentity.toLowerCase().includes('neutral facial features') &&
+      !cleanedIdentity.toLowerCase().includes('stance is natural') &&
+      cleanedIdentity.includes('plain gray sweater') &&
+      cleanedIdentity.includes('white sneakers'),
+    'Suite 30: Text-to-Video Pipeline Completeness & Hygiene',
+    '30.3 Strips "neutral facial features" and "Stance is natural" From Permanent Identity Sheet',
+    `cleaned=${cleanedIdentity}`
+  );
+
+  // 30.4 Prop-only brass lock close-up avoids photobombing AND possessive "Homeowner's" avoids bare fragment
+  const singleCast = {
+    Homeowner: cleanedIdentity,
+  };
+  const propCloseUp = injectCompactCharacterLocks(
+    'Vertical 9:16 portrait composition, Close-up of a brass lock snapping shut on a ledger, low-angle, static frame, warm rim light. Visual Style: handcrafted miniature world. --ar 9:16',
+    'to lock in their long-term profit',
+    'When you sign a home loan, the bank calculates decades of guaranteed interest payments to lock in their long-term profit margins.',
+    singleCast
+  );
+  const possessiveBeat = injectCompactCharacterLocks(
+    "Vertical 9:16 portrait composition, Close-up of Homeowner's hand holding a tiny pen, signing the home loan contract. Visual Style: handcrafted miniature world. --ar 9:16",
+    'When you sign a home loan,',
+    'When you sign a home loan, the bank calculates profit.',
+    singleCast
+  );
+  assert(
+    !propCloseUp.includes('Homeowner') &&
+      possessiveBeat.includes('Featuring Homeowner ('),
+    'Suite 30: Text-to-Video Pipeline Completeness & Hygiene',
+    '30.4 Keeps Prop-Only Close-Ups Character-Free and Fixes Possessive Dangling Character Lock',
+    `prop=${propCloseUp} | poss=${possessiveBeat}`
+  );
+
+  // 30.5 Video Beat eliminates duplicate 9:16 vertical, reconciles contradictory shot sizes, and syncs metadata
+  const clayStyle: StyleProfile = {
+    artStyle:
+      'handcrafted miniature world built from soft-matte clay, weathered oak, and heavy ivory cardstock, lit with warm studio key lights and deep directional shadows',
+    colorPalette: 'warm earth tones with muted clay reds and oak browns',
+    lighting: 'warm tungsten key light at 3200K with soft fill at 5600K',
+    eraAndSetting: 'contemporary miniature home office and bank interior',
+  };
+  const formattedVideoBeat = formatFinalBeatPrompt(
+    {
+      beatIndex: 1,
+      textSpan: 'If you pay off your mortgage ten years early,',
+      shotType: 'Close-Up',
+      cameraAngle: 'eye-level',
+      cameraMovement: 'Slow forward push-in',
+      imagePrompt:
+        'Vertical 9:16 portrait composition, Close-up of Homeowner hands pulling a tiny mortgage contract, extreme-close-up, eye-level, slow forward push-in, 50mm f/2.0, warm 3200K key light, ambient rustle, 9:16 vertical. Visual Style: handcrafted miniature world. --ar 9:16',
+      estimatedSeconds: 2.0,
+    },
+    false,
+    true,
+    { styleProfile: clayStyle, characterSheet: singleCast }
+  );
+  const lateShotSync = synchronizeBeatMetadataWithPrompt({
+    beatIndex: 2,
+    textSpan: 'your lender',
+    shotType: 'Medium Shot',
+    cameraAngle: 'eye-level',
+    cameraMovement: 'Static Frame',
+    imagePrompt:
+      'Vertical 9:16 portrait composition, Miniature looming figure representing the lender towering over Homeowner, wide shot low-angle, static frame, 50mm f/2.0. --ar 9:16',
+    estimatedSeconds: 2.0,
+  });
+  assert(
+    !formattedVideoBeat.imagePrompt.includes('9:16 vertical.') &&
+      !formattedVideoBeat.imagePrompt.includes('extreme-close-up') &&
+      lateShotSync.shotType === 'Wide Establishing Shot' &&
+      lateShotSync.cameraAngle === 'low-angle',
+    'Suite 30: Text-to-Video Pipeline Completeness & Hygiene',
+    '30.5 Removes Duplicate Orientation & Conflicting Inline Shot Tags and Syncs Late Shot Framing Metadata',
+    `formatted=${formattedVideoBeat.imagePrompt} | lateSync=${lateShotSync.shotType}/${lateShotSync.cameraAngle}`
+  );
+
+  // 30.6 Master videoPrompt & startFramePrompt sanitization: no "..", no post-Duration dumps, locked attire in Start Frame
+  const cleanVP = sanitizeMasterVideoPrompt(
+    'Subject: Homeowner standing in Home Office holding a folder. Action: pulls contract toward himself. Camera: close-up, eye-level, push-in. Lighting: warm 3200K key light. Style: handcrafted miniature world, 35mm grain. Audio: paper rustle. Duration: 4 seconds.',
+    {
+      targetVideoDuration: 4,
+      calculatedSceneSeconds: 4,
+      styleProfile: clayStyle,
+      characterSheet: singleCast,
+      narratorLine: 'If you pay off your mortgage ten years early.',
+      defaultAspectRatio: '9:16 vertical',
+    }
+  );
+  const enrichedSFP = enrichStartFramePrompt(
+    'Medium high-angle view of Homeowner in Home Office, holding a contract, warm lighting, 50mm f/2.0 lens.',
+    {
+      styleProfile: clayStyle,
+      characterSheet: singleCast,
+      narratorLine: 'Holding the contract.',
+      defaultAspectRatio: '9:16 vertical',
+    }
+  );
+  assert(
+    !cleanVP.includes('..') &&
+      cleanVP.endsWith('Duration: 4 seconds.') &&
+      (cleanVP.match(/\bLighting:/gi) || []).length === 1 &&
+      enrichedSFP.includes('plain gray sweater') &&
+      enrichedSFP.includes('3200K') &&
+      enrichedSFP.includes('9:16 vertical'),
+    'Suite 30: Text-to-Video Pipeline Completeness & Hygiene',
+    '30.6 Sanitizes Master videoPrompt Without Post-Duration Dump/Double-Periods & Enriches Sparse Start Frame',
+    `vp=${cleanVP} | sfp=${enrichedSFP}`
+  );
+}
+
 runTestSuite21().then(() => {
   runTestSuite23();
   runTestSuite24();
@@ -2977,6 +3130,7 @@ runTestSuite21().then(() => {
   runTestSuite27();
   runTestSuite28();
   runTestSuite29();
+  runTestSuite30();
   console.log('\n====================================================================');
   console.log('                  FULL-SYSTEM VERIFICATION REPORT                  ');
   console.log('====================================================================');

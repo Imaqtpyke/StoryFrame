@@ -32,6 +32,7 @@ import {
   Clapperboard,
   Image as ImageIcon,
   Zap,
+  AlertTriangle,
 } from 'lucide-react';
 
 import {
@@ -703,6 +704,23 @@ export default function ResultsView({
           <span>CTA Outro</span>
         </button>
       </div>
+
+      {(result.assumptions || []).some((a) => a.startsWith('Script coverage notice:')) && (
+        <div
+          id="script-coverage-warning"
+          role="alert"
+          className="flex items-start gap-2.5 px-4 py-3 bg-amber-950/40 border border-amber-500/40 rounded-[3px] text-xs text-amber-200"
+        >
+          <AlertTriangle size={15} className="text-amber-400 shrink-0 mt-0.5" />
+          <div className="space-y-0.5">
+            {(result.assumptions || [])
+              .filter((a) => a.startsWith('Script coverage notice:'))
+              .map((msg, idx) => (
+                <p key={idx}>{msg}</p>
+              ))}
+          </div>
+        </div>
+      )}
 
       {/* Main 2-Column Workspace on Desktop: Left Scenes (7/12) + Right Sticky Beat Inspector (5/12) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">

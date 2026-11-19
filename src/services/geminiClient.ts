@@ -11,13 +11,16 @@ import {
 import {
   buildCompactCharacterAnchor,
   deduplicateAndProgressSceneBeats,
+  enrichStartFramePrompt,
   expandEntityKeysInPrompt,
+  findUncoveredTrailingScript,
   isInfancyOrChildhoodFlashback,
   isMonochromeStyle,
   normalizeContinuitySheetKeys,
   normalizeUnicodeAndDashes,
   runTwoPhaseProgressionAndRepair,
   sanitizeFakePrecisionMath,
+  sanitizeMasterVideoPrompt,
   sanitizeMonochromeLighting,
   sanitizeStillImageMotionAndOptics,
   stripLeadingOrientationPrefixes,
@@ -368,9 +371,9 @@ STRICT VERBATIM SCRIPT LOCK (ZERO EXPANSION / ZERO REWRITING):
 CLAUSE & MICRO-ACTION BEAT SEGMENTATION RULES (CRITICAL):
 1. Grammar is NOT equal to Scene: Never force an entire long sentence with multiple actions into a single 4-second clip.
 2. Commas, Clauses & Item Lists MUST Form Distinct Beats:
-   - When a sentence contains commas separating distinct actions, items, transactions, or emotional pivots (e.g. "spending ₱150 on lunch, ₱100 on coffee, ₱80 on transportation, and a few other small purchases"), EACH distinct item or clause MUST be its own distinct visual beat!
-   - For example: Beat 1: "after spending ₱150 on lunch", Beat 2: "₱100 on coffee", Beat 3: "₱80 on transportation", Beat 4: "and a few other small purchases". DO NOT lump them together!
-   - Contrasting conjunctions and pivots ("when you first receive it", "but somehow disappears", "thinking you can buy food", "save some", "and maybe even treat yourself", "your money suddenly starts looking dangerously low", "The strange part is", "none of those expenses felt expensive", "when you paid for them", "That's because your brain notices", "big purchases more easily than small ones", "even though several small purchases", "can quietly drain your wallet", "So next time you have ₱1,000", "don't just ask what you can buy with it", "ask what you want that ₱1,000 to become") MUST trigger separate visual beats!
+   - When a sentence contains commas separating distinct actions, items, transactions, or emotional pivots (e.g. "spending $15 on lunch, $6 on coffee, $4 on bus fare, and a few other small purchases"), EACH distinct item or clause MUST be its own distinct visual beat!
+   - NEVER substitute or invent a different currency symbol: if the script says "dollars" or "$", strictly show "$" (NEVER output "₱" or foreign symbols unless the input script itself uses them).
+   - Contrasting conjunctions and pivots MUST trigger separate visual beats! Never visualize isolated half-sentence fragments (e.g. the split word "Margins.") as literal bold text printed on a contract page.
 3. Dynamic Scene Grouping for ${targetVideoDuration}-Second Clips:
    - Each Scene represents ONE continuous video clip of strictly ${targetVideoDuration} seconds.
    - Spoken Word Budget (~2.2 words/second): keep each scene's "narratorLine" concise (~${Math.max(6, Math.round(targetVideoDuration * 2.3))} words max, roughly <= 10-12 words for a 4-5s clip) so voiceover completes naturally within ${targetVideoDuration}s.
@@ -379,27 +382,25 @@ CLAUSE & MICRO-ACTION BEAT SEGMENTATION RULES (CRITICAL):
 4. MANDATORY CINEMATOGRAPHY & SHOT DIVERSITY (STRICT BAN ON REPETITIVE MEDIUM SHOTS):
    - You are STRICTLY FORBIDDEN from using "medium shot, eye-level" across consecutive beats!
    - You MUST vary the camera framing dynamically between beats:
-     * Macro / Extreme Close-Up: On banknotes (textures, security thread, serials), tapping coins, coffee cup, phone screen payment confirmation.
-     * Point-of-View (POV) & Over-the-Shoulder: Looking down into an empty leather wallet, looking at cashier counter, glancing at street menu.
-     * High-Angle / Low-Angle Hero: Low angle when confident holding fresh money; high-angle looking down when feeling depleted.
-     * Wide Establishing: When showcasing setting, outdoor food stall, street with jeepney, or contrasting visual scale (giant fridge vs small coins).
+     * Macro / Extreme Close-Up: On banknotes, tapping coins, coffee cup, contract clause.
+     * Point-of-View (POV) & Over-the-Shoulder: Looking down into an empty leather wallet, across a counter, or over a shoulder.
+     * High-Angle / Low-Angle Hero: Low angle when confident; high-angle looking down when depleted.
+     * Wide Establishing: When showcasing setting or contrasting visual scale.
      * Close-Up / Reaction: Facial expression shifts (hopeful eyes, subtle brow furrow, realization).
 
 5. LITERAL VISUAL KINEMATICS & TRANSFORMATION RULE (CRITICAL - SHOW, DO NOT JUST TELL):
    - When the narration verbs describe physical or metaphorical actions, loss, or transformations (e.g. "disappears", "vanishes", "dissolves", "melts", "drains away", "bursts", "transforms into"), the AI visual prompt MUST LITERALLY SHOW THAT ACTION HAPPENING TO THE OBJECT!
-   - NEVER be lazy! For example:
-     * If the narration says "₱1,000 disappears after a few purchases", DO NOT leave the character still holding a crumpled banknote! The prompt MUST explicitly describe: "The crisp ₱1,000 banknote in his hand dissolves into thin air / vanishes into fine particles, leaving his fingers clutching completely empty space as his eyes widen in disbelief."
-     * If an object melts, dissolves, or breaks, show the exact physical progression of it turning into liquid, breaking into fragments, or vanishing from the frame.
-     * In subsequent scenes, respect that state: an empty hand is empty, an empty wallet is hollow and void.
+   - Respect physical story stakes and grounded materials: a clay or paper diorama uses physical tearing, sliding, stamping, or removing papers rather than magical glowing lasers or levitating papers (unless the story itself is fantasy/sci-fi).
+   - In subsequent scenes, respect physical state: an empty hand stays empty, an empty wallet stays hollow.
 
 6. Clean, Focused Prompts (NO REDUNDANT BOILERPLATE REPETITIONS):
    - In each beat's "imagePrompt", describe the precise visual moment, camera framing, subject pose, and action directly.
-   - DO NOT copy-paste the entire character sheet paragraph three times inside the same prompt.
+   - DO NOT copy-paste the entire character sheet paragraph three times inside the same prompt, and DO NOT append inline "9:16 vertical" or duplicate "Visual Style:" tags.
 
 7. No Empty Text Spans:
    - Every single beat's "textSpan" MUST contain the exact spoken phrase/words from that moment in the story. Empty strings ("") or phantom beats are strictly forbidden.
 
-   - PARALLEL ACTION-TRIPLET & SEMANTIC MONTAGE (VIDEO BEATS): If narration combines a semantic-anchor origin flashback AND an action triplet (e.g., "It's an entity that has studied you since birth, perfectly mimicking every blink, every breath, every move." = 17 words / ~7.4s), DO NOT cram 5-6 cuts into one ${targetVideoDuration}s clip: spill across TWO sequential ${targetVideoDuration}-second scenes (e.g., Clip A ${targetVideoDuration}s: Entity reveal -> Stalker watching unaware protagonist -> Infant in wooden crib flashback; Clip B ${targetVideoDuration}s: Every blink -> Every breath -> Every move) with 2-3 cohesive sub-beats per clip summing to ${targetVideoDuration}.0s, distinct shot scale, and locked wardrobe consistency (infant wears crib blankets only, zero adult wardrobe). Also split repeated negations and lag/smile climax turns cleanly without spoiling later twists early.
+   - PARALLEL ACTION-TRIPLET & SEMANTIC MONTAGE (VIDEO BEATS): If narration combines a semantic-anchor origin flashback AND an action triplet (e.g., "It's an entity that has studied you since birth, perfectly mimicking every blink, every breath, every move." = 17 words / ~7.4s), DO NOT cram 5-6 cuts into one ${targetVideoDuration}s clip: spill across TWO sequential ${targetVideoDuration}-second scenes with 2-3 cohesive sub-beats per clip summing to ${targetVideoDuration}.0s, distinct shot scale, and locked wardrobe consistency (infant wears crib blankets only, zero adult wardrobe). Also split repeated negations and lag/smile climax turns cleanly without spoiling later twists early.
 
 SCHEMA AND STRUCTURE REQUIREMENTS:
 1. Style Profile:
@@ -412,13 +413,13 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
 
 2. Continuity Sheets & Locked Wardrobe Token (MANDATORY RESOLUTION):
    Generate the full breakdown in one model call that has the entire story in view.
-   - "characterSheet": Create a top-level object mapping EVERY recurring character AND recurring non-human entity/monster/mimic to ONE fixed, highly detailed visual description resolving face, silhouette, hair, skin, and locked outfit/footwear WITHOUT any transient facial expressions (never write "eyes wide", "smiling", "horrified", or "neutral expression") and WITHOUT temporary poses. Respect exact footwear across all scenes (e.g. if barefoot in bedtime/indoor wear, keep barefoot consistently). Keep infant/childhood flashback beats free of adult clothing!
+   - "characterSheet": Create a top-level object mapping EVERY recurring human character, secondary role/antagonist (e.g. both "Homeowner" AND "Bank Lender" / "Bank Clerk" if a lender or bank appears), AND recurring non-human entity/creature to ONE fixed, highly detailed visual description resolving face, hair, skin, eyewear (e.g. glasses/spectacles), and locked outfit/footwear WITHOUT any transient facial expressions (never write "neutral facial features", "eyes wide", "smiling", "horrified", or "neutral expression") and WITHOUT temporary poses or stance sentences ("Stance is natural..."). Keep infant/childhood flashback beats free of adult clothing!
    - "locationSheet": Create a top-level object mapping any specific place returned to more than once to ONE fixed, highly detailed visual description. Use readable human keys ("Dim Bedroom") rather than smashed code variables, and always describe locations in natural prose inside prompts.
 
 3. Character and Setting Continuity (STRICT BAN ON "MATCHING ESTABLISHED LOOK"):
    - DOWNSTREAM DIFFUSION MODELS (KLING, RUNWAY, SORA, FLUX, MIDJOURNEY) HAVE ZERO MEMORY BETWEEN CLIPS!
    - You are STRICTLY FORBIDDEN from writing shortcut phrases like "(matching established look from Scene 1)" or "(matching established look)"! That causes models to hallucinate random new clothes.
-   - In EVERY scene's "videoPrompt", "startFramePrompt", and every beat's "imagePrompt" where the character appears, you MUST EXPLICITLY state their locked visual identity and exact clothing (e.g., "Kael, Filipino male in his 20s, wearing plain crewneck white t-shirt and blue slippers"). NEVER allow the outfit to change without story reason!
+   - In EVERY scene's "videoPrompt", "startFramePrompt", and every beat's "imagePrompt" where the character appears, you MUST EXPLICITLY state their locked visual identity, eyewear, and exact clothing. NEVER allow the outfit to change without story reason!
 
 4. Mandatory Master Scene "videoPrompt" Structure:
    For EACH scene, construct "videoPrompt" adhering strictly to these components:
@@ -447,8 +448,9 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - STRICT SHOT TYPE & PROSE ALIGNMENT (TIGHT SHOTS): When a beat's shotType is close-up, macro, extreme-close-up, or detail shot, its prompt prose MUST actually describe that tight framing and specific focal detail.
 
 6. Grounded Story Constraint & Anti-Hallucination Engine:
-   - ZERO UNSTATED INVENTIONS: Strictly forbid hallucinating phantom characters, arbitrary weapons, fictional sci-fi devices, or unprompted plot twists not in the user's premise.
-   - CONCRETE NOUNS ONLY: Every noun must be a tangible, real-world object. Never write vague disjunctive placeholders ("holding something like a bag or a book"). Every item must be locked and explicit.
+   - ZERO UNSTATED INVENTIONS: Strictly forbid hallucinating phantom characters, arbitrary weapons, fictional sci-fi glowing lines, magic glowing paper, dissolving light particles, or unprompted plot twists in grounded/physical/clay/diorama stories unless the script explicitly describes fantasy/sci-fi.
+   - CURRENCY FIDELITY: Match the currency spoken in the user script verbatim (e.g., "$" for dollars; NEVER emit "₱" unless "₱" appears in the user's input script).
+   - CONCRETE NOUNS ONLY: Every noun must be a tangible, real-world object. Never write vague disjunctive placeholders ("holding something like a bag or a book").
    - NARRATIVE FAITHFULNESS: Do NOT invent fictitious specific story facts, character names, senders, or plot details not present in the narration or already locked in continuity sheets.
 
 8. VISUAL INFORMATION BUDGET & REVEAL DISCIPLINE (STRICT NO-LEAKAGE RULE):
@@ -459,7 +461,7 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - NEVER leak a future beat's location, destination, or outcome into an earlier beat!
 
 9. CASTING & STYLE DECOUPLING:
-   - When a scene or beat has NO characters (e.g. empty harbor, still life of an object), NEVER write character or mascot requirements into the prompt (e.g. do not write "with exaggerated stretchy animal characters" if the scene has no characters).
+   - When a scene or beat has NO characters (e.g. empty harbor, still life of an object, pure close-up on a brass lock or contract page), NEVER write characters or humans into the prompt.
 
 10. GEOGRAPHIC DEMONYM & CARTOGRAPHIC ANCHOR RULE (DOCUMENTARY / REAL-WORLD CALLOUTS ONLY):
     - Whenever a real-world country, nationality/demonym (e.g. "Swedish", "British", "French", "German", "Japanese", "American", "in France", "in Sweden") appears as a geographic callout in documentary/historical narration, that entity forms its own standalone micro-beat (e.g. Beat 1: "In 1896", Beat 2: "Swedish", Beat 3: "scientist Svante Arrhenius").
@@ -492,13 +494,14 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
     - "cameraAngle": explicit camera angle
     - "cameraMovement": cinematic camera motion cue
     - "temporalAnchor": optional string for explicit year, date, or elapsed duration
-    - "imagePrompt": complete, standalone text to video prompt capturing this specific beat's action (45 to 80 words). MUST include: [Subject with locked outfit] performing [precise kinematic action with biomechanical gestures], Camera: [Shot, Angle, Movement], Optics: [Focal length and f-stop], Lighting: [Kelvin temp and contrast], Audio: [Ambient sound/foley, no dialogue], ${defaultAspectRatio}. DO NOT duplicate boilerplate text.
+    - "imagePrompt": concise, standalone video beat prompt (35 to 65 words). MUST open directly with ONE shot size matching "shotType" and ONE camera angle matching "cameraAngle" (never mix "Close-up" and "extreme-close-up" in the same prompt), include [Subject with locked outfit] performing [concrete action], Optics, Lighting, Audio: [Ambient sound/foley, no dialogue]. DO NOT include inline aspect ratios ("9:16 vertical") or duplicate "Visual Style:" tags.
 
 STRICT CONSTRAINTS:
 1. DO NOT use em dashes anywhere. Use commas, periods, or parentheses instead.
 2. Platform and Framing: Target platform is "${platform || (isLongForm ? 'YouTube' : 'TikTok')}". Format is ${isLongForm ? '16:9 widescreen' : '9:16 vertical'}.
 3. NO REAL OR IDENTIFIABLE PERSON NAMES IN VISUAL PROMPTS.
-4. You MUST respond with ONLY a valid JSON object matching this schema:
+4. CRITICAL COMPLETENESS: Include EVERY SINGLE WORD of the user's input script from first word to last word across "scenes[]". NEVER stop early.
+5. You MUST respond with ONLY a valid JSON object matching this schema:
 {
   "styleProfile": {
     "artStyle": "...",
@@ -513,13 +516,22 @@ STRICT CONSTRAINTS:
   "locationSheet": {
     "NASA Instrumentation Office": "Detailed visual description of the specific recurring location (use spaced readable names)..."
   },
+  "thumbnail": {
+    "heroMoment": "one line describing peak conflict/turning point of THIS story",
+    "expression": "intense, emotionally charged facial expression",
+    "bgDescription": "dark, simplified high-contrast background with deep separation matching THIS story",
+    "accentColor": "dramatic rim lighting color matching Story Palette",
+    "hookText": "bold 2 to 4 word curiosity headline in ALL CAPS specific to THIS story",
+    "fontStyle": "story-adapted typography style fitting the medium and genre",
+    "alternateHooks": ["ALT HOOK 1", "ALT HOOK 2"]
+  },
   "totalDurationSeconds": number,
   "scenes": [
     {
       "index": number,
       "narratorLine": string,
       "estimatedSeconds": number,
-      "videoPrompt": "Subject: ... Action: ... Camera: [Shot Type], [Camera Angle], [Camera Movement]. Lighting & Environment: ... Style: ... Physics: ... Audio: no dialogue, ambient sound only. Duration: ...",
+      "videoPrompt": "Subject: ... Action: ... Camera: [Shot Type], [Camera Angle], [Camera Movement]. Optics: ... Lighting: ... Style: ... Physics: ... Audio: no dialogue, ambient sound only. Duration: ${targetVideoDuration} seconds.",
       "startFramePrompt": "Text to image prompt for initial keyframe...",
       "establishedCharacters": ["Name"],
       "establishedSettings": ["Setting"],
@@ -528,7 +540,7 @@ STRICT CONSTRAINTS:
           "beatIndex": number,
           "textSpan": string,
           "estimatedSeconds": number,
-          "shotType": "extreme-wide | wide | medium | close-up | extreme-close-up | whip-pan",
+          "shotType": "Extreme Wide Shot | Wide Establishing Shot | Medium Shot | Medium Close-Up | Close-Up | Extreme Close-Up | Over-the-Shoulder (OTS) | Point-of-View (POV) | Whip-Pan",
           "cameraAngle": "eye-level | high-angle | low-angle | birds-eye | worms-eye | dutch-tilt",
           "cameraMovement": "Slow forward push-in | Static Frame | Tracking Subject | Smooth Pan | Whip-Pan",
           "temporalAnchor": "string (optional: e.g. 1945, December 24, 1971, for 29 years)",
@@ -753,6 +765,103 @@ ${durationInstruction}${customBeatsPrompt}`;
     topP: 0.85,
   });
 
+  // Auto-continuation safeguard: if a long script truncated mid-JSON (especially in multi-scene Text to Video),
+  // seamlessly generate the remaining uncovered script scenes reusing locked styleProfile & characterSheet.
+  const canContinue =
+    !isCustomBeats &&
+    !userSignal?.aborted &&
+    typeof apiKey === 'string' &&
+    apiKey.trim().length > 10 &&
+    !/^(?:mock|test|dummy|fake)/i.test(apiKey.trim());
+
+  let scriptCoverage = findUncoveredTrailingScript(story, Array.isArray(parsedData.scenes) ? parsedData.scenes : []);
+  let continuationAttempt = 0;
+
+  while (
+    canContinue &&
+    scriptCoverage.missingWords >= 3 &&
+    scriptCoverage.coverageRatio < 0.96 &&
+    continuationAttempt < 2
+  ) {
+    continuationAttempt++;
+    if (onStatusMessage) {
+      onStatusMessage(
+        `Completing remaining script scenes (${scriptCoverage.coveredWords}/${scriptCoverage.totalWords} words covered)...`
+      );
+    }
+
+    try {
+      const existingScenes = Array.isArray(parsedData.scenes) ? parsedData.scenes : [];
+      const nextSceneIndex = existingScenes.length + 1;
+      const lockedCastJson = JSON.stringify(parsedData.characterSheet || {});
+      const lockedLocJson = JSON.stringify(parsedData.locationSheet || {});
+      const lockedStyleJson = JSON.stringify(parsedData.styleProfile || {});
+      const needThumb = !parsedData.thumbnail || !parsedData.thumbnail.hookText;
+
+      const contUserPrompt = `CONTINUATION BATCH (DO NOT REPEAT ALREADY COVERED SCENES 1-${existingScenes.length}):
+Already covered ending snippet: "...${existingScenes[existingScenes.length - 1]?.narratorLine || ''}"
+
+LOCKED PRODUCTION BIBLE (MUST MAINTAIN 100% IDENTICAL VISUAL STYLE, CHARACTERS & LOCATIONS):
+Style Profile: ${lockedStyleJson}
+Character Sheet: ${lockedCastJson}
+Location Sheet: ${lockedLocJson}
+
+REMAINING UNCOVERED SCRIPT TO COMPLETE VERBATIM (starting cleanly at Scene ${nextSceneIndex}, covering EVERY remaining word to the very end):
+${scriptCoverage.uncoveredText}
+
+Character Style Instruction: ${characterStyle || 'Consistent style specified by scene context.'}
+Format: ${isLongForm ? 'Long form (16:9)' : 'Short form (9:16)'}
+Platform: ${platform}
+${durationInstruction}
+
+Return ONLY valid JSON containing:
+- "characterSheet": {} (include any newly appearing recurring figures not yet listed above)
+- "locationSheet": {} (include any newly appearing recurring places)
+${needThumb ? '- "thumbnail": { "heroMoment": "...", "expression": "...", "bgDescription": "...", "accentColor": "...", "hookText": "...", "fontStyle": "...", "alternateHooks": ["..."] },\n' : ''}- "scenes": [ ...starting at index ${nextSceneIndex}... ]`;
+
+      const contData = await executeJsonLlmCall<any>({
+        provider: req.aiProvider || 'gemini',
+        apiKey,
+        systemPrompt,
+        userPrompt: contUserPrompt,
+        modelQuality,
+        groqModel: req.groqModel,
+        userSignal,
+        onStatusMessage,
+        temperature: 0.25,
+        topP: 0.85,
+      });
+
+      const contScenes = Array.isArray(contData?.scenes) ? contData.scenes : [];
+      if (contScenes.length === 0) break;
+
+      if (!parsedData.scenes) parsedData.scenes = [];
+      for (const cs of contScenes) {
+        parsedData.scenes.push({
+          ...cs,
+          index: parsedData.scenes.length + 1,
+        });
+      }
+      if (contData.characterSheet && typeof contData.characterSheet === 'object') {
+        parsedData.characterSheet = { ...(parsedData.characterSheet || {}), ...contData.characterSheet };
+      }
+      if (contData.locationSheet && typeof contData.locationSheet === 'object') {
+        parsedData.locationSheet = { ...(parsedData.locationSheet || {}), ...contData.locationSheet };
+      }
+      if (needThumb && contData.thumbnail && typeof contData.thumbnail === 'object') {
+        parsedData.thumbnail = contData.thumbnail;
+      }
+
+      const nextCoverage = findUncoveredTrailingScript(story, parsedData.scenes);
+      if (nextCoverage.coveredWords <= scriptCoverage.coveredWords) {
+        break;
+      }
+      scriptCoverage = nextCoverage;
+    } catch {
+      break;
+    }
+  }
+
   // Sanitize styleProfile (and enforce monochrome lighting purity when style is B&W / monochrome)
   const rawStyleProfile = parsedData.styleProfile || {};
   const preliminaryStyleProfile: StyleProfile = {
@@ -771,8 +880,6 @@ ${durationInstruction}${customBeatsPrompt}`;
           'Stark high-contrast chiaroscuro lighting with deep pitch-black shadows and crisp white highlights',
       }
     : preliminaryStyleProfile;
-
-  const styleProfileWording = `Visual Style: ${sanitizedStyleProfile.artStyle}. Palette: ${sanitizedStyleProfile.colorPalette}. Lighting: ${sanitizedStyleProfile.lighting}. Setting: ${sanitizedStyleProfile.eraAndSetting}.`;
 
   const sanitizedCharacterSheet: Record<string, string> = {};
   if (parsedData.characterSheet && typeof parsedData.characterSheet === 'object') {
@@ -1048,46 +1155,29 @@ ${durationInstruction}${customBeatsPrompt}`;
     if (isVideoMode) {
       const rawVP = scene.videoPrompt ? removeEmDashes(scene.videoPrompt) : '';
       if (rawVP.trim().length > 0) {
-        let vp = rawVP.trim();
-        // Scrub shortcut references in video prompt
-        for (const [charName, visualDesc] of Object.entries(sanitizedCharacterSheet)) {
-          const shortcutRegex = new RegExp(`\\(${charName}\\s*\\(matching established look[^)]*\\)\\)`, 'gi');
-          vp = vp.replace(shortcutRegex, `${charName} (${visualDesc})`);
-          const shortcutRegex2 = new RegExp(`\\b${charName}\\s*\\(matching established look[^)]*\\)`, 'gi');
-          vp = vp.replace(shortcutRegex2, `${charName} (${visualDesc})`);
-        }
-        if (charactersInScene.length > 0) {
-          const charClauses = charactersInScene.map((c) => `${c}: ${sanitizedCharacterSheet[c]}`).join('. ');
-          if (!vp.toLowerCase().includes(charClauses.toLowerCase().substring(0, 20))) {
-            vp += ` Character Continuity (${charClauses}).`;
-          }
-        }
-        if (sceneIndex > 1 && settingFirstScene.has(sanitizedStyleProfile.eraAndSetting)) {
-          vp += ` Location Continuity (${sanitizedStyleProfile.eraAndSetting}).`;
-        }
-        if (!vp.includes(sanitizedStyleProfile.artStyle)) {
-          vp += ` ${styleProfileWording}`;
-        }
-        vp = cleanAndDeduplicatePrompt(vp, true);
-        videoPrompt = updateVideoPromptDuration(vp, targetVideoDuration, calculatedSceneSeconds);
+        videoPrompt = sanitizeMasterVideoPrompt(rawVP, {
+          targetVideoDuration,
+          calculatedSceneSeconds,
+          styleProfile: sanitizedStyleProfile,
+          characterSheet: sanitizedCharacterSheet,
+          narratorLine,
+          defaultAspectRatio,
+        });
       } else {
         const charDesc = charactersInScene.length > 0
           ? charactersInScene.map((c) => `${c}: ${sanitizedCharacterSheet[c]}`).join(', ')
           : 'Scene subject';
-        videoPrompt = `Subject: ${charDesc}. Action: ${narratorLine}. Camera: Medium shot, eye-level, slow forward push-in. Lighting & Environment: ${sanitizedStyleProfile.lighting}, ${sanitizedStyleProfile.eraAndSetting}. Style: ${sanitizedStyleProfile.artStyle}, ${sanitizedStyleProfile.lensAndFilmStock}. Physics: Natural kinetic motion. Audio: no dialogue, ambient sound only. Duration: ${targetVideoDuration} seconds. ${defaultAspectRatio}.`;
+        videoPrompt = `Subject: ${charDesc}. Action: ${narratorLine}. Camera: Medium shot, eye-level, slow forward push-in. Lighting & Environment: ${sanitizedStyleProfile.lighting}, ${sanitizedStyleProfile.eraAndSetting}. Style: ${sanitizedStyleProfile.artStyle}, ${sanitizedStyleProfile.lensAndFilmStock}. Physics: Natural kinetic motion. Audio: no dialogue, ambient sound only. Duration: ${targetVideoDuration} seconds.`;
       }
 
       const rawSFP = scene.startFramePrompt ? removeEmDashes(scene.startFramePrompt) : '';
       if (rawSFP.trim().length > 0) {
-        let sfp = rawSFP.trim();
-        for (const [charName, visualDesc] of Object.entries(sanitizedCharacterSheet)) {
-          const shortcutRegex = new RegExp(`\\(${charName}\\s*\\(matching established look[^)]*\\)\\)`, 'gi');
-          sfp = sfp.replace(shortcutRegex, `${charName} (${visualDesc})`);
-          const shortcutRegex2 = new RegExp(`\\b${charName}\\s*\\(matching established look[^)]*\\)`, 'gi');
-          sfp = sfp.replace(shortcutRegex2, `${charName} (${visualDesc})`);
-        }
-        // Keyframe image prompt must not contain audio cues
-        startFramePrompt = cleanAndDeduplicatePrompt(sfp, false);
+        startFramePrompt = enrichStartFramePrompt(rawSFP, {
+          styleProfile: sanitizedStyleProfile,
+          characterSheet: sanitizedCharacterSheet,
+          narratorLine,
+          defaultAspectRatio,
+        });
       } else {
         const leadSubject = charactersInScene[0] ? sanitizedCharacterSheet[charactersInScene[0]] : 'Main subject';
         startFramePrompt = `Cinematic establishing frame of ${leadSubject}, dynamic initial pose in ${sanitizedStyleProfile.eraAndSetting}, ${sanitizedStyleProfile.lighting}, ${sanitizedStyleProfile.colorPalette}, ${defaultAspectRatio}, ${sanitizedStyleProfile.artStyle}.`;
@@ -1125,8 +1215,33 @@ ${durationInstruction}${customBeatsPrompt}`;
   );
   const readableLocationSheet = normalizeContinuitySheetKeys(sanitizedLocationSheet);
 
+  // Re-synchronize Video & StartFrame prompts with canonical first-appearance Character Sheet
+  const castSyncedPreppedScenes = isVideoMode
+    ? preppedScenes.map((sc: any) => ({
+        ...sc,
+        videoPrompt: sc.videoPrompt
+          ? sanitizeMasterVideoPrompt(sc.videoPrompt, {
+              targetVideoDuration,
+              calculatedSceneSeconds: sc.estimatedSeconds || targetVideoDuration,
+              styleProfile: sanitizedStyleProfile,
+              characterSheet: readableCharacterSheet,
+              narratorLine: sc.narratorLine,
+              defaultAspectRatio,
+            })
+          : sc.videoPrompt,
+        startFramePrompt: sc.startFramePrompt
+          ? enrichStartFramePrompt(sc.startFramePrompt, {
+              styleProfile: sanitizedStyleProfile,
+              characterSheet: readableCharacterSheet,
+              narratorLine: sc.narratorLine,
+              defaultAspectRatio,
+            })
+          : sc.startFramePrompt,
+      }))
+    : preppedScenes;
+
   const scenesWithTransitionHints = await runTwoPhaseProgressionAndRepair({
-    scenes: preppedScenes,
+    scenes: castSyncedPreppedScenes,
     styleProfile: sanitizedStyleProfile,
     characterSheet: readableCharacterSheet,
     locationSheet: readableLocationSheet,
@@ -1143,6 +1258,14 @@ ${durationInstruction}${customBeatsPrompt}`;
 
   const calculatedTotalSeconds = Math.round(scenesWithTransitionHints.reduce((sum: number, s: any) => sum + (s.estimatedSeconds || 0), 0) * 10) / 10;
   const totalSeconds = calculatedTotalSeconds > 0 ? calculatedTotalSeconds : (parsedData.totalDurationSeconds || 30);
+
+  const finalCoverage = findUncoveredTrailingScript(story, scenesWithTransitionHints);
+  const assumptions: string[] | undefined =
+    !isCustomBeats && finalCoverage.missingWords >= 3 && finalCoverage.coverageRatio < 0.95
+      ? [
+          `Script coverage notice: Output covered ${finalCoverage.coveredWords} of ${finalCoverage.totalWords} input words due to provider output limits. Uncovered tail starts at: "${finalCoverage.uncoveredText.slice(0, 90)}..."`,
+        ]
+      : undefined;
 
   const thumbnail = compileThumbnailPrompt({
     rawThumbnail: parsedData.thumbnail,
@@ -1161,6 +1284,7 @@ ${durationInstruction}${customBeatsPrompt}`;
     scenes: scenesWithTransitionHints,
     generationMode: isVideoMode ? 'video' : 'image',
     targetVideoDuration: isVideoMode ? targetVideoDuration : undefined,
+    assumptions,
     thumbnail,
   };
 }

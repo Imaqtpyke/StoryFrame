@@ -332,13 +332,19 @@ export function stripTransientExpressionsAndPoses(desc: string): string {
   let cleaned = normalizeUnicodeAndDashes(desc)
     .replace(/\bwith\s+eyes\s+wide(?:\s+and\s+mouth\s+open)?/gi, '')
     .replace(/,?\s*\beyes\s+(?:wide|narrowed|shut|closed|unblinking|blinking)\b/gi, '')
+    .replace(
+      /,?\s*\b(?:neutral|blank|natural|calm|stoic|unreadable)\s+(?:facial\s+)?features\b/gi,
+      ''
+    )
     .replace(/,?\s*\b(?:neutral|blank|horrified|terrified|stoic|expressionless|intense|calm|fearful|shocked)\s+expression\b/gi, '')
     .replace(/,?\s*\bmouth\s+(?:open|closed|shut|agape|pressed)\b/gi, '')
     .replace(/,?\s*\b(?:smiling|grinning|frowning|scowling|sneering|crying|whispering|listening(?:\s+to\s+[^,.;]+)?)\b/gi, '')
     .replace(/,?\s*\b(?:standing|sitting|kneeling|leaning|crouching)\s+(?:in|on|near|beside)\s+[^,.;]+/gi, '')
+    .replace(/\.?\s*\b(?:stance|posture)\s+is\s+(?:natural|relaxed|upright|tense|rigid|neutral)[^.]*\.?/gi, '')
+    .replace(/,?\s*\bfeet\s+planted(?:\s+firmly)?\s+on\s+[^,.;]+/gi, '')
     .replace(/\s+,/g, ',')
     .replace(/,\s*,+/g, ',')
-    .replace(/^,\s*|,\s*$/g, '')
+    .replace(/^[,.\s]+|[,.\s]+$/g, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
   return cleaned;
@@ -1017,12 +1023,19 @@ export function injectCompactCharacterLocks(
       (isMaleChar && effectiveFemalePronounOnly) ||
       bodyGenderMismatch;
 
+    const bodyHasPersonOrSingularPronoun =
+      bodyHasCharacterSubject || /\b(?:he|him|his|she|her|hers)\b/i.test(bodyLower);
     const pronounOrRoleMatch = /\b(?:he|him|his|she|her|hers|they|them|their|soldier|warrior|knight|hero|man|woman|boy|girl|forearm|chest plate|trigger|rifle|boots)\b/i.test(
       `${textSpan} ${bodyWithoutStyleOrAr}`
     );
 
-    const matchesViaSingleLead =
-      Boolean(singleLeadChar && singleLeadChar[0] === charName && pronounOrRoleMatch && !pronounMismatch);
+    const matchesViaSingleLead = Boolean(
+      singleLeadChar &&
+        singleLeadChar[0] === charName &&
+        pronounOrRoleMatch &&
+        bodyHasPersonOrSingularPronoun &&
+        !pronounMismatch
+    );
 
     // Multi-character scene inheritance: require character/entity subject presence + >=2 distinctive non-generic traits
     const matchesViaVisualTraits =
@@ -1034,6 +1047,7 @@ export function injectCompactCharacterLocks(
       !isRunnerUpInCloseUp;
     const matchesViaBeatPronounAndNarration =
       narrationMentionsName &&
+      bodyHasPersonOrSingularPronoun &&
       !pronounMismatch &&
       !ageMismatch &&
       !isRunnerUpInCloseUp &&
@@ -1076,12 +1090,12 @@ export function injectCompactCharacterLocks(
     }
 
     if (promptMentionsName) {
-      // Attach compact visual anchor right after the first capitalized/matched mention (respecting common-noun casing)
+      // Attach compact visual anchor right after the first non-possessive mention, or wrap cleanly as Featuring when only possessive ('s) appears
       const nonPossessiveRegex = new RegExp(`\\b(${escapedName})\\b(?!'s|\\s*\\()`, nameFlags);
       if (nonPossessiveRegex.test(updated)) {
         updated = updated.replace(nonPossessiveRegex, `$1 (${compactAnchor})`);
       } else {
-        updated = insertClauseBeforeStyleOrAr(updated, `${charName} (${compactAnchor})`);
+        updated = insertClauseBeforeStyleOrAr(updated, `Featuring ${charName} (${compactAnchor})`);
       }
     } else {
       // Character is active in the beat via alias, pronoun, or visual traits: inject canonical identity anchor cleanly
@@ -1138,6 +1152,10 @@ export function stripLeadingOrientationPrefixes(prompt: string): string {
     ''
   );
   cleaned = cleaned.replace(
+    /,?\s*\b(?:9:16\s+(?:vertical|portrait)|16:9\s+(?:widescreen|landscape)|vertical\s+9:16|widescreen\s+16:9)\b(?=\s*(?:[,.;]|$|\bVisual Style:))/gi,
+    ''
+  );
+  cleaned = cleaned.replace(
     /\b(?:in|with)\s+a\s+(?=(?:from\s+a|at\s+eye[-\s]*level|at\s+(?:low|high)[-\s]*angle|with\s+a\s+(?:tense\s+)?dutch|birds?[-\s]*eye|worms?[-\s]*eye)\b)/gi,
     ''
   );
@@ -1145,14 +1163,19 @@ export function stripLeadingOrientationPrefixes(prompt: string): string {
 }
 
 /**
- * Extracts explicit shot type and vertical camera angle written in the opening of prompt prose
+ * Extracts explicit shot type and vertical camera angle written in the opening or Camera directive of prompt prose
  * and synchronizes table metadata (`shotType`, `cameraAngle`, `cameraMovement`) cleanly so:
  * 1) `over-the-shoulder` / `POV` stay strictly in `shotType` and NEVER enter `cameraAngle`.
- * 2) `Medium Close-Up` takes precedence over `Close-Up` so table badges match opening text 1-for-1.
+ * 2) `Medium Close-Up` takes precedence over `Close-Up` so table badges match prompt prose 1-for-1.
+ * 3) Inline shot directives later in a Video prompt (after character descriptions) are still detected.
  */
 export function synchronizeBeatMetadataWithPrompt(beat: Beat): Beat {
-  const withoutOrientation = stripLeadingOrientationPrefixes(beat.imagePrompt || '');
+  const withoutOrientation = stripLeadingOrientationPrefixes(beat.imagePrompt || '')
+    .replace(/\bVisual Style:[^.]*\.?/gi, '')
+    .replace(/\s*--ar\s+[0-9:]+.*$/i, '')
+    .trim();
   const openingWindow = withoutOrientation.slice(0, 100).toLowerCase();
+  const fullWindow = withoutOrientation.toLowerCase();
 
   let syncedShotType = '';
   let syncedAngle = '';
@@ -1174,9 +1197,21 @@ export function synchronizeBeatMetadataWithPrompt(beat: Beat): Beat {
     return raw.trim();
   };
 
-  // Detect shot size explicitly present in prompt opening (honoring leading explicit shotType first, then specific compound patterns!)
+  const detectShotFromWindow = (win: string): string => {
+    if (/\b(?:over[-\s]*the[-\s]*shoulder|ots)\b/i.test(win)) return 'Over-the-Shoulder (OTS)';
+    if (/\b(?:point[-\s]*of[-\s]*view|first[-\s]*person|pov)\b/i.test(win)) return 'Point-of-View (POV)';
+    if (/\bmedium\s+close[-\s]*up\b/i.test(win)) return 'Medium Close-Up';
+    if (/\b(?:extreme[-\s]*close[-\s]*up|macro\s+(?:insert|detail|shot|view))\b/i.test(win)) return 'Extreme Close-Up';
+    if (/\bclose[-\s]*up\b/i.test(win)) return 'Close-Up';
+    if (/\b(?:extreme[-\s]*wide|establishing\s+(?:wide|vista))\b/i.test(win)) return 'Extreme Wide Shot';
+    if (/\bwide(?:\s+(?:establishing\s+)?(?:shot|view|angle))?\b/i.test(win)) return 'Wide Establishing Shot';
+    if (/\bmedium\s+(?:shot|view|framing)\b/i.test(win)) return 'Medium Shot';
+    return '';
+  };
+
+  // Detect shot size explicitly present in prompt opening first, then explicit Camera directive / full body
   const leadingMatch = openingWindow.match(
-    /^(?:(medium\s+close[-\s]*up)|(extreme[-\s]*close[-\s]*up)|(close[-\s]*up)|(extreme[-\s]*wide)|(wide\s+(?:establishing\s+)?shot)|(medium\s+shot)|(over[-\s]*the[-\s]*shoulder|ots)|(point[-\s]*of[-\s]*view|pov))/i
+    /^(?:(medium\s+close[-\s]*up)|(extreme[-\s]*close[-\s]*up)|(close[-\s]*up)|(extreme[-\s]*wide)|(wide\s+(?:establishing\s+)?(?:shot|view|high-angle|low-angle|eye-level))|(medium\s+(?:shot|view|high-angle|low-angle|eye-level))|(over[-\s]*the[-\s]*shoulder|ots)|(point[-\s]*of[-\s]*view|pov))/i
   );
   if (leadingMatch) {
     if (leadingMatch[1]) syncedShotType = 'Medium Close-Up';
@@ -1187,27 +1222,16 @@ export function synchronizeBeatMetadataWithPrompt(beat: Beat): Beat {
     else if (leadingMatch[6]) syncedShotType = 'Medium Shot';
     else if (leadingMatch[7]) syncedShotType = 'Over-the-Shoulder (OTS)';
     else if (leadingMatch[8]) syncedShotType = 'Point-of-View (POV)';
-  } else if (/\b(?:over[-\s]*the[-\s]*shoulder|ots)\b/i.test(openingWindow)) {
-    syncedShotType = 'Over-the-Shoulder (OTS)';
-  } else if (/\b(?:point[-\s]*of[-\s]*view|first[-\s]*person|pov)\b/i.test(openingWindow)) {
-    syncedShotType = 'Point-of-View (POV)';
-  } else if (/\bmedium\s+close[-\s]*up\b/i.test(openingWindow)) {
-    syncedShotType = 'Medium Close-Up';
-  } else if (/\b(?:extreme[-\s]*close[-\s]*up|macro\s+(?:insert|detail|shot|view))\b/i.test(openingWindow)) {
-    syncedShotType = 'Extreme Close-Up';
-  } else if (/\bclose[-\s]*up\b/i.test(openingWindow)) {
-    syncedShotType = 'Close-Up';
-  } else if (/\b(?:extreme[-\s]*wide|establishing\s+(?:wide|vista))\b/i.test(openingWindow)) {
-    syncedShotType = 'Extreme Wide Shot';
-  } else if (/\bwide\b/i.test(openingWindow)) {
-    syncedShotType = 'Wide Establishing Shot';
-  } else if (/\bmedium\b/i.test(openingWindow)) {
-    syncedShotType = 'Medium Shot';
   } else {
-    syncedShotType = normalizeRawShot(beat.shotType || '');
+    syncedShotType =
+      detectShotFromWindow(openingWindow) ||
+      detectShotFromWindow(fullWindow) ||
+      (/\bwide\b/i.test(openingWindow) ? 'Wide Establishing Shot' : '') ||
+      (/\bmedium\b/i.test(openingWindow) ? 'Medium Shot' : '') ||
+      normalizeRawShot(beat.shotType || '');
   }
 
-  // Detect ONLY valid vertical/tilt camera angles in prompt opening (never OTS or POV)
+  // Detect ONLY valid vertical/tilt camera angles in prompt (checking opening first, then full body)
   const normalizeValidAngle = (raw: string): string => {
     const r = raw.trim().toLowerCase();
     if (r === 'birds-eye' || r === 'worms-eye' || r === 'low-angle' || r === 'high-angle' || r === 'dutch-tilt' || r === 'eye-level') {
@@ -1221,17 +1245,23 @@ export function synchronizeBeatMetadataWithPrompt(beat: Beat): Beat {
     return 'eye-level';
   };
 
-  if (/\b(?:birds?[-\s]*eye|overhead|top[-\s]*down)\b/i.test(openingWindow)) {
+  const angleWindow = /\b(?:birds?[-\s]*eye|overhead|top[-\s]*down|worms?[-\s]*eye|ground[-\s]*level|low[-\s]*angle|high[-\s]*angle|elevated\s+angle|dutch[-\s]*angle|dutch[-\s]*tilt|canted|eye[-\s]*level|straight[-\s]*on)\b/i.test(
+    openingWindow
+  )
+    ? openingWindow
+    : fullWindow;
+
+  if (/\b(?:birds?[-\s]*eye|overhead|top[-\s]*down)\b/i.test(angleWindow)) {
     syncedAngle = 'birds-eye';
-  } else if (/\b(?:worms?[-\s]*eye|ground[-\s]*level)\b/i.test(openingWindow)) {
+  } else if (/\b(?:worms?[-\s]*eye|ground[-\s]*level)\b/i.test(angleWindow)) {
     syncedAngle = 'worms-eye';
-  } else if (/\b(?:low[-\s]*angle|slightly\s+low\s+angle|looking\s+up)\b/i.test(openingWindow)) {
+  } else if (/\b(?:low[-\s]*angle|slightly\s+low\s+angle|looking\s+up)\b/i.test(angleWindow)) {
     syncedAngle = 'low-angle';
-  } else if (/\b(?:high[-\s]*angle|slightly\s+elevated\s+angle|elevated\s+angle|looking\s+down)\b/i.test(openingWindow)) {
+  } else if (/\b(?:high[-\s]*angle|slightly\s+elevated\s+angle|elevated\s+angle|looking\s+down)\b/i.test(angleWindow)) {
     syncedAngle = 'high-angle';
-  } else if (/\b(?:dutch[-\s]*angle|dutch[-\s]*tilt|canted)\b/i.test(openingWindow)) {
+  } else if (/\b(?:dutch[-\s]*angle|dutch[-\s]*tilt|canted)\b/i.test(angleWindow)) {
     syncedAngle = 'dutch-tilt';
-  } else if (/\b(?:eye[-\s]*level|straight[-\s]*on)\b/i.test(openingWindow)) {
+  } else if (/\b(?:eye[-\s]*level|straight[-\s]*on)\b/i.test(angleWindow)) {
     syncedAngle = 'eye-level';
   } else {
     syncedAngle = normalizeValidAngle(beat.cameraAngle || 'eye-level');
@@ -1366,18 +1396,39 @@ export function formatFinalBeatPrompt(
     }
   }
 
-  // Check if prose already opens with shot framing; if not in Image mode, prepend synchronized shotType & cameraAngle
+  // Check if prose already opens with shot framing; strip contradictory trailing shot-size labels, or prepend framing when absent
   const hasOpeningFraming =
     /^(?:Extreme\s+Wide|Wide\s+Establishing|Wide|Medium\s+Close-Up|Medium|Extreme\s+Close-Up|Close-Up|Macro|Over-the-Shoulder|Point-of-View|First-person|Low-angle|High-angle|Birds-eye|Worms-eye|Dutch)/i.test(
       body
     );
 
-  if (!isVideoMode && !hasOpeningFraming && body.length > 0) {
-    const lowerFirst = body.charAt(0).toLowerCase() + body.slice(1);
-    const startsWithOf = /^(?:of|showing|depicting|capturing)\b/i.test(lowerFirst);
-    const connector = startsWithOf ? ' ' : ' of ';
-    const angleLabel = synced.cameraAngle ? `, ${synced.cameraAngle}` : '';
-    body = `${synced.shotType}${angleLabel}${connector}${lowerFirst}`;
+  if (hasOpeningFraming) {
+    // Eliminate contradictory mid-sentence shot-size tags (e.g. "Close-up of his hands..., extreme-close-up, eye-level")
+    const leadEndIdx = Math.min(body.length, 40);
+    const leadChunk = body.slice(0, leadEndIdx);
+    const restChunk = body
+      .slice(leadEndIdx)
+      .replace(
+        /,\s*(?:extreme[-\s]*close[-\s]*up|close[-\s]*up|medium\s+close[-\s]*up|medium\s+shot|wide\s+shot|extreme\s+wide\s+shot)\b(?=\s*,)/gi,
+        ''
+      );
+    body = `${leadChunk}${restChunk}`;
+  } else if (body.length > 0) {
+    // If mid-sentence already has an inline shot-size tag, lift framing cleanly to front and strip the duplicate inline tag
+    body = body.replace(
+      /,\s*(?:extreme[-\s]*close[-\s]*up|close[-\s]*up|medium\s+close[-\s]*up|medium\s+shot|wide\s+shot|extreme\s+wide\s+shot)\b(?=\s*,|\s+(?:low|high|eye)[-\s])/gi,
+      ''
+    );
+    if (!isVideoMode) {
+      const lowerFirst = body.charAt(0).toLowerCase() + body.slice(1);
+      const startsWithOf = /^(?:of|showing|depicting|capturing)\b/i.test(lowerFirst);
+      const connector = startsWithOf ? ' ' : ' of ';
+      const angleLabel = synced.cameraAngle ? `, ${synced.cameraAngle}` : '';
+      body = `${synced.shotType}${angleLabel}${connector}${lowerFirst}`;
+    } else {
+      const angleLabel = synced.cameraAngle ? `, ${synced.cameraAngle}` : '';
+      body = `${synced.shotType}${angleLabel}: ${body}`;
+    }
   }
 
   // Final punctuation, dangling preposition & spacing cleanup
@@ -2475,6 +2526,232 @@ STRICT REPAIR RULES:
   });
 
   return populateSceneTransitionHints(finalizedScenes, styleProfile);
+}
+
+/**
+ * Checks total spoken script coverage across all generated scenes against the full original script
+ * so JSON output truncation around long Video Mode scripts never silently drops the second half.
+ */
+export function findUncoveredTrailingScript(
+  originalScript: string,
+  scenes: Array<{ index?: number; narratorLine?: string }>
+): {
+  totalWords: number;
+  coveredWords: number;
+  missingWords: number;
+  coverageRatio: number;
+  uncoveredText: string;
+} {
+  const cleanOriginal = normalizeUnicodeAndDashes(originalScript || '').trim();
+  if (!cleanOriginal) {
+    return { totalWords: 0, coveredWords: 0, missingWords: 0, coverageRatio: 1, uncoveredText: '' };
+  }
+
+  const origRawWords = cleanOriginal.split(/\s+/).filter(Boolean);
+  const norm = (w: string) =>
+    normalizeUnicodeAndDashes(w)
+      .toLowerCase()
+      .replace(/^[^a-z0-9\u00C0-\u024F₱$€£]+|[^a-z0-9\u00C0-\u024F]+$/g, '');
+
+  const origNorm = origRawWords.map(norm);
+  const joinedGenerated = (scenes || [])
+    .map((s) => normalizeUnicodeAndDashes(s.narratorLine || ''))
+    .join(' ')
+    .trim();
+  const genNorm = joinedGenerated.split(/\s+/).map(norm).filter(Boolean);
+
+  let origPtr = 0;
+  let genPtr = 0;
+  while (origPtr < origNorm.length && genPtr < genNorm.length) {
+    if (origNorm[origPtr] === genNorm[genPtr]) {
+      origPtr++;
+      genPtr++;
+    } else {
+      // Allow small 1-4 word drift if punctuation or contraction split a token
+      let matchedAhead = false;
+      for (let lookO = 1; lookO <= 4 && origPtr + lookO < origNorm.length; lookO++) {
+        if (origNorm[origPtr + lookO] === genNorm[genPtr]) {
+          origPtr += lookO + 1;
+          genPtr++;
+          matchedAhead = true;
+          break;
+        }
+      }
+      if (!matchedAhead) {
+        genPtr++;
+      }
+    }
+  }
+
+  const totalWords = origRawWords.length;
+  const coveredWords = Math.min(totalWords, origPtr);
+  const missingWords = Math.max(0, totalWords - coveredWords);
+  const coverageRatio = totalWords > 0 ? coveredWords / totalWords : 1;
+  const uncoveredText = missingWords > 0 ? origRawWords.slice(coveredWords).join(' ').trim() : '';
+
+  return { totalWords, coveredWords, missingWords, coverageRatio, uncoveredText };
+}
+
+/**
+ * Sanitizes a master scene videoPrompt:
+ * - Resolves shortcut "(matching established look...)" references
+ * - Eliminates duplicate Lighting: sections, double periods (".."), and post-Duration style dumps
+ * - Preserves full character locks in Subject: and places Duration: cleanly at the very end.
+ */
+export function sanitizeMasterVideoPrompt(
+  rawVideoPrompt: string,
+  params: {
+    targetVideoDuration: number;
+    calculatedSceneSeconds?: number;
+    styleProfile: StyleProfile;
+    characterSheet: Record<string, string>;
+    narratorLine?: string;
+    defaultAspectRatio?: string;
+  }
+): string {
+  let vp = normalizeUnicodeAndDashes((rawVideoPrompt || '').trim());
+  const {
+    targetVideoDuration,
+    calculatedSceneSeconds = targetVideoDuration,
+    styleProfile,
+    characterSheet,
+    narratorLine = '',
+  } = params;
+
+  if (!vp) return '';
+
+  // Scrub "(matching established look...)" shortcuts and Character/Location Continuity (...) wrappers
+  for (const [charName, visualDesc] of Object.entries(characterSheet || {})) {
+    const esc = charName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    vp = vp.replace(new RegExp(`\\(${esc}\\s*\\(matching established look[^)]*\\)\\)`, 'gi'), `${charName} (${visualDesc})`);
+    vp = vp.replace(new RegExp(`\\b${esc}\\s*\\(matching established look[^)]*\\)`, 'gi'), `${charName} (${visualDesc})`);
+  }
+  vp = vp.replace(/\s*(?:Character|Location) Continuity \([^)]*\)\.?/gi, '');
+
+  // Strip any existing Duration clause so we can enrich Style/Subject cleanly BEFORE appending Duration at the very end
+  vp = vp.replace(/\s*Duration:\s*[^.\n]*(?:\.|$)/gi, ' ').trim();
+
+  // Upgrade Style: clause if abbreviated, without dumping duplicate Lighting:/Setting: after Duration
+  const compactArt =
+    buildCompactCharacterAnchor(styleProfile.artStyle || '', STYLE_ANCHOR_MAX_WORDS) ||
+    (styleProfile.artStyle || '').replace(/[.!?]+$/, '').trim();
+  const compactPalette = (styleProfile.colorPalette || '').replace(/[.!?]+$/, '').trim();
+
+  if (/\bStyle:\s*/i.test(vp)) {
+    vp = vp.replace(/\bStyle:\s*([^.\n]+)\.?/i, (_m, existingStyle: string) => {
+      const cleanExisting = existingStyle.replace(/[.!?]+$/, '').trim();
+      const hasCoreMaterials =
+        compactArt.length > 0 &&
+        cleanExisting.toLowerCase().includes(compactArt.toLowerCase().slice(0, Math.min(24, compactArt.length)));
+      if (hasCoreMaterials) {
+        return `Style: ${cleanExisting}.`;
+      }
+      const mergedStyle = compactArt ? `${compactArt}, ${cleanExisting}` : cleanExisting;
+      return `Style: ${mergedStyle}.`;
+    });
+  } else if (compactArt) {
+    vp += ` Style: ${compactArt}${compactPalette ? `, ${compactPalette}` : ''}.`;
+  }
+
+  // Ensure active named characters in narratorLine/Subject retain locked eyewear & wardrobe inside Subject:
+  for (const [charName, fullDesc] of Object.entries(characterSheet || {})) {
+    if (!fullDesc) continue;
+    const compactChar = buildCompactCharacterAnchor(fullDesc, CHARACTER_ANCHOR_MAX_WORDS);
+    if (!compactChar) continue;
+    const esc = charName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const nameRe = new RegExp(`\\b${esc}\\b`, 'i');
+    if (nameRe.test(vp) || nameRe.test(narratorLine)) {
+      const hasEyewear =
+        !/\b(?:glasses|spectacles|eyeglasses)\b/i.test(compactChar) ||
+        /\b(?:glasses|spectacles|eyeglasses)\b/i.test(vp);
+      const snippet = compactChar.slice(0, 24).toLowerCase();
+      if (!vp.toLowerCase().includes(snippet) || !hasEyewear) {
+        if (new RegExp(`Subject:\\s*${esc}(?:,|\\s)`, 'i').test(vp)) {
+          vp = vp.replace(new RegExp(`(Subject:\\s*${esc})\\b`, 'i'), `$1 (${compactChar}),`);
+        } else if (!nameRe.test(vp)) {
+          vp = vp.replace(/\bSubject:\s*/i, `Subject: ${charName} (${compactChar}), `);
+        }
+      }
+    }
+  }
+
+  // Deduplicate sentences & clean punctuation (".." -> ".")
+  vp = vp
+    .replace(/\.{2,}/g, '.')
+    .replace(/,\s*,+/g, ',')
+    .replace(/\s+([,.;!?])/g, '$1')
+    .replace(/,([^\s0-9])/g, ', $1')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  if (vp && !/[.!?]$/.test(vp)) vp += '.';
+
+  vp += ` Duration: ${targetVideoDuration} seconds.`;
+  return updateVideoPromptDuration(vp, targetVideoDuration, calculatedSceneSeconds);
+}
+
+/**
+ * Enriches Start Frame Keyframe Prompts so every clip's initial image ingredient preserves
+ * full character eyewear/wardrobe locks, consistent Kelvin lighting, art medium, and clean aspect ratio.
+ */
+export function enrichStartFramePrompt(
+  rawStartFramePrompt: string,
+  params: {
+    styleProfile: StyleProfile;
+    characterSheet: Record<string, string>;
+    narratorLine?: string;
+    defaultAspectRatio: string;
+  }
+): string {
+  let sfp = normalizeUnicodeAndDashes((rawStartFramePrompt || '').trim());
+  if (!sfp) return '';
+  const { styleProfile, characterSheet, defaultAspectRatio } = params;
+
+  // Strip any stray video audio cues
+  sfp = sfp.replace(/\b(?:Audio|Sound|Foley|Soundtrack|Dialogue|Ambient sound)\s*:\s*[^.;\n]+[.;]?/gi, '');
+
+  for (const [charName, fullDesc] of Object.entries(characterSheet || {})) {
+    if (!fullDesc) continue;
+    const esc = charName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    sfp = sfp.replace(new RegExp(`\\(${esc}\\s*\\(matching established look[^)]*\\)\\)`, 'gi'), `${charName} (${fullDesc})`);
+    sfp = sfp.replace(new RegExp(`\\b${esc}\\s*\\(matching established look[^)]*\\)`, 'gi'), `${charName} (${fullDesc})`);
+
+    const compactChar = buildCompactCharacterAnchor(fullDesc, CHARACTER_ANCHOR_MAX_WORDS);
+    const mentionRe = new RegExp(`\\b(${esc})\\b(?!'s|\\s*\\()`, 'i');
+    if (compactChar && mentionRe.test(sfp)) {
+      const hasOutfitOrGlasses =
+        (/\b(?:glasses|spectacles)\b/i.test(compactChar) ? /\b(?:glasses|spectacles)\b/i.test(sfp) : true) &&
+        sfp.toLowerCase().includes(compactChar.slice(0, 22).toLowerCase());
+      if (!hasOutfitOrGlasses) {
+        sfp = sfp.replace(mentionRe, `$1 (${compactChar})`);
+      }
+    }
+  }
+
+  // Upgrade weak lighting/style in Start Frame if truncated to just "warm lighting, handcrafted miniature world"
+  const compactStyle =
+    buildCompactCharacterAnchor(styleProfile.artStyle || '', STYLE_ANCHOR_MAX_WORDS) ||
+    (styleProfile.artStyle || '').replace(/[.!?]+$/, '').trim();
+  if (compactStyle && !sfp.toLowerCase().includes(compactStyle.slice(0, 20).toLowerCase())) {
+    sfp = `${sfp.replace(/[.,\s]+$/, '')}, ${compactStyle}.`;
+  }
+  if (
+    styleProfile.lighting &&
+    !/\b\d{4}K\b/i.test(sfp) &&
+    !/\b(?:chiaroscuro|monochrome)\b/i.test(sfp)
+  ) {
+    const cleanLight = styleProfile.lighting.replace(/[.!?]+$/, '').trim();
+    sfp = `${sfp.replace(/[.,\s]+$/, '')}, ${cleanLight}.`;
+  }
+  if (!/\b(?:9:16|16:9)\b/.test(sfp)) {
+    sfp = `${sfp.replace(/[.,\s]+$/, '')}, ${defaultAspectRatio}.`;
+  }
+
+  return sfp
+    .replace(/\.{2,}/g, '.')
+    .replace(/,\s*,+/g, ',')
+    .replace(/\s+([,.;!?])/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
 /**

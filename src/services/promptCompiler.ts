@@ -462,14 +462,11 @@ export function inferStoryAdaptiveFont(styleText = '', narrativeText = ''): stri
   ) {
     return 'distressed weathered stencil sans-serif with textured rugged edges';
   }
-  if (
-    combined.includes('cyberpunk') ||
-    combined.includes('sci-fi') ||
-    combined.includes('neon') ||
-    combined.includes('future') ||
-    combined.includes('space') ||
-    combined.includes('robot')
-  ) {
+  const hasExplicitSciFi =
+    /\b(?:cyberpunk|sci-fi|scifi|neon|synthwave|hologram|android|cybernetic|spaceship|starship|outer\s+space|distant\s+future|far\s+future|future\s+world|futuristic|year\s+2\d{3}|robot)\b/i.test(
+      combined
+    );
+  if (hasExplicitSciFi) {
     return 'sleek futuristic geometric sans-serif with subtle luminous neon edging';
   }
   if (
@@ -490,6 +487,21 @@ export function inferStoryAdaptiveFont(styleText = '', narrativeText = ''): stri
     combined.includes('playful')
   ) {
     return 'playful hand-lettered bold cartoon bubble serif with vintage curved letterforms';
+  }
+  if (
+    /\b(?:mortgage|loan\s+contract|prepayment\s+penalty|interest\s+payments|lender|finance|financial|banking|debt|credit)\b/i.test(
+      combined
+    )
+  ) {
+    return 'bold editorial headline serif with crisp high-contrast financial broadsheet weight';
+  }
+  if (
+    combined.includes('miniature') ||
+    combined.includes('diorama') ||
+    combined.includes('soft-matte clay') ||
+    combined.includes('sculpted clay')
+  ) {
+    return 'bold hand-crafted chunky display serif with clean tactile edges';
   }
   if (
     combined.includes('documentary') ||

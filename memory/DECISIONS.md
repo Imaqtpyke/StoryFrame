@@ -295,3 +295,14 @@
 - **Date:** 2026-11-19
 - **Status:** Active
 
+## Text-to-Video Completeness, Thumbnail Schema, Font Routing & Prompt Sanitation
+- **Fact/Decision:**
+  1. Added the `"thumbnail"` schema object directly inside Text-to-Video JSON schemas (`geminiClient.ts`, `enhanceStoryArchitect.ts`) and replaced loose `.includes('future')` matching in `inferStoryAdaptiveFont` (`promptCompiler.ts`) with whole-word boundaries plus dedicated finance/mortgage and diorama/miniature branches so `"future income stream"` never triggers cyberpunk neon thumbnails.
+  2. Implemented `findUncoveredTrailingScript` (`beatProgressionEngine.ts`) paired with 2-pass multi-batch auto-continuation (`geminiClient.ts`, `enhanceStoryArchitect.ts`) and a visible `#script-coverage-warning` alert in `ResultsView.tsx` so long Text-to-Video scripts never silently truncate at mid-story token limits.
+  3. Added `sanitizeMasterVideoPrompt` and `enrichStartFramePrompt` (`beatProgressionEngine.ts`) to remove post-`Duration:` style/lighting dumps, double `Lighting:` blocks, and `..` double periods while guaranteeing locked eyewear/wardrobe anchors, consistent lighting Kelvin, and zero audio directives on start frames.
+  4. Hardened `injectCompactCharacterLocks` against prop-only close-ups (`bodyHasPersonOrSingularPronoun`), formatted possessive fallbacks cleanly (`Featuring X (...)`), stripped inline duplicate `9:16 vertical` / `16:9 widescreen` tails, synced late Video framing directives to `shotType`/`cameraAngle`, scrubbed `"neutral facial features"` and stance boilerplate, and enforced currency fidelity (no unrequested `₱`), recurring cast sheets, and grounded VFX rules.
+- **Context:** Eliminates the 55% script cutoff, fallback `"SURVIVE"` neon thumbnail, prop close-up character leakage, double periods, and expression/stance bloat surfaced in the 4-second Text-to-Video diorama export audit.
+- **Date:** 2026-11-19
+- **Status:** Active
+
+
