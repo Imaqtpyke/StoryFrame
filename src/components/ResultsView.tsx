@@ -59,6 +59,8 @@ interface ResultsViewProps {
     characterSheet?: Record<string, string>;
   }) => void;
   isGeneratingMore?: boolean;
+  isAwaitingContinue?: boolean;
+  onConfirmContinue?: (shouldContinue: boolean) => void;
   totalPlannedScenes?: number;
   generationStatusMessage?: string | null;
   onCancelGeneration?: () => void;
@@ -103,6 +105,8 @@ export default function ResultsView({
   onReset,
   onStartEpisodeDraft,
   isGeneratingMore = false,
+  isAwaitingContinue = false,
+  onConfirmContinue,
   totalPlannedScenes,
   generationStatusMessage,
   onCancelGeneration,
@@ -682,40 +686,82 @@ export default function ResultsView({
         </div>
       </div>
 
-      {/* Live Progressive Scene-by-Scene Status Banner */}
-      {isGeneratingMore && (
-        <div
-          id="live-generation-banner"
-          role="status"
-          aria-live="polite"
-          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 bg-[#161614] border border-amber-500/40 rounded-[3px]"
-        >
-          <div className="flex items-start sm:items-center gap-3 min-w-0">
-            <span className="w-2 h-2 rounded-[1px] bg-amber-400 animate-pulse shrink-0 mt-1.5 sm:mt-0" />
-            <div className="min-w-0 space-y-0.5">
-              <div className="text-xs sm:text-sm font-display font-medium text-white">
-                Rendering Finished Scenes: {normalizedScenes.length}
-                {totalPlannedScenes ? ` of ${totalPlannedScenes}` : ''} Scenes Ready
-              </div>
-              <p className="text-xs text-[#A0A09A] truncate">
-                {generationStatusMessage ||
-                  'Only completed scenes and beats are shown below. Remaining scenes appear automatically as they finish.'}
-              </p>
-            </div>
+      {/* Live Progressive Scene-by-Scene Status & Continue Confirmation Banner */}
+      {(isGeneratingMore || isAwaitingContinue || result.progress?.awaitingContinueConfirmation) && (() => {
+        const showContinuePrompt = Boolean(isAwaitingContinue || result.progress?.awaitingContinueConfirmation);
+        return (
+          <div
+            id="live-generation-banner"
+            role="status"
+            aria-live="polite"
+            className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 bg-[#161614] border border-amber-500/40 rounded-[3px]"
+          >
+            {showContinuePrompt ? (
+              <>
+                <div className="flex items-start sm:items-center gap-3 min-w-0">
+                  <Clock size={15} className="text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
+                  <div className="min-w-0 space-y-0.5">
+                    <div id="continue-prompt-question" className="text-xs sm:text-sm font-display font-medium text-white">
+                      Would you like to continue?
+                    </div>
+                    <p className="text-xs text-[#A0A09A]">
+                      {normalizedScenes.length}
+                      {totalPlannedScenes ? ` of ${totalPlannedScenes}` : ''} scenes are finished. Choose Yes to continue generating the remaining scenes, or No to stop at Scene 2.
+                    </p>
+                  </div>
+                </div>
+                {onConfirmContinue && (
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      id="confirm-continue-yes-btn"
+                      onClick={() => onConfirmContinue(true)}
+                      className="inline-flex items-center justify-center px-4 py-1.5 bg-white text-black hover:bg-[#EAEAE5] text-xs font-display font-semibold transition-colors rounded-[3px] whitespace-nowrap shrink-0 cursor-pointer"
+                    >
+                      Yes
+                    </button>
+                    <button
+                      type="button"
+                      id="confirm-continue-no-btn"
+                      onClick={() => onConfirmContinue(false)}
+                      className="inline-flex items-center justify-center px-4 py-1.5 bg-[#1E1E1B] hover:bg-red-950/50 text-[#E6E6E0] hover:text-red-200 border border-white/15 hover:border-red-500/40 text-xs font-display font-medium transition-colors rounded-[3px] whitespace-nowrap shrink-0 cursor-pointer"
+                    >
+                      No
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="flex items-start sm:items-center gap-3 min-w-0">
+                  <span className="w-2 h-2 rounded-[1px] bg-amber-400 animate-pulse shrink-0 mt-1.5 sm:mt-0" />
+                  <div className="min-w-0 space-y-0.5">
+                    <div className="text-xs sm:text-sm font-display font-medium text-white">
+                      Rendering Finished Scenes: {normalizedScenes.length}
+                      {totalPlannedScenes ? ` of ${totalPlannedScenes}` : ''} Scenes Ready
+                    </div>
+                    <p className="text-xs text-[#A0A09A] truncate">
+                      {generationStatusMessage ||
+                        'Only completed scenes and beats are shown below. Remaining scenes appear automatically as they finish.'}
+                    </p>
+                  </div>
+                </div>
+                {onCancelGeneration && (
+                  <button
+                    type="button"
+                    id="stop-live-generation-btn"
+                    onClick={onCancelGeneration}
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-[#1E1E1B] hover:bg-red-950/50 text-[#E6E6E0] hover:text-red-200 border border-white/15 hover:border-red-500/40 text-xs font-display font-medium transition-colors rounded-[3px] shrink-0 cursor-pointer"
+                  >
+                    <Square size={11} className="shrink-0" />
+                    <span>Stop Generation</span>
+                  </button>
+                )}
+              </>
+            )}
           </div>
-          {onCancelGeneration && (
-            <button
-              type="button"
-              id="stop-live-generation-btn"
-              onClick={onCancelGeneration}
-              className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-[#1E1E1B] hover:bg-red-950/50 text-[#E6E6E0] hover:text-red-200 border border-white/15 hover:border-red-500/40 text-xs font-display font-medium transition-colors rounded-[3px] shrink-0 cursor-pointer"
-            >
-              <Square size={11} className="shrink-0" />
-              <span>Stop Generation</span>
-            </button>
-          )}
-        </div>
-      )}
+        );
+      })()}
 
       {/* Readable Scene & Section Jump Strip */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-hide">

@@ -15,6 +15,7 @@ import {
   Beat,
   StyleProfile,
   OnPartialStoryCallback,
+  OnConfirmContinueCallback,
   StoryBible,
 } from '../types';
 import { stage0PrepareNarration } from './stage0Prepare';
@@ -93,8 +94,19 @@ function assembleGroundedStoryResult(params: {
   timingSource?: 'actual' | 'estimated';
   totalPlannedScenes?: number;
   isPartial?: boolean;
+  awaitingContinueConfirmation?: boolean;
 }): StoryGenerationResult {
-  const { req, bible, scenes, cleanNarration, authorNotes, timingSource, totalPlannedScenes, isPartial } = params;
+  const {
+    req,
+    bible,
+    scenes,
+    cleanNarration,
+    authorNotes,
+    timingSource,
+    totalPlannedScenes,
+    isPartial,
+    awaitingContinueConfirmation,
+  } = params;
   const generationMode = req.generationMode || 'image';
   const isVideo = generationMode === 'video';
 
@@ -165,7 +177,10 @@ function assembleGroundedStoryResult(params: {
           completedScenes: scenes.length,
           totalPlannedScenes,
           isPartial: true,
-          stageLabel: totalPlannedScenes
+          awaitingContinueConfirmation: Boolean(awaitingContinueConfirmation),
+          stageLabel: awaitingContinueConfirmation
+            ? 'Would you like to continue?'
+            : totalPlannedScenes
             ? `Scene ${scenes.length} of ${totalPlannedScenes} ready`
             : `${scenes.length} scenes ready`,
         }
@@ -178,7 +193,8 @@ export async function executeGroundedPipeline(
   apiKey: string,
   userSignal?: AbortSignal,
   onStatusMessage?: (msg: string) => void,
-  onPartialResult?: OnPartialStoryCallback
+  onPartialResult?: OnPartialStoryCallback,
+  onConfirmContinueAfterScene2?: OnConfirmContinueCallback
 ): Promise<StoryGenerationResult> {
   const modelQuality = req.modelQuality || 'standard';
   const format = req.format || 'short';
@@ -305,20 +321,109 @@ export async function executeGroundedPipeline(
     );
   }
 
-  const pendingBatches: { batchStart: number; batchSlice: PlannedScene[] }[] = [];
-  for (let bs = finalScenes.length; bs < plannedScenes.length; bs += SCENE_BATCH_SIZE) {
-    pendingBatches.push({
+  const promptContinueAfterScene2 = async (): Promise<boolean> => {
+    if (!onConfirmContinueAfterScene2) return true;
+    if (userSignal?.aborted) {
+      throw new DOMException('Cancelled by user', 'AbortError');
+    }
+    if (onPartialResult) {
+      onPartialResult(
+        assembleGroundedStoryResult({
+          req,
+          bible,
+          scenes: finalScenes.slice(0, 2),
+          cleanNarration: prepared.cleanNarration,
+          authorNotes: prepared.authorNotes,
+          timingSource: prepared.timingSource,
+          totalPlannedScenes: plannedScenes.length,
+          isPartial: true,
+          awaitingContinueConfirmation: true,
+        })
+      );
+    }
+    if (onStatusMessage) {
+      onStatusMessage('Scenes 1-2 finished. Waiting for your decision to continue.');
+    }
+    const shouldContinue = await onConfirmContinueAfterScene2();
+    if (!shouldContinue) {
+      clearGroundedCheckpoint(checkpointKey);
+      return false;
+    }
+    if (onPartialResult) {
+      onPartialResult(
+        assembleGroundedStoryResult({
+          req,
+          bible,
+          scenes: finalScenes,
+          cleanNarration: prepared.cleanNarration,
+          authorNotes: prepared.authorNotes,
+          timingSource: prepared.timingSource,
+          totalPlannedScenes: plannedScenes.length,
+          isPartial: true,
+          awaitingContinueConfirmation: false,
+        })
+      );
+    }
+    return true;
+  };
+
+  let hasAskedContinueAfterScene2 = finalScenes.length > 2;
+
+  // If resuming right at Scene 2 with remaining scenes, confirm before dispatching Scene 3+
+  if (
+    !hasAskedContinueAfterScene2 &&
+    onConfirmContinueAfterScene2 &&
+    finalScenes.length === 2 &&
+    plannedScenes.length > 2
+  ) {
+    hasAskedContinueAfterScene2 = true;
+    const shouldContinue = await promptContinueAfterScene2();
+    if (!shouldContinue) {
+      return assembleGroundedStoryResult({
+        req,
+        bible,
+        scenes: finalScenes.slice(0, 2),
+        cleanNarration: prepared.cleanNarration,
+        authorNotes: prepared.authorNotes,
+        timingSource: prepared.timingSource,
+        totalPlannedScenes: 2,
+        isPartial: false,
+      });
+    }
+  }
+
+  // Group batches into waves. When Scene 2 confirmation is enabled and more than 2 scenes exist,
+  // run Scenes 1-2 as a solo pilot wave before requesting Scene 3+.
+  const waves: { batchStart: number; batchSlice: PlannedScene[] }[][] = [];
+  let cursor = finalScenes.length;
+
+  if (onConfirmContinueAfterScene2 && plannedScenes.length > 2 && cursor < 2) {
+    waves.push([
+      {
+        batchStart: cursor,
+        batchSlice: plannedScenes.slice(cursor, 2),
+      },
+    ]);
+    cursor = 2;
+  }
+
+  const remainingBatches: { batchStart: number; batchSlice: PlannedScene[] }[] = [];
+  for (let bs = cursor; bs < plannedScenes.length; bs += SCENE_BATCH_SIZE) {
+    remainingBatches.push({
       batchStart: bs,
       batchSlice: plannedScenes.slice(bs, bs + SCENE_BATCH_SIZE),
     });
   }
+  for (let w = 0; w < remainingBatches.length; w += CONCURRENT_BATCHES) {
+    waves.push(remainingBatches.slice(w, w + CONCURRENT_BATCHES));
+  }
 
-  for (let w = 0; w < pendingBatches.length; w += CONCURRENT_BATCHES) {
+  for (let w = 0; w < waves.length; w++) {
     if (userSignal?.aborted) {
       throw new DOMException('Cancelled by user', 'AbortError');
     }
 
-    const waveBatches = pendingBatches.slice(w, w + CONCURRENT_BATCHES);
+    const waveBatches = waves[w];
     const waveFirstScene = waveBatches[0].batchSlice[0].index || waveBatches[0].batchStart + 1;
     const lastWaveBatch = waveBatches[waveBatches.length - 1];
     const waveLastScene =
@@ -449,6 +554,29 @@ export async function executeGroundedPipeline(
             isPartial: true,
           })
         );
+      }
+    }
+
+    // Pause right after Scene 2 finishes so user can choose Yes / No before generating Scene 3+
+    if (
+      !hasAskedContinueAfterScene2 &&
+      onConfirmContinueAfterScene2 &&
+      finalScenes.length === 2 &&
+      finalScenes.length < plannedScenes.length
+    ) {
+      hasAskedContinueAfterScene2 = true;
+      const shouldContinue = await promptContinueAfterScene2();
+      if (!shouldContinue) {
+        return assembleGroundedStoryResult({
+          req,
+          bible,
+          scenes: finalScenes.slice(0, 2),
+          cleanNarration: prepared.cleanNarration,
+          authorNotes: prepared.authorNotes,
+          timingSource: prepared.timingSource,
+          totalPlannedScenes: 2,
+          isPartial: false,
+        });
       }
     }
   }

@@ -259,6 +259,10 @@
   - Wired Progressive Scene-by-Scene Results Display via SSE `streamJsonLlmWithSceneProgress` (`unifiedAiService.ts`), wave emissions (`groundedPipeline.ts`), and `ResultsView.tsx` live generation banner (`Stop Generation`, selection preservation, zero unfinished scene placeholders).
   - Created `src/services/aiUsageStorage.ts` (with per-model `byModel` breakdown) and converted the footer widget into a dedicated `AI Usage` button (`Footer.tsx`, `#footer-ai-usage-btn`) navigating to the standalone `AiUsageView.tsx` page (`Session`, `Today`, `All Time`, token mix bar, model breakdown table, and `Reset Usage`).
   - Added Suite 34 automated verification tests (`219 / 219` passing).
+- [x] **Scene 2 Interactive Continue Confirmation Gate (Option B):**
+  - Added `awaitingContinueConfirmation` flag and `OnConfirmContinueCallback` in `src/types.ts` and `continueResolverRef` Promise gate + safe cleanup in `src/App.tsx`.
+  - Updated `#live-generation-banner` in `src/components/ResultsView.tsx` to display `"Would you like to continue?"` alongside **Yes** (`#confirm-continue-yes-btn`) and **No** (`#confirm-continue-no-btn`) buttons using clean square-corner dark editorial styling.
+  - Updated Long-Form (`groundedPipeline.ts`), Enhance Story (`enhanceStoryArchitect.ts`), and Standard (`geminiClient.ts`) pipelines to pause right after Scene 2 when 3+ scenes exist (running a 2-scene pilot wave first in Long Form to save quota), stop cleanly at Scene 2 on **No** without coverage-warning noise, or resume streaming Scene 3+ on **Yes**.
 
 ## Active Testing & Planned Future Roadmap (Post-Testing)
 - [ ] **Genre Stress-Testing Loop (In Progress):**

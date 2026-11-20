@@ -203,9 +203,11 @@ export interface PartialGenerationProgress {
   completedScenes: number;
   totalPlannedScenes?: number;
   isPartial?: boolean;
+  awaitingContinueConfirmation?: boolean;
   stageLabel?: string;
 }
 
 export type OnPartialStoryCallback = (partialResult: StoryGenerationResult) => void;
+export type OnConfirmContinueCallback = () => Promise<boolean>;
 
 export type ActivePage = 'generator' | 'ai-usage' | 'terms' | 'privacy' | 'guide' | 'byok-security' | 'error-403';

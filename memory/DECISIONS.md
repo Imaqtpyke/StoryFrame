@@ -327,3 +327,13 @@
 - **Date:** 2026-11-20
 - **Status:** Active
 
+## Scene 2 Interactive Continue Confirmation Gate (Option B)
+- **Fact/Decision:** Implemented an interactive Scene 2 confirmation gate across both Short Form and Long Form pipelines (`groundedPipeline.ts`, `enhanceStoryArchitect.ts`, `geminiClient.ts`, `App.tsx`, `ResultsView.tsx`, and `types.ts`):
+  1. When generating a story with 3 or more scenes, the pipeline pauses cleanly right after Scene 2 finishes and displays `"Would you like to continue?"` with **Yes** (`#confirm-continue-yes-btn`) and **No** (`#confirm-continue-no-btn`) buttons in `#live-generation-banner`.
+  2. Clicking **No** halts remaining generation completely, clears stale checkpoints, suppresses truncated script-coverage warning banners, and leaves Scenes 1 and 2 finalized and fully exportable.
+  3. Clicking **Yes** resumes generation seamlessly from Scene 3 onward, streaming finished scenes into the live storyboard until completion.
+  4. Long-Form Stage 3/4 runs Wave 0 as a 2-scene pilot batch (`Scenes 1-2`) before prompting so zero extra tokens are spent on Scenes 3+ unless the user clicks **Yes**.
+- **Context:** Lets creators inspect quality, style locks, and pacing after the first 2 scenes and abort early without wasting API quota or waiting for unnecessary remaining scenes.
+- **Date:** 2026-11-20
+- **Status:** Active
+

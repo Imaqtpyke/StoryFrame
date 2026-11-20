@@ -2,7 +2,14 @@
 // In BYOK mode, calls are dispatched straight from the browser to Google Generative Language API.
 // API keys are strictly kept in browser memory / sessionStorage and never sent to any remote backend.
 
-import { GenerateStoryRequest, OnPartialStoryCallback, StoryGenerationResult, StyleProfile, Beat } from '../types';
+import {
+  GenerateStoryRequest,
+  OnConfirmContinueCallback,
+  OnPartialStoryCallback,
+  StoryGenerationResult,
+  StyleProfile,
+  Beat,
+} from '../types';
 import {
   extractTemporalAnchor,
   cleanRedundantOnScreenText,
@@ -474,7 +481,8 @@ export async function generateOriginalStory(
   apiKey: string,
   userSignal?: AbortSignal,
   onStatusMessage?: (msg: string) => void,
-  onPartialResult?: OnPartialStoryCallback
+  onPartialResult?: OnPartialStoryCallback,
+  onConfirmContinueAfterScene2?: OnConfirmContinueCallback
 ): Promise<StoryGenerationResult> {
   const {
     story,
@@ -499,7 +507,14 @@ export async function generateOriginalStory(
 
   // Long-form 16:9 landscape text-to-image is routed to the 5-stage Grounded Pipeline
   if (isLongForm && !isVideoMode) {
-    return executeGroundedPipeline(req, apiKey, userSignal, onStatusMessage, onPartialResult);
+    return executeGroundedPipeline(
+      req,
+      apiKey,
+      userSignal,
+      onStatusMessage,
+      onPartialResult,
+      onConfirmContinueAfterScene2
+    );
   }
 
   let durationInstruction = '';
@@ -872,14 +887,26 @@ STRICT CONSTRAINTS:
 }
 Do not include markdown code fences or backticks, just the raw JSON object.`;
 
+  const storyWordCount = story.trim().split(/\s+/).filter(Boolean).length;
+  const shouldUsePilotCap = Boolean(
+    onConfirmContinueAfterScene2 &&
+      (isCustomBeats ? (customScenes?.length || 0) > 2 : isVideoMode || isLongForm || storyWordCount > 14)
+  );
+
   let customBeatsPrompt = '';
   if (isCustomBeats && customScenes) {
+    const pilotCustomScenes = shouldUsePilotCap ? customScenes.slice(0, 2) : customScenes;
     customBeatsPrompt = `\n\nCRITICAL USER-SPECIFIED SCENE AND BEAT SEGMENTATION:
 The user has explicitly segmented the story into exact scenes and custom visual beats. You MUST follow this exact scene breakdown and phrase assignment. For each beat, follow the user's specific visual guidance and shot suggestions:
-${customScenes.map((cs, sIdx) => `Scene ${sIdx + 1} narration: "${cs.narratorLine}"
+${pilotCustomScenes.map((cs, sIdx) => `Scene ${sIdx + 1} narration: "${cs.narratorLine}"
 Beats:
 ${cs.beats.map((b, bIdx) => `  - Beat ${bIdx + 1} phrase: "${b.textSpan}"${b.userGuidance ? ` | Director's Visual Note: "${b.userGuidance}"` : ''}${b.shotType ? ` | Preferred Shot: "${b.shotType}"` : ''}`).join('\n')}`).join('\n\n')}`;
   }
+
+  const automaticPilotPrompt =
+    shouldUsePilotCap && !isCustomBeats
+      ? `\n\nCHECKPOINT PILOT RULE (CRITICAL): Generate ONLY Scene 1 and Scene 2 first in "scenes" (maximum 2 scenes total in this response), covering ONLY the opening 1 to 2 sentences/clips cleanly along with complete "styleProfile", "characterSheet", "locationSheet", and "thumbnail". Do NOT summarize or cram later sentences into Scene 1 or Scene 2. If the full story script truly completes within 1 or 2 scenes, finish it cleanly inside those 1-2 scenes.`
+      : '';
 
   const userPrompt = `Exact Story / Voiceover Script (preserve every word verbatim, DO NOT expand):
 ${story}
@@ -889,7 +916,7 @@ ${characterStyle || 'Consistent style specified by scene context.'}
 
 Format: ${isLongForm ? 'Long form (16:9)' : 'Short form (9:16)'}
 Platform: ${platform}
-${durationInstruction}${customBeatsPrompt}`;
+${durationInstruction}${customBeatsPrompt}${automaticPilotPrompt}`;
 
   const parsedData = await streamJsonLlmWithSceneProgress<any>({
     provider: req.aiProvider || 'gemini',
@@ -905,8 +932,12 @@ ${durationInstruction}${customBeatsPrompt}`;
     thinkingLevel: 'minimal',
     onPartialStoryboard: onPartialResult
       ? (partial) => {
+          const cappedPartial =
+            shouldUsePilotCap && Array.isArray(partial.scenes) && partial.scenes.length > 2
+              ? { ...partial, scenes: partial.scenes.slice(0, 2) }
+              : partial;
           const built = buildPartialStoryResultFromStream({
-            partial,
+            partial: cappedPartial,
             req,
             isLongForm,
             isVideoMode,
@@ -918,7 +949,505 @@ ${durationInstruction}${customBeatsPrompt}`;
       : undefined,
   });
 
-  // Auto-continuation safeguard: if a long script truncated mid-JSON (especially in multi-scene Text to Video),
+  const finalizeStandardStoryboard = async (
+    dataObj: any,
+    allowCoverageNotice: boolean
+  ): Promise<StoryGenerationResult> => {
+    // Sanitize styleProfile (strip hero pronoun wardrobe leaks from shared artStyle, and enforce monochrome lighting purity)
+    const rawStyleProfile = dataObj.styleProfile || {};
+    const cleanedArtStyle = sanitizeSharedVisualStyle(removeEmDashes(rawStyleProfile.artStyle || characterStyle || 'Cinematic Rendering'));
+    const preliminaryStyleProfile: StyleProfile = {
+      artStyle: cleanedArtStyle || removeEmDashes(characterStyle || 'Cinematic Rendering'),
+      colorPalette: removeEmDashes(rawStyleProfile.colorPalette || 'Harmonious color grading matching narrative tone'),
+      lighting: removeEmDashes(rawStyleProfile.lighting || 'Cinematic three-point lighting with soft rim fill'),
+      eraAndSetting: removeEmDashes(rawStyleProfile.eraAndSetting || 'Contemporary atmospheric setting'),
+      lensAndFilmStock: removeEmDashes(rawStyleProfile.lensAndFilmStock || 'Shot on 35mm prime lens, fine film grain'),
+    };
+    const sanitizedStyleProfile: StyleProfile = isMonochromeStyle(preliminaryStyleProfile)
+      ? {
+          ...preliminaryStyleProfile,
+          colorPalette: sanitizeMonochromeLighting(preliminaryStyleProfile.colorPalette, preliminaryStyleProfile),
+          lighting:
+            sanitizeMonochromeLighting(preliminaryStyleProfile.lighting, preliminaryStyleProfile) ||
+            'Stark high-contrast chiaroscuro lighting with deep pitch-black shadows and crisp white highlights',
+        }
+      : preliminaryStyleProfile;
+
+    const sanitizedCharacterSheet: Record<string, string> = {};
+    if (dataObj.characterSheet && typeof dataObj.characterSheet === 'object') {
+      for (const [key, val] of Object.entries(dataObj.characterSheet)) {
+        if (typeof val === 'string' && val.trim().length > 0) {
+          sanitizedCharacterSheet[key.trim()] = sanitizeCharacterIdentitySheet(removeEmDashes(val.trim()));
+        }
+      }
+    }
+
+    const sanitizedLocationSheet: Record<string, string> = {};
+    if (dataObj.locationSheet && typeof dataObj.locationSheet === 'object') {
+      for (const [key, val] of Object.entries(dataObj.locationSheet)) {
+        if (typeof val === 'string' && val.trim().length > 0) {
+          sanitizedLocationSheet[key.trim()] = removeEmDashes(val.trim());
+        }
+      }
+    }
+
+    const rawScenes = Array.isArray(dataObj.scenes) ? dataObj.scenes : [];
+    const settingFirstScene = new Map<string, number>();
+
+    const sanitizedScenes = rawScenes.map((scene: any, sIdx: number) => {
+      const sceneIndex = typeof scene.index === 'number' ? scene.index : sIdx + 1;
+      const narratorLine = removeEmDashes(scene.narratorLine || '');
+
+      const rawBeats = (Array.isArray(scene.beats) ? scene.beats : [])
+        .filter((beat: any) => {
+          const span = typeof beat.textSpan === 'string' ? beat.textSpan.trim() : '';
+          const prompt = typeof beat.imagePrompt === 'string' ? beat.imagePrompt.trim() : '';
+          return span.length > 0 || prompt.length > 0;
+        });
+
+      if (rawBeats.length === 0 && narratorLine.trim().length > 0) {
+        rawBeats.push({
+          beatIndex: 1,
+          textSpan: narratorLine.trim(),
+          imagePrompt: narratorLine.trim(),
+          shotType: 'Medium Shot',
+          cameraAngle: 'eye-level',
+          cameraMovement: 'Slow forward push-in',
+          estimatedSeconds: isVideoMode ? targetVideoDuration : 3,
+        });
+      }
+
+      const assignedBeatAnchorMap = new Map<number, string>();
+      let assignedSceneAnchor: string | null = null;
+
+      rawBeats.forEach((beat: any, bIdx: number) => {
+        const span = beat.textSpan || '';
+        const directAnchor = extractTemporalAnchor(span);
+        if (directAnchor && !assignedSceneAnchor) {
+          assignedBeatAnchorMap.set(bIdx, directAnchor);
+          assignedSceneAnchor = directAnchor;
+        }
+      });
+
+      if (!assignedSceneAnchor) {
+        const sceneDirectAnchor = extractTemporalAnchor(narratorLine);
+        if (sceneDirectAnchor) {
+          let matchedIdx = -1;
+          for (let i = 0; i < rawBeats.length; i++) {
+            const span = rawBeats[i].textSpan || '';
+            if (span.toLowerCase().includes(sceneDirectAnchor.toLowerCase())) {
+              matchedIdx = i;
+              break;
+            }
+          }
+          if (matchedIdx !== -1) {
+            assignedBeatAnchorMap.set(matchedIdx, sceneDirectAnchor);
+          } else if (rawBeats.length > 0) {
+            assignedBeatAnchorMap.set(0, sceneDirectAnchor);
+          }
+        }
+      }
+
+      const sanitizedBeats: Beat[] = rawBeats.map((beat: any, bIdx: number) => {
+        const beatIndex = typeof beat.beatIndex === 'number' ? beat.beatIndex : bIdx + 1;
+        const textSpan = removeEmDashes(beat.textSpan || '');
+        let imagePrompt = removeEmDashes(beat.imagePrompt || '');
+
+        for (const [charName, visualDesc] of Object.entries(sanitizedCharacterSheet)) {
+          const shortcutRegex = new RegExp(`\\(${charName}\\s*\\(matching established look[^)]*\\)\\)`, 'gi');
+          imagePrompt = imagePrompt.replace(shortcutRegex, `${charName} (${visualDesc})`);
+          const shortcutRegex2 = new RegExp(`\\b${charName}\\s*\\(matching established look[^)]*\\)`, 'gi');
+          imagePrompt = imagePrompt.replace(shortcutRegex2, `${charName} (${visualDesc})`);
+        }
+
+        const shotType = removeEmDashes(beat.shotType || beat.shot_type || inferShotType(imagePrompt, beatIndex));
+        const cameraAngle = removeEmDashes(beat.cameraAngle || beat.camera_angle || inferCameraAngle(imagePrompt, beatIndex));
+        const cameraMovement = removeEmDashes(beat.cameraMovement || beat.camera_movement || inferCameraMovement(imagePrompt, beatIndex));
+
+        const isFlashbackBeat = isInfancyOrChildhoodFlashback(textSpan, imagePrompt);
+        const matchedCharClauses: string[] = [];
+        for (const [charName, visualDesc] of Object.entries(sanitizedCharacterSheet)) {
+          const isEntityKey = /\b(?:entity|creature|mimic|shadow|warden|monster|stalker|doppelganger)\b/i.test(
+            `${charName} ${visualDesc}`
+          );
+          if (isFlashbackBeat && !isEntityKey) continue;
+          const regex = new RegExp(`\\b${charName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+          if (regex.test(textSpan) || regex.test(imagePrompt)) {
+            const snippet = visualDesc.slice(0, 25);
+            if (!imagePrompt.toLowerCase().includes(snippet.toLowerCase())) {
+              matchedCharClauses.push(`${charName}: ${visualDesc}`);
+            }
+          }
+        }
+
+        const matchedLocClauses: string[] = [];
+        if (!isFlashbackBeat) {
+          for (const [locName, visualDesc] of Object.entries(sanitizedLocationSheet)) {
+            const regex = new RegExp(`\\b${locName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+            if (regex.test(textSpan) || regex.test(imagePrompt)) {
+              const snippet = visualDesc.slice(0, 25);
+              if (!imagePrompt.toLowerCase().includes(snippet.toLowerCase())) {
+                matchedLocClauses.push(`${locName} environment: ${visualDesc}`);
+              }
+            }
+          }
+        }
+
+        let finalImagePrompt = imagePrompt.trim();
+        if (finalImagePrompt && !/[.!?]$/.test(finalImagePrompt)) {
+          finalImagePrompt += '.';
+        }
+
+        if (matchedCharClauses.length > 0 && !finalImagePrompt.toLowerCase().includes('character continuity')) {
+          const charMissing = matchedCharClauses.filter(
+            (c) => !finalImagePrompt.toLowerCase().includes(c.slice(0, 20).toLowerCase())
+          );
+          if (charMissing.length > 0) {
+            finalImagePrompt += ` Character Continuity (${charMissing.join('. ')}).`;
+          }
+        }
+
+        if (matchedLocClauses.length > 0 && !finalImagePrompt.toLowerCase().includes('location continuity')) {
+          const locMissing = matchedLocClauses.filter(
+            (l) => !finalImagePrompt.toLowerCase().includes(l.slice(0, 20).toLowerCase())
+          );
+          if (locMissing.length > 0) {
+            finalImagePrompt += ` Location Continuity (${locMissing.join('. ')}).`;
+          }
+        }
+
+        if (
+          !finalImagePrompt.toLowerCase().includes(sanitizedStyleProfile.artStyle.toLowerCase().slice(0, 15)) &&
+          !finalImagePrompt.toLowerCase().includes('visual style:')
+        ) {
+          const compactBeatStyle =
+            buildCompactCharacterAnchor(sanitizedStyleProfile.artStyle, STYLE_ANCHOR_MAX_WORDS) ||
+            sanitizedStyleProfile.artStyle;
+          finalImagePrompt += ` Visual Style: ${compactBeatStyle}.`;
+        }
+
+        let visualSoundEffect: string | undefined = undefined;
+        const lowerArtStyle = (sanitizedStyleProfile.artStyle + ' ' + (characterStyle || '')).toLowerCase();
+        const isIllustratedStyle = /(comic|cartoon|anime|manga|illustrated|illustration|stickman|pop-art|sketch|graphic novel|drawing|cel-animation|risograph|chibi|doodle|toon)/.test(lowerArtStyle);
+
+        const rawSFX = removeEmDashes(beat.visualSoundEffect || beat.visual_sound_effect || '');
+        if (isIllustratedStyle && !isVideoMode && rawSFX && rawSFX.trim().length > 0) {
+          const cleanSFX = rawSFX.trim().toUpperCase().replace(/[^A-Z0-9!?-]/g, '');
+          if (cleanSFX.length > 0) {
+            visualSoundEffect = cleanSFX.endsWith('!') ? cleanSFX : `${cleanSFX}!`;
+            if (!finalImagePrompt.toUpperCase().includes(visualSoundEffect)) {
+              finalImagePrompt += ` Integrated bold stylized comic lettering reading "${visualSoundEffect}" in the artwork background with dynamic action lines.`;
+            }
+          }
+        }
+
+        const temporalAnchor = assignedBeatAnchorMap.get(bIdx);
+        if (temporalAnchor) {
+          const anchorUpper = temporalAnchor.toUpperCase();
+          const hasOnScreenText = /text|title|typography|lettering/i.test(finalImagePrompt) && finalImagePrompt.toUpperCase().includes(anchorUpper);
+          if (!hasOnScreenText) {
+            const styleRef = sanitizedStyleProfile.artStyle || characterStyle || 'the visual aesthetic';
+            finalImagePrompt += ` Featuring large clear legible on-screen text reading "${anchorUpper}" displayed above at the upper portion of the frame in a bold typography stylized to match ${styleRef}, clearly visible to the naked eye.`;
+          }
+        } else {
+          finalImagePrompt = cleanRedundantOnScreenText(finalImagePrompt);
+        }
+
+        finalImagePrompt = expandEntityKeysInPrompt(finalImagePrompt, sanitizedCharacterSheet, sanitizedLocationSheet);
+        finalImagePrompt = sanitizeMonochromeLighting(finalImagePrompt, sanitizedStyleProfile);
+        finalImagePrompt = sanitizeStillImageMotionAndOptics(finalImagePrompt, shotType, isVideoMode);
+        finalImagePrompt = cleanAndDeduplicatePrompt(finalImagePrompt, isVideoMode);
+        finalImagePrompt = assembleCleanPrompt(finalImagePrompt, isLongForm);
+
+        if (!finalImagePrompt || finalImagePrompt.length < 35) {
+          finalImagePrompt = assembleCleanPrompt(
+            `${shotType}, ${cameraAngle} framing inside ${sanitizedStyleProfile.eraAndSetting}, capturing a tense silent beat bathed in ${sanitizedStyleProfile.lighting}. Shot on 50mm f/2.0 lens. Visual Style: ${sanitizedStyleProfile.artStyle}.`,
+            isLongForm
+          );
+        }
+
+        let soundCue: string | undefined = undefined;
+        if (isVideoMode) {
+          const audioMatch = finalImagePrompt.match(/\bAudio:\s*([^.;\n]+)/i);
+          if (audioMatch && audioMatch[1]) {
+            soundCue = removeEmDashes(audioMatch[1].trim());
+          }
+        }
+
+        let optics: string | undefined = undefined;
+        const opticsMatch = finalImagePrompt.match(/\bOptics:\s*([^.;\n]+)/i) || finalImagePrompt.match(/\b(\d{2,3}mm\s+(?:f\/[0-9.]+|lens|prime)[^,.;]*)/i);
+        if (opticsMatch && opticsMatch[1]) {
+          optics = removeEmDashes(opticsMatch[1].trim());
+        }
+
+        return {
+          beatIndex,
+          textSpan,
+          shotType,
+          cameraAngle,
+          cameraMovement,
+          visualSoundEffect,
+          temporalAnchor,
+          soundCue,
+          optics,
+          imagePrompt: removeEmDashes(finalImagePrompt),
+          estimatedSeconds: typeof beat.estimatedSeconds === 'number' && beat.estimatedSeconds > 0
+            ? beat.estimatedSeconds
+            : 2,
+        };
+      });
+
+      const calculatedSceneSeconds = Math.round(
+        sanitizedBeats.reduce((sum: number, b: any) => sum + (b.estimatedSeconds || 2), 0)
+      );
+      const sceneSeconds = isVideoMode
+        ? targetVideoDuration
+        : Math.max(
+            calculatedSceneSeconds,
+            typeof scene.estimatedSeconds === 'number' && scene.estimatedSeconds > 0
+              ? scene.estimatedSeconds
+              : calculatedSceneSeconds
+          );
+
+      const establishedCharacters: string[] = [];
+      const charactersInScene: string[] = [];
+      for (const charName of Object.keys(sanitizedCharacterSheet)) {
+        const regex = new RegExp(`\\b${charName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+        if (regex.test(narratorLine) || sanitizedBeats.some((b) => regex.test(b.imagePrompt) || regex.test(b.textSpan))) {
+          charactersInScene.push(charName);
+        }
+      }
+
+      const establishedSettings: string[] = [];
+      if (sceneIndex === 1) {
+        establishedSettings.push(sanitizedStyleProfile.eraAndSetting);
+        settingFirstScene.set(sanitizedStyleProfile.eraAndSetting, 1);
+      } else if (!settingFirstScene.has(sanitizedStyleProfile.eraAndSetting)) {
+        establishedSettings.push(sanitizedStyleProfile.eraAndSetting);
+        settingFirstScene.set(sanitizedStyleProfile.eraAndSetting, sceneIndex);
+      }
+
+      return {
+        index: sceneIndex,
+        narratorLine,
+        estimatedSeconds: sceneSeconds,
+        beats: sanitizedBeats,
+        establishedCharacters,
+        establishedSettings,
+        isAnchorScene: establishedCharacters.length > 0 || establishedSettings.length > 0,
+      };
+    });
+
+    const preppedScenes = sanitizedScenes.map((scene: any) => ({
+      ...scene,
+      beats: (scene.beats || []).map((beat: any) => {
+        const prompt = isVideoMode ? beat.imagePrompt : sanitizeImagePromptShotFraming(beat.imagePrompt || '');
+        const directAnchor = extractTemporalAnchor(beat.textSpan || '');
+        return directAnchor
+          ? { ...beat, temporalAnchor: directAnchor, imagePrompt: prompt }
+          : { ...beat, temporalAnchor: undefined, imagePrompt: cleanRedundantOnScreenText(prompt) };
+      }),
+    }));
+
+    const readableCharacterSheet = synchronizeCharacterSheetWithFirstAppearances(
+      preppedScenes,
+      normalizeContinuitySheetKeys(sanitizedCharacterSheet)
+    );
+    const readableLocationSheet = normalizeContinuitySheetKeys(sanitizedLocationSheet);
+
+    const scenesWithTransitionHints = await runTwoPhaseProgressionAndRepair({
+      scenes: preppedScenes,
+      styleProfile: sanitizedStyleProfile,
+      characterSheet: readableCharacterSheet,
+      locationSheet: readableLocationSheet,
+      isLongForm,
+      isVideoMode,
+      targetVideoDuration: isVideoMode ? targetVideoDuration : undefined,
+      apiKey,
+      aiProvider: req.aiProvider,
+      modelQuality,
+      groqModel: req.groqModel,
+      userSignal,
+      onStatusMessage,
+    });
+
+    const calculatedTotalSeconds = Math.round(scenesWithTransitionHints.reduce((sum: number, s: any) => sum + (s.estimatedSeconds || 0), 0) * 10) / 10;
+    const totalSeconds = calculatedTotalSeconds > 0 ? calculatedTotalSeconds : (dataObj.totalDurationSeconds || 30);
+
+    const finalCoverage = findUncoveredTrailingScript(story, scenesWithTransitionHints);
+    const assumptions: string[] | undefined =
+      allowCoverageNotice && !isCustomBeats && finalCoverage.missingWords >= 3 && finalCoverage.coverageRatio < 0.95
+        ? [
+            `Script coverage notice: Output covered ${finalCoverage.coveredWords} of ${finalCoverage.totalWords} input words due to provider output limits. Uncovered tail starts at: "${finalCoverage.uncoveredText.slice(0, 90)}..."`,
+          ]
+        : undefined;
+
+    const thumbnail = compileThumbnailPrompt({
+      rawThumbnail: dataObj.thumbnail,
+      styleProfile: sanitizedStyleProfile,
+      characterSheet: readableCharacterSheet,
+      storyPremise: story,
+      format,
+      platform,
+    });
+
+    return {
+      styleProfile: sanitizedStyleProfile,
+      characterSheet: readableCharacterSheet,
+      locationSheet: readableLocationSheet,
+      totalDurationSeconds: totalSeconds,
+      scenes: scenesWithTransitionHints,
+      generationMode: isVideoMode ? 'video' : 'image',
+      targetVideoDuration: isVideoMode ? targetVideoDuration : undefined,
+      assumptions,
+      thumbnail,
+    };
+  };
+
+  // Interactive Scene 2 checkpoint gate: pause when 2+ scenes completed and more scenes remain
+  const rawInitialScenes = Array.isArray(parsedData.scenes) ? parsedData.scenes : [];
+  const pilotCoverage = isCustomBeats
+    ? null
+    : findUncoveredTrailingScript(story, rawInitialScenes.slice(0, 2));
+  const hasMoreAfterScene2 = isCustomBeats
+    ? (customScenes?.length || 0) > 2
+    : Boolean(pilotCoverage && pilotCoverage.missingWords >= 3);
+
+  if (
+    onConfirmContinueAfterScene2 &&
+    !userSignal?.aborted &&
+    (rawInitialScenes.length > 2 || (rawInitialScenes.length >= 2 && hasMoreAfterScene2))
+  ) {
+    const pilotScenesSlice = rawInitialScenes.slice(0, 2);
+    const pilotFinalized = await finalizeStandardStoryboard(
+      { ...parsedData, scenes: pilotScenesSlice },
+      false
+    );
+
+    if (onPartialResult) {
+      onPartialResult({
+        ...pilotFinalized,
+        progress: {
+          completedScenes: pilotFinalized.scenes.length,
+          totalPlannedScenes: isCustomBeats ? customScenes!.length : undefined,
+          isPartial: true,
+          awaitingContinueConfirmation: true,
+          stageLabel: 'Would you like to continue?',
+        },
+      });
+    }
+    if (onStatusMessage) {
+      onStatusMessage('Scenes 1-2 finished. Waiting for your decision to continue.');
+    }
+
+    const shouldContinue = await onConfirmContinueAfterScene2();
+    if (!shouldContinue) {
+      return pilotFinalized;
+    }
+
+    if (onPartialResult) {
+      onPartialResult({
+        ...pilotFinalized,
+        progress: {
+          completedScenes: pilotFinalized.scenes.length,
+          totalPlannedScenes: isCustomBeats ? customScenes!.length : undefined,
+          isPartial: true,
+          awaitingContinueConfirmation: false,
+          stageLabel: 'Continuing breakdown from Scene 3...',
+        },
+      });
+    }
+
+    if (rawInitialScenes.length <= 2) {
+      if (onStatusMessage) {
+        onStatusMessage('Continuing story breakdown from Scene 3...');
+      }
+
+      const contPromptBody = isCustomBeats && customScenes
+        ? `REMAINING USER-SPECIFIED SCENES TO COMPLETE (starting cleanly at Scene 3):
+${customScenes.slice(2).map((cs, sIdx) => `Scene ${sIdx + 3} narration: "${cs.narratorLine}"
+Beats:
+${cs.beats.map((b, bIdx) => `  - Beat ${bIdx + 1} phrase: "${b.textSpan}"${b.userGuidance ? ` | Director's Visual Note: "${b.userGuidance}"` : ''}${b.shotType ? ` | Preferred Shot: "${b.shotType}"` : ''}`).join('\n')}`).join('\n\n')}`
+        : `REMAINING UNCOVERED SCRIPT TO COMPLETE VERBATIM (starting cleanly at Scene 3, covering EVERY remaining word to the very end):
+${pilotCoverage?.uncoveredText || ''}`;
+
+      const contStreamData = await streamJsonLlmWithSceneProgress<any>({
+        provider: req.aiProvider || 'gemini',
+        apiKey,
+        systemPrompt,
+        userPrompt: `CONTINUATION BATCH (DO NOT REPEAT ALREADY COVERED SCENES 1-2):
+Already covered ending snippet: "...${pilotScenesSlice[pilotScenesSlice.length - 1]?.narratorLine || ''}"
+
+LOCKED PRODUCTION BIBLE (MUST MAINTAIN 100% IDENTICAL VISUAL STYLE, CHARACTERS & LOCATIONS):
+Style Profile: ${JSON.stringify(parsedData.styleProfile || {})}
+Character Sheet: ${JSON.stringify(parsedData.characterSheet || {})}
+Location Sheet: ${JSON.stringify(parsedData.locationSheet || {})}
+
+${contPromptBody}
+
+Character Style Instruction: ${characterStyle || 'Consistent style specified by scene context.'}
+Format: ${isLongForm ? 'Long form (16:9)' : 'Short form (9:16)'}
+Platform: ${platform}
+${durationInstruction}
+
+Return ONLY valid JSON containing:
+- "characterSheet": {} (include any newly appearing recurring figures not yet listed above)
+- "locationSheet": {} (include any newly appearing recurring places)
+${!parsedData.thumbnail || !parsedData.thumbnail.hookText ? '- "thumbnail": { "heroMoment": "...", "expression": "...", "bgDescription": "...", "accentColor": "...", "hookText": "...", "fontStyle": "...", "alternateHooks": ["..."] },\n' : ''}- "scenes": [ ...starting at index 3... ]`,
+        modelQuality,
+        groqModel: req.groqModel,
+        userSignal,
+        onStatusMessage,
+        temperature: 0.3,
+        topP: 0.85,
+        thinkingLevel: 'minimal',
+        onPartialStoryboard: onPartialResult
+          ? (partial) => {
+              const streamedCont = Array.isArray(partial.scenes) ? partial.scenes : [];
+              if (streamedCont.length === 0) return;
+              const reindexed = streamedCont.map((cs: any, idx: number) => ({
+                ...cs,
+                index: pilotScenesSlice.length + idx + 1,
+              }));
+              const built = buildPartialStoryResultFromStream({
+                partial: {
+                  ...parsedData,
+                  scenes: [...pilotScenesSlice, ...reindexed],
+                },
+                req,
+                isLongForm,
+                isVideoMode,
+                targetVideoDuration,
+                autoArchitectMode: false,
+              });
+              if (built) onPartialResult(built);
+            }
+          : undefined,
+      });
+
+      const contScenes = Array.isArray(contStreamData?.scenes) ? contStreamData.scenes : [];
+      if (contScenes.length > 0) {
+        parsedData.scenes = [...pilotScenesSlice];
+        for (const cs of contScenes) {
+          parsedData.scenes.push({
+            ...cs,
+            index: parsedData.scenes.length + 1,
+          });
+        }
+        if (contStreamData.characterSheet && typeof contStreamData.characterSheet === 'object') {
+          parsedData.characterSheet = { ...(parsedData.characterSheet || {}), ...contStreamData.characterSheet };
+        }
+        if (contStreamData.locationSheet && typeof contStreamData.locationSheet === 'object') {
+          parsedData.locationSheet = { ...(parsedData.locationSheet || {}), ...contStreamData.locationSheet };
+        }
+        if ((!parsedData.thumbnail || !parsedData.thumbnail.hookText) && contStreamData.thumbnail && typeof contStreamData.thumbnail === 'object') {
+          parsedData.thumbnail = contStreamData.thumbnail;
+        }
+      }
+    }
+  }
+
+  // Auto-continuation safeguard: if a long script still truncated mid-JSON,
   // seamlessly generate the remaining uncovered script scenes reusing locked styleProfile & characterSheet.
   const canContinue =
     !isCustomBeats &&
@@ -948,14 +1477,13 @@ ${durationInstruction}${customBeatsPrompt}`;
       const nextSceneIndex = existingScenes.length + 1;
       const lockedCastJson = JSON.stringify(parsedData.characterSheet || {});
       const lockedLocJson = JSON.stringify(parsedData.locationSheet || {});
-      const lockedStyleJson = JSON.stringify(parsedData.styleProfile || {});
       const needThumb = !parsedData.thumbnail || !parsedData.thumbnail.hookText;
 
       const contUserPrompt = `CONTINUATION BATCH (DO NOT REPEAT ALREADY COVERED SCENES 1-${existingScenes.length}):
 Already covered ending snippet: "...${existingScenes[existingScenes.length - 1]?.narratorLine || ''}"
 
 LOCKED PRODUCTION BIBLE (MUST MAINTAIN 100% IDENTICAL VISUAL STYLE, CHARACTERS & LOCATIONS):
-Style Profile: ${lockedStyleJson}
+Style Profile: ${JSON.stringify(parsedData.styleProfile || {})}
 Character Sheet: ${lockedCastJson}
 Location Sheet: ${lockedLocJson}
 
@@ -1016,370 +1544,7 @@ ${needThumb ? '- "thumbnail": { "heroMoment": "...", "expression": "...", "bgDes
     }
   }
 
-  // Sanitize styleProfile (strip hero pronoun wardrobe leaks from shared artStyle, and enforce monochrome lighting purity)
-  const rawStyleProfile = parsedData.styleProfile || {};
-  const cleanedArtStyle = sanitizeSharedVisualStyle(removeEmDashes(rawStyleProfile.artStyle || characterStyle || 'Cinematic Rendering'));
-  const preliminaryStyleProfile: StyleProfile = {
-    artStyle: cleanedArtStyle || removeEmDashes(characterStyle || 'Cinematic Rendering'),
-    colorPalette: removeEmDashes(rawStyleProfile.colorPalette || 'Harmonious color grading matching narrative tone'),
-    lighting: removeEmDashes(rawStyleProfile.lighting || 'Cinematic three-point lighting with soft rim fill'),
-    eraAndSetting: removeEmDashes(rawStyleProfile.eraAndSetting || 'Contemporary atmospheric setting'),
-    lensAndFilmStock: removeEmDashes(rawStyleProfile.lensAndFilmStock || 'Shot on 35mm prime lens, fine film grain'),
-  };
-  const sanitizedStyleProfile: StyleProfile = isMonochromeStyle(preliminaryStyleProfile)
-    ? {
-        ...preliminaryStyleProfile,
-        colorPalette: sanitizeMonochromeLighting(preliminaryStyleProfile.colorPalette, preliminaryStyleProfile),
-        lighting:
-          sanitizeMonochromeLighting(preliminaryStyleProfile.lighting, preliminaryStyleProfile) ||
-          'Stark high-contrast chiaroscuro lighting with deep pitch-black shadows and crisp white highlights',
-      }
-    : preliminaryStyleProfile;
-
-  const sanitizedCharacterSheet: Record<string, string> = {};
-  if (parsedData.characterSheet && typeof parsedData.characterSheet === 'object') {
-    for (const [key, val] of Object.entries(parsedData.characterSheet)) {
-      if (typeof val === 'string' && val.trim().length > 0) {
-        sanitizedCharacterSheet[key.trim()] = sanitizeCharacterIdentitySheet(removeEmDashes(val.trim()));
-      }
-    }
-  }
-
-  const sanitizedLocationSheet: Record<string, string> = {};
-  if (parsedData.locationSheet && typeof parsedData.locationSheet === 'object') {
-    for (const [key, val] of Object.entries(parsedData.locationSheet)) {
-      if (typeof val === 'string' && val.trim().length > 0) {
-        sanitizedLocationSheet[key.trim()] = removeEmDashes(val.trim());
-      }
-    }
-  }
-
-  const rawScenes = Array.isArray(parsedData.scenes) ? parsedData.scenes : [];
-  const settingFirstScene = new Map<string, number>();
-
-  const sanitizedScenes = rawScenes.map((scene: any, sIdx: number) => {
-    const sceneIndex = typeof scene.index === 'number' ? scene.index : sIdx + 1;
-    const narratorLine = removeEmDashes(scene.narratorLine || '');
-
-    const rawBeats = (Array.isArray(scene.beats) ? scene.beats : [])
-      .filter((beat: any) => {
-        const span = typeof beat.textSpan === 'string' ? beat.textSpan.trim() : '';
-        const prompt = typeof beat.imagePrompt === 'string' ? beat.imagePrompt.trim() : '';
-        return span.length > 0 || prompt.length > 0;
-      });
-
-    // If all beats were filtered out, create at least one valid beat from the narratorLine
-    if (rawBeats.length === 0 && narratorLine.trim().length > 0) {
-      rawBeats.push({
-        beatIndex: 1,
-        textSpan: narratorLine.trim(),
-        imagePrompt: narratorLine.trim(),
-        shotType: 'Medium Shot',
-        cameraAngle: 'eye-level',
-        cameraMovement: 'Slow forward push-in',
-        estimatedSeconds: isVideoMode ? targetVideoDuration : 3,
-      });
-    }
-
-    // Pre-pass: map temporal anchors directly to beats that speak them
-    const assignedBeatAnchorMap = new Map<number, string>();
-    let assignedSceneAnchor: string | null = null;
-
-    rawBeats.forEach((beat: any, bIdx: number) => {
-      const span = beat.textSpan || '';
-      const directAnchor = extractTemporalAnchor(span);
-      if (directAnchor && !assignedSceneAnchor) {
-        assignedBeatAnchorMap.set(bIdx, directAnchor);
-        assignedSceneAnchor = directAnchor;
-      }
-    });
-
-    if (!assignedSceneAnchor) {
-      const sceneDirectAnchor = extractTemporalAnchor(narratorLine);
-      if (sceneDirectAnchor) {
-        let matchedIdx = -1;
-        for (let i = 0; i < rawBeats.length; i++) {
-          const span = rawBeats[i].textSpan || '';
-          if (span.toLowerCase().includes(sceneDirectAnchor.toLowerCase())) {
-            matchedIdx = i;
-            break;
-          }
-        }
-        if (matchedIdx !== -1) {
-          assignedBeatAnchorMap.set(matchedIdx, sceneDirectAnchor);
-        } else if (rawBeats.length > 0) {
-          assignedBeatAnchorMap.set(0, sceneDirectAnchor);
-        }
-      }
-    }
-
-    const sanitizedBeats: Beat[] = rawBeats.map((beat: any, bIdx: number) => {
-      const beatIndex = typeof beat.beatIndex === 'number' ? beat.beatIndex : bIdx + 1;
-      const textSpan = removeEmDashes(beat.textSpan || '');
-      let imagePrompt = removeEmDashes(beat.imagePrompt || '');
-
-      // Replace any residual lazy AI shortcut phrases with actual character descriptions
-      for (const [charName, visualDesc] of Object.entries(sanitizedCharacterSheet)) {
-        const shortcutRegex = new RegExp(`\\(${charName}\\s*\\(matching established look[^)]*\\)\\)`, 'gi');
-        imagePrompt = imagePrompt.replace(shortcutRegex, `${charName} (${visualDesc})`);
-        const shortcutRegex2 = new RegExp(`\\b${charName}\\s*\\(matching established look[^)]*\\)`, 'gi');
-        imagePrompt = imagePrompt.replace(shortcutRegex2, `${charName} (${visualDesc})`);
-      }
-
-      const shotType = removeEmDashes(beat.shotType || beat.shot_type || inferShotType(imagePrompt, beatIndex));
-      const cameraAngle = removeEmDashes(beat.cameraAngle || beat.camera_angle || inferCameraAngle(imagePrompt, beatIndex));
-      const cameraMovement = removeEmDashes(beat.cameraMovement || beat.camera_movement || inferCameraMovement(imagePrompt, beatIndex));
-
-      const isFlashbackBeat = isInfancyOrChildhoodFlashback(textSpan, imagePrompt);
-      const matchedCharClauses: string[] = [];
-      for (const [charName, visualDesc] of Object.entries(sanitizedCharacterSheet)) {
-        const isEntityKey = /\b(?:entity|creature|mimic|shadow|warden|monster|stalker|doppelganger)\b/i.test(
-          `${charName} ${visualDesc}`
-        );
-        if (isFlashbackBeat && !isEntityKey) continue;
-        const regex = new RegExp(`\\b${charName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
-        if (regex.test(textSpan) || regex.test(imagePrompt)) {
-          // Avoid appending if visual details are already inside the prompt
-          const snippet = visualDesc.slice(0, 25);
-          if (!imagePrompt.toLowerCase().includes(snippet.toLowerCase())) {
-            matchedCharClauses.push(`${charName}: ${visualDesc}`);
-          }
-        }
-      }
-
-      const matchedLocClauses: string[] = [];
-      if (!isFlashbackBeat) {
-        for (const [locName, visualDesc] of Object.entries(sanitizedLocationSheet)) {
-          const regex = new RegExp(`\\b${locName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
-          if (regex.test(textSpan) || regex.test(imagePrompt)) {
-            const snippet = visualDesc.slice(0, 25);
-            if (!imagePrompt.toLowerCase().includes(snippet.toLowerCase())) {
-              matchedLocClauses.push(`${locName} environment: ${visualDesc}`);
-            }
-          }
-        }
-      }
-
-      let finalImagePrompt = imagePrompt.trim();
-      if (finalImagePrompt && !/[.!?]$/.test(finalImagePrompt)) {
-        finalImagePrompt += '.';
-      }
-
-      // Append continuity only if details are not already embedded in prompt
-      if (matchedCharClauses.length > 0 && !finalImagePrompt.toLowerCase().includes('character continuity')) {
-        const charMissing = matchedCharClauses.filter(
-          (c) => !finalImagePrompt.toLowerCase().includes(c.slice(0, 20).toLowerCase())
-        );
-        if (charMissing.length > 0) {
-          finalImagePrompt += ` Character Continuity (${charMissing.join('. ')}).`;
-        }
-      }
-
-      if (matchedLocClauses.length > 0 && !finalImagePrompt.toLowerCase().includes('location continuity')) {
-        const locMissing = matchedLocClauses.filter(
-          (l) => !finalImagePrompt.toLowerCase().includes(l.slice(0, 20).toLowerCase())
-        );
-        if (locMissing.length > 0) {
-          finalImagePrompt += ` Location Continuity (${locMissing.join('. ')}).`;
-        }
-      }
-
-      // Append compact style suffix without repeating a 40+ word style paragraph on every beat
-      if (
-        !finalImagePrompt.toLowerCase().includes(sanitizedStyleProfile.artStyle.toLowerCase().slice(0, 15)) &&
-        !finalImagePrompt.toLowerCase().includes('visual style:')
-      ) {
-        const compactBeatStyle =
-          buildCompactCharacterAnchor(sanitizedStyleProfile.artStyle, STYLE_ANCHOR_MAX_WORDS) ||
-          sanitizedStyleProfile.artStyle;
-        finalImagePrompt += ` Visual Style: ${compactBeatStyle}.`;
-      }
-
-      // Sanitize visualSoundEffect (Image mode only; illustrated / comic styles only)
-      let visualSoundEffect: string | undefined = undefined;
-      const lowerArtStyle = (sanitizedStyleProfile.artStyle + ' ' + (characterStyle || '')).toLowerCase();
-      const isIllustratedStyle = /(comic|cartoon|anime|manga|illustrated|illustration|stickman|pop-art|sketch|graphic novel|drawing|cel-animation|risograph|chibi|doodle|toon)/.test(lowerArtStyle);
-
-      const rawSFX = removeEmDashes(beat.visualSoundEffect || beat.visual_sound_effect || '');
-      if (isIllustratedStyle && !isVideoMode && rawSFX && rawSFX.trim().length > 0) {
-        const cleanSFX = rawSFX.trim().toUpperCase().replace(/[^A-Z0-9!?-]/g, '');
-        if (cleanSFX.length > 0) {
-          visualSoundEffect = cleanSFX.endsWith('!') ? cleanSFX : `${cleanSFX}!`;
-          if (!finalImagePrompt.toUpperCase().includes(visualSoundEffect)) {
-            finalImagePrompt += ` Integrated bold stylized comic lettering reading "${visualSoundEffect}" in the artwork background with dynamic action lines.`;
-          }
-        }
-      }
-
-      const temporalAnchor = assignedBeatAnchorMap.get(bIdx);
-      if (temporalAnchor) {
-        const anchorUpper = temporalAnchor.toUpperCase();
-        const hasOnScreenText = /text|title|typography|lettering/i.test(finalImagePrompt) && finalImagePrompt.toUpperCase().includes(anchorUpper);
-        if (!hasOnScreenText) {
-          const styleRef = sanitizedStyleProfile.artStyle || characterStyle || 'the visual aesthetic';
-          finalImagePrompt += ` Featuring large clear legible on-screen text reading "${anchorUpper}" displayed above at the upper portion of the frame in a bold typography stylized to match ${styleRef}, clearly visible to the naked eye.`;
-        }
-      } else {
-        finalImagePrompt = cleanRedundantOnScreenText(finalImagePrompt);
-      }
-
-      // Expand CamelCase entity keys, enforce monochrome lighting purity, and clean still-image motion/optics
-      finalImagePrompt = expandEntityKeysInPrompt(finalImagePrompt, sanitizedCharacterSheet, sanitizedLocationSheet);
-      finalImagePrompt = sanitizeMonochromeLighting(finalImagePrompt, sanitizedStyleProfile);
-      finalImagePrompt = sanitizeStillImageMotionAndOptics(finalImagePrompt, shotType, isVideoMode);
-
-      // Clean redundant duplications and enforce strict mode isolation (no audio in image mode)
-      finalImagePrompt = cleanAndDeduplicatePrompt(finalImagePrompt, isVideoMode);
-
-      // Clean assembly: eliminates duplicate --ar, stray orientation, and filler prefixes
-      finalImagePrompt = assembleCleanPrompt(finalImagePrompt, isLongForm);
-
-      // Fallback if prompt was degenerate or empty (never leak literal spoken dialogue or negations)
-      if (!finalImagePrompt || finalImagePrompt.length < 35) {
-        finalImagePrompt = assembleCleanPrompt(
-          `${shotType}, ${cameraAngle} framing inside ${sanitizedStyleProfile.eraAndSetting}, capturing a tense silent beat bathed in ${sanitizedStyleProfile.lighting}. Shot on 50mm f/2.0 lens. Visual Style: ${sanitizedStyleProfile.artStyle}.`,
-          isLongForm
-        );
-      }
-
-      let soundCue: string | undefined = undefined;
-      if (isVideoMode) {
-        const audioMatch = finalImagePrompt.match(/\bAudio:\s*([^.;\n]+)/i);
-        if (audioMatch && audioMatch[1]) {
-          soundCue = removeEmDashes(audioMatch[1].trim());
-        }
-      }
-
-      let optics: string | undefined = undefined;
-      const opticsMatch = finalImagePrompt.match(/\bOptics:\s*([^.;\n]+)/i) || finalImagePrompt.match(/\b(\d{2,3}mm\s+(?:f\/[0-9.]+|lens|prime)[^,.;]*)/i);
-      if (opticsMatch && opticsMatch[1]) {
-        optics = removeEmDashes(opticsMatch[1].trim());
-      }
-
-      return {
-        beatIndex,
-        textSpan,
-        shotType,
-        cameraAngle,
-        cameraMovement,
-        visualSoundEffect,
-        temporalAnchor,
-        soundCue,
-        optics,
-        imagePrompt: removeEmDashes(finalImagePrompt),
-        estimatedSeconds: typeof beat.estimatedSeconds === 'number' && beat.estimatedSeconds > 0
-          ? beat.estimatedSeconds
-          : 2,
-      };
-    });
-
-    const calculatedSceneSeconds = Math.round(
-      sanitizedBeats.reduce((sum: number, b: any) => sum + (b.estimatedSeconds || 2), 0)
-    );
-    const sceneSeconds = isVideoMode
-      ? targetVideoDuration
-      : Math.max(
-          calculatedSceneSeconds,
-          typeof scene.estimatedSeconds === 'number' && scene.estimatedSeconds > 0
-            ? scene.estimatedSeconds
-            : calculatedSceneSeconds
-        );
-
-    // Track characters established in this scene
-    const establishedCharacters: string[] = [];
-    const charactersInScene: string[] = [];
-    for (const charName of Object.keys(sanitizedCharacterSheet)) {
-      const regex = new RegExp(`\\b${charName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
-      if (regex.test(narratorLine) || sanitizedBeats.some((b) => regex.test(b.imagePrompt) || regex.test(b.textSpan))) {
-        charactersInScene.push(charName);
-      }
-    }
-
-    const establishedSettings: string[] = [];
-    if (sceneIndex === 1) {
-      establishedSettings.push(sanitizedStyleProfile.eraAndSetting);
-      settingFirstScene.set(sanitizedStyleProfile.eraAndSetting, 1);
-    } else if (!settingFirstScene.has(sanitizedStyleProfile.eraAndSetting)) {
-      establishedSettings.push(sanitizedStyleProfile.eraAndSetting);
-      settingFirstScene.set(sanitizedStyleProfile.eraAndSetting, sceneIndex);
-    }
-
-    return {
-      index: sceneIndex,
-      narratorLine,
-      estimatedSeconds: sceneSeconds,
-      beats: sanitizedBeats,
-      establishedCharacters,
-      establishedSettings,
-      isAnchorScene: establishedCharacters.length > 0 || establishedSettings.length > 0,
-    };
-  });
-
-  // Final Two-Phase Progression Repair, Narration Coverage Recovery, Compact Character Locking & Synchronization
-  const preppedScenes = sanitizedScenes.map((scene: any) => ({
-    ...scene,
-    beats: (scene.beats || []).map((beat: any) => {
-      const prompt = isVideoMode ? beat.imagePrompt : sanitizeImagePromptShotFraming(beat.imagePrompt || '');
-      const directAnchor = extractTemporalAnchor(beat.textSpan || '');
-      return directAnchor
-        ? { ...beat, temporalAnchor: directAnchor, imagePrompt: prompt }
-        : { ...beat, temporalAnchor: undefined, imagePrompt: cleanRedundantOnScreenText(prompt) };
-    }),
-  }));
-
-  const readableCharacterSheet = synchronizeCharacterSheetWithFirstAppearances(
-    preppedScenes,
-    normalizeContinuitySheetKeys(sanitizedCharacterSheet)
-  );
-  const readableLocationSheet = normalizeContinuitySheetKeys(sanitizedLocationSheet);
-
-  const scenesWithTransitionHints = await runTwoPhaseProgressionAndRepair({
-    scenes: preppedScenes,
-    styleProfile: sanitizedStyleProfile,
-    characterSheet: readableCharacterSheet,
-    locationSheet: readableLocationSheet,
-    isLongForm,
-    isVideoMode,
-    targetVideoDuration: isVideoMode ? targetVideoDuration : undefined,
-    apiKey,
-    aiProvider: req.aiProvider,
-    modelQuality,
-    groqModel: req.groqModel,
-    userSignal,
-    onStatusMessage,
-  });
-
-  const calculatedTotalSeconds = Math.round(scenesWithTransitionHints.reduce((sum: number, s: any) => sum + (s.estimatedSeconds || 0), 0) * 10) / 10;
-  const totalSeconds = calculatedTotalSeconds > 0 ? calculatedTotalSeconds : (parsedData.totalDurationSeconds || 30);
-
-  const finalCoverage = findUncoveredTrailingScript(story, scenesWithTransitionHints);
-  const assumptions: string[] | undefined =
-    !isCustomBeats && finalCoverage.missingWords >= 3 && finalCoverage.coverageRatio < 0.95
-      ? [
-          `Script coverage notice: Output covered ${finalCoverage.coveredWords} of ${finalCoverage.totalWords} input words due to provider output limits. Uncovered tail starts at: "${finalCoverage.uncoveredText.slice(0, 90)}..."`,
-        ]
-      : undefined;
-
-  const thumbnail = compileThumbnailPrompt({
-    rawThumbnail: parsedData.thumbnail,
-    styleProfile: sanitizedStyleProfile,
-    characterSheet: readableCharacterSheet,
-    storyPremise: story,
-    format,
-    platform,
-  });
-
-  return {
-    styleProfile: sanitizedStyleProfile,
-    characterSheet: readableCharacterSheet,
-    locationSheet: readableLocationSheet,
-    totalDurationSeconds: totalSeconds,
-    scenes: scenesWithTransitionHints,
-    generationMode: isVideoMode ? 'video' : 'image',
-    targetVideoDuration: isVideoMode ? targetVideoDuration : undefined,
-    assumptions,
-    thumbnail,
-  };
+  return finalizeStandardStoryboard(parsedData, true);
 }
 
 // ============================================================================
@@ -1392,10 +1557,25 @@ export async function generateStoryDirectly(
   apiKey: string,
   userSignal?: AbortSignal,
   onStatusMessage?: (msg: string) => void,
-  onPartialResult?: OnPartialStoryCallback
+  onPartialResult?: OnPartialStoryCallback,
+  onConfirmContinueAfterScene2?: OnConfirmContinueCallback
 ): Promise<StoryGenerationResult> {
   if (req.autoArchitectMode) {
-    return generateEnhancedStory(req, apiKey, userSignal, onStatusMessage, onPartialResult);
+    return generateEnhancedStory(
+      req,
+      apiKey,
+      userSignal,
+      onStatusMessage,
+      onPartialResult,
+      onConfirmContinueAfterScene2
+    );
   }
-  return generateOriginalStory(req, apiKey, userSignal, onStatusMessage, onPartialResult);
+  return generateOriginalStory(
+    req,
+    apiKey,
+    userSignal,
+    onStatusMessage,
+    onPartialResult,
+    onConfirmContinueAfterScene2
+  );
 }

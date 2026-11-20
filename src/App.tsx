@@ -42,7 +42,16 @@ function StoryFrameMain() {
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
   const [openModelOptionsTrigger, setOpenModelOptionsTrigger] = useState(0);
   const [generationStatusMessage, setGenerationStatusMessage] = useState<string | null>(null);
+  const [isAwaitingContinue, setIsAwaitingContinue] = useState(false);
   const activeAbortControllerRef = useRef<AbortController | null>(null);
+  const continueResolverRef = useRef<((shouldContinue: boolean) => void) | null>(null);
+
+  const resolvePendingContinue = (decision: boolean) => {
+    setIsAwaitingContinue(false);
+    const resolver = continueResolverRef.current;
+    continueResolverRef.current = null;
+    if (resolver) resolver(decision);
+  };
 
   // Load history on initial mount
   useEffect(() => {
@@ -56,6 +65,7 @@ function StoryFrameMain() {
     const controller = new AbortController();
     activeAbortControllerRef.current = controller;
 
+    resolvePendingContinue(false);
     setIsLoading(true);
     setErrorMessage(null);
     setGenerationStatusMessage(null);
@@ -74,6 +84,13 @@ function StoryFrameMain() {
         );
       }
 
+      const handleConfirmContinueGate = () =>
+        new Promise<boolean>((resolve) => {
+          continueResolverRef.current = resolve;
+          setIsAwaitingContinue(true);
+          setGenerationStatusMessage('Scenes 1-2 finished. Waiting for your decision to continue.');
+        });
+
       // Direct client-side generation using BYOK with user signal support and progressive scene updates
       const responseData = await generateStoryDirectly(
         data,
@@ -84,7 +101,8 @@ function StoryFrameMain() {
           if (!controller.signal.aborted && partialResult?.scenes && partialResult.scenes.length > 0) {
             setResult(partialResult);
           }
-        }
+        },
+        handleConfirmContinueGate
       );
       setResult(responseData);
 
@@ -107,12 +125,14 @@ function StoryFrameMain() {
       const safeErrorMsg = apiKey && apiKey.length > 6 ? errorMsg.replaceAll(apiKey, '[REDACTED]') : errorMsg;
       setErrorMessage(safeErrorMsg);
     } finally {
+      resolvePendingContinue(false);
       setIsLoading(false);
       activeAbortControllerRef.current = null;
     }
   };
 
   const handleCancelRequest = () => {
+    resolvePendingContinue(false);
     if (activeAbortControllerRef.current) {
       activeAbortControllerRef.current.abort();
       activeAbortControllerRef.current = null;
@@ -141,6 +161,7 @@ function StoryFrameMain() {
   };
 
   const handleBackToEdit = () => {
+    resolvePendingContinue(false);
     if (activeAbortControllerRef.current) {
       activeAbortControllerRef.current.abort();
       activeAbortControllerRef.current = null;
@@ -153,6 +174,7 @@ function StoryFrameMain() {
   };
 
   const handleReset = () => {
+    resolvePendingContinue(false);
     if (activeAbortControllerRef.current) {
       activeAbortControllerRef.current.abort();
       activeAbortControllerRef.current = null;
@@ -316,6 +338,8 @@ function StoryFrameMain() {
               onReset={handleReset}
               onStartEpisodeDraft={handleStartEpisodeDraft}
               isGeneratingMore={isLoading}
+              isAwaitingContinue={isAwaitingContinue}
+              onConfirmContinue={(shouldContinue) => resolvePendingContinue(shouldContinue)}
               totalPlannedScenes={result.progress?.totalPlannedScenes}
               generationStatusMessage={generationStatusMessage}
               onCancelGeneration={handleCancelRequest}
