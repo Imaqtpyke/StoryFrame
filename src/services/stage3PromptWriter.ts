@@ -6,8 +6,7 @@
 
 import { StoryBible, StoryFormat, GenerationMode, AiProvider } from '../types';
 import { PlannedBeat } from './stage2BeatPlan';
-import { fetchWithExponentialBackoff } from '../utils/retryFetch';
-import { executeJsonLlmCall, extractGeminiResponseText, sanitizeGenericErrorMessage } from './unifiedAiService';
+import { executeGeminiSchemaCall, executeJsonLlmCall } from './unifiedAiService';
 
 export interface WrittenPromptBeat extends PlannedBeat {
   imagePrompt: string;
@@ -33,7 +32,7 @@ export const SCENE_PROMPTS_SCHEMA = {
           imagePrompt: {
             type: 'STRING',
             description:
-              'Self-contained paragraph of 50 to 100 words in exact order: framing/angle, subject visual lock, action/gaze, setting, light, world style',
+              'Crisp self-contained prompt of 35 to 60 words in exact order: framing/angle, subject visual lock, action/gaze, setting, light, world style',
           },
         },
         required: ['beatIndex', 'imagePrompt'],
@@ -121,7 +120,7 @@ ${prevDepicts.length > 0 ? prevDepicts.map((d, i) => `- ${d}`).join('\n') : 'Ope
 BEATS TO WRITE FOR SCENE ${sceneIndex}:
 ${beatsSummary}
 
-CRITICAL RULES FOR WRITING EACH PROMPT (50 to 100 words per prompt):
+CRITICAL RULES FOR WRITING EACH PROMPT (35 to 60 crisp words per prompt - no padded filler):
 1. ORDER OF PROSE:
    a. Framing and angle in natural words (${format === 'short' ? '"Vertical 9:16 portrait composition, low angle...", "Eye-level portrait framing..."' : '"Wide 16:9 landscape composition, low angle...", "Medium eye-level shot..."'}).
    b. The subject with full visual lock repeated (NEVER use character names like "Father Thomas" or pronouns like "he/she/it/they" - write the full physical description because image models are stateless).
@@ -166,53 +165,21 @@ Output valid JSON matching SCENE_PROMPTS_SCHEMA.`;
       temperature: 0.2,
     });
   } else {
-    const modelName = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-4-hydrogen';
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-
-    const generationConfig: Record<string, any> = {
-      responseMimeType: 'application/json',
+    parsed = await executeGeminiSchemaCall<any>({
+      apiKey,
+      prompt: systemInstruction,
+      modelQuality,
       responseSchema: SCENE_PROMPTS_SCHEMA,
-    };
-    if (modelName !== 'gemini-4-hydrogen') {
-      generationConfig.temperature = 0.2;
-    }
-
-    const payload = {
-      contents: [{ role: 'user', parts: [{ text: systemInstruction }] }],
-      generationConfig,
-    };
-
-    const response = await fetchWithExponentialBackoff(
-      () =>
-        fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-          signal: userSignal,
-        }),
-      {
-        initialDelayMs: 2000,
-        maxAttempts: 4,
-        onRetry: (attempt, _max, delayMs) => {
-          if (onStatusMessage) {
-            onStatusMessage(`Writing cinematic prompts for Scene ${sceneIndex} (Attempt ${attempt}/4, waiting ${Math.round(delayMs / 1000)}s)...`);
-          }
-        },
-      }
-    );
-
-    if (!response.ok) {
-      const errText = await response.text().catch(() => '');
-      throw new Error(sanitizeGenericErrorMessage(`Scene ${sceneIndex} prompt writing failed (${response.status}): ${errText}`, apiKey, 'gemini'));
-    }
-
-    const json = await response.json();
-    const rawText = extractGeminiResponseText(json);
-    if (!rawText) {
-      throw new Error(`Empty response for Scene ${sceneIndex} prompt writing`);
-    }
-
-    parsed = JSON.parse(rawText);
+      temperature: 0.2,
+      thinkingLevel: 'minimal',
+      errorContext: `Scene ${sceneIndex} prompt writing`,
+      userSignal,
+      onRetryMessage: (attempt, _max, delayMs) => {
+        if (onStatusMessage) {
+          onStatusMessage(`Writing cinematic prompts for Scene ${sceneIndex} (Attempt ${attempt}/4, waiting ${Math.round(delayMs / 1000)}s)...`);
+        }
+      },
+    });
   }
   const promptMap = new Map<number, string>();
   for (const item of parsed.prompts || []) {
@@ -322,7 +289,7 @@ ${prevDepicts.length > 0 ? prevDepicts.map((d) => `- ${d}`).join('\n') : 'Openin
 SCENES AND BEATS TO WRITE:
 ${scenesSummary}
 
-CRITICAL RULES FOR WRITING EACH PROMPT (50 to 95 words per prompt):
+CRITICAL RULES FOR WRITING EACH PROMPT (35 to 60 crisp words per prompt - no padded filler):
 1. ORDER OF PROSE:
    a. Framing and angle in natural words (${format === 'short' ? '"Vertical 9:16 portrait composition, low angle...", "Eye-level portrait framing..."' : '"Wide 16:9 landscape composition, low angle...", "Medium eye-level shot..."'}).
    b. The subject with full visual lock repeated (NEVER use bare names or pronouns like "he/she/it/they" without physical description).
@@ -359,51 +326,21 @@ Output valid JSON matching the schema with an entry in "scenes" for every sceneI
       temperature: 0.2,
     });
   } else {
-    const modelName = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-4-hydrogen';
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-
-    const generationConfig: Record<string, any> = {
-      responseMimeType: 'application/json',
+    parsed = await executeGeminiSchemaCall<any>({
+      apiKey,
+      prompt: batchInstruction,
+      modelQuality,
       responseSchema: BATCH_PROMPTS_SCHEMA,
-    };
-    if (modelName !== 'gemini-4-hydrogen') {
-      generationConfig.temperature = 0.2;
-    }
-
-    const response = await fetchWithExponentialBackoff(
-      () =>
-        fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: batchInstruction }] }],
-            generationConfig,
-          }),
-          signal: userSignal,
-        }),
-      {
-        initialDelayMs: 2000,
-        maxAttempts: 4,
-        onRetry: (attempt, _max, delayMs) => {
-          if (onStatusMessage) {
-            onStatusMessage(`Writing prompts for Scenes ${sceneLabelRange} (Attempt ${attempt}/4, waiting ${Math.round(delayMs / 1000)}s)...`);
-          }
-        },
-      }
-    );
-
-    if (!response.ok) {
-      const errText = await response.text().catch(() => '');
-      throw new Error(sanitizeGenericErrorMessage(`Scenes ${sceneLabelRange} prompt writing failed (${response.status}): ${errText}`, apiKey, 'gemini'));
-    }
-
-    const json = await response.json();
-    const rawText = extractGeminiResponseText(json);
-    if (!rawText) {
-      throw new Error(`Empty response for Scenes ${sceneLabelRange} prompt writing`);
-    }
-
-    parsed = JSON.parse(rawText);
+      temperature: 0.2,
+      thinkingLevel: 'minimal',
+      errorContext: `Scenes ${sceneLabelRange} prompt writing`,
+      userSignal,
+      onRetryMessage: (attempt, _max, delayMs) => {
+        if (onStatusMessage) {
+          onStatusMessage(`Writing prompts for Scenes ${sceneLabelRange} (Attempt ${attempt}/4, waiting ${Math.round(delayMs / 1000)}s)...`);
+        }
+      },
+    });
   }
 
   const resultMap = new Map<number, WrittenPromptBeat[]>();

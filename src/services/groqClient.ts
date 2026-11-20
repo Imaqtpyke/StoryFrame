@@ -3,6 +3,7 @@
 // Keys remain strictly in client sessionStorage and are never transmitted to third-party servers.
 
 import { fetchWithExponentialBackoff } from '../utils/retryFetch';
+import { extractAndRecordGroqUsage } from './aiUsageStorage';
 
 export const GROQ_API_BASE_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
@@ -251,6 +252,7 @@ export async function callGroqChatCompletion(
         const fallbackResp = await executeRequest(fallbackPayload);
         if (fallbackResp.ok) {
           const fallbackData = await fallbackResp.json();
+          extractAndRecordGroqUsage(fallbackData, model);
           const fallbackContent = fallbackData?.choices?.[0]?.message?.content;
           if (fallbackContent && typeof fallbackContent === 'string') {
             return fallbackContent;
@@ -275,6 +277,7 @@ export async function callGroqChatCompletion(
   }
 
   const data = await response.json();
+  extractAndRecordGroqUsage(data, model);
   const rawContent = data?.choices?.[0]?.message?.content;
   if (!rawContent || typeof rawContent !== 'string') {
     throw new Error('Empty response received from Groq API.');

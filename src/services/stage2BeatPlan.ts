@@ -6,8 +6,7 @@
 
 import { StoryBible, StoryFormat, GenerationMode, AiProvider } from '../types';
 import { NumberedWord } from './stage0Prepare';
-import { fetchWithExponentialBackoff } from '../utils/retryFetch';
-import { executeJsonLlmCall, extractGeminiResponseText, sanitizeGenericErrorMessage } from './unifiedAiService';
+import { executeGeminiSchemaCall, executeJsonLlmCall } from './unifiedAiService';
 
 export interface PacingConfig {
   minDwell: number;
@@ -148,16 +147,17 @@ export function enforceStage2Pacing(
 ): PlannedScene[] {
   const config = format === 'short' ? SHORT_FORM_PACING : LONG_FORM_PACING;
   const isVideo = generationMode === 'video';
+  const effectiveMinDwell = isVideo ? config.minDwell : 0.45;
 
   return rawScenes.map((scene) => {
     let beats = [...scene.beats];
     if (beats.length === 0) return scene;
 
-    // 1. Merge sub-minDwell beats into neighbor
+    // 1. Merge tiny single-word stubs below effectiveMinDwell into neighbor
     let i = 0;
     while (i < beats.length) {
       const b = beats[i];
-      if (b.estimatedSeconds < config.minDwell && beats.length > 1) {
+      if (b.estimatedSeconds < effectiveMinDwell && beats.length > 1) {
         if (i < beats.length - 1) {
           // Merge with next
           const next = beats[i + 1];
@@ -196,38 +196,40 @@ export function enforceStage2Pacing(
       }
     }
 
-    // 2. Check fast cut ceiling: max 25% per scene, max 2 in a row
-    let consecutiveFastCuts = 0;
-    const postFastCutHold = format === 'short' ? 1.5 : 2.0;
+    // 2. Video Mode fast-cut ceiling (Image Mode uses Option B 2-6 word Phrase Cuts freely across distinct visual phrases)
+    if (isVideo) {
+      let consecutiveFastCuts = 0;
+      const postFastCutHold = format === 'short' ? 1.5 : 2.0;
 
-    for (let j = 0; j < beats.length; j++) {
-      const b = beats[j];
-      const isFastCut = b.estimatedSeconds < config.fastCutBelow;
+      for (let j = 0; j < beats.length; j++) {
+        const b = beats[j];
+        const isFastCut = b.estimatedSeconds < config.fastCutBelow;
 
-      if (isFastCut) {
-        consecutiveFastCuts++;
-        if (consecutiveFastCuts > 2 || b.intensity !== 'high' || !b.newInfo.trim()) {
-          b.estimatedSeconds = config.fastCutBelow;
+        if (isFastCut) {
+          consecutiveFastCuts++;
+          if (consecutiveFastCuts > 2 || b.intensity !== 'high' || !b.newInfo.trim()) {
+            b.estimatedSeconds = config.fastCutBelow;
+            consecutiveFastCuts = 0;
+          }
+        } else {
+          if (consecutiveFastCuts > 0) {
+            b.estimatedSeconds = Math.max(postFastCutHold, b.estimatedSeconds);
+          }
           consecutiveFastCuts = 0;
         }
-      } else {
-        if (consecutiveFastCuts > 0) {
-          b.estimatedSeconds = Math.max(postFastCutHold, b.estimatedSeconds);
-        }
-        consecutiveFastCuts = 0;
       }
-    }
 
-    // Cap fast cuts to at most 25% of scene
-    const fastCutCount = beats.filter((b) => b.estimatedSeconds < config.fastCutBelow).length;
-    const maxAllowedFastCuts = Math.floor(beats.length * 0.25);
-    if (fastCutCount > maxAllowedFastCuts) {
-      let excess = fastCutCount - maxAllowedFastCuts;
-      for (const b of beats) {
-        if (excess <= 0) break;
-        if (b.estimatedSeconds < config.fastCutBelow) {
-          b.estimatedSeconds = config.fastCutBelow;
-          excess--;
+      // Cap fast cuts to at most 25% of scene in Video Mode
+      const fastCutCount = beats.filter((b) => b.estimatedSeconds < config.fastCutBelow).length;
+      const maxAllowedFastCuts = Math.floor(beats.length * 0.25);
+      if (fastCutCount > maxAllowedFastCuts) {
+        let excess = fastCutCount - maxAllowedFastCuts;
+        for (const b of beats) {
+          if (excess <= 0) break;
+          if (b.estimatedSeconds < config.fastCutBelow) {
+            b.estimatedSeconds = config.fastCutBelow;
+            excess--;
+          }
         }
       }
     }
@@ -300,9 +302,22 @@ export async function stage2GenerateBeatPlan(
   groqModel?: string
 ): Promise<PlannedScene[]> {
   const isShortForm = format === 'short';
-  const pacingDesc = isShortForm
-    ? 'SHORT-FORM PACING: rapid pattern interrupts every 1.2s to 1.8s (min dwell 0.8s, fast cut below 1.1s, max dwell 2.0s)'
-    : 'LONG-FORM PACING: cinematic scene progression every 1.5s to 2.5s (min dwell 0.8s, fast cut below 1.2s, max dwell 3.0s)';
+  const isVideoMode = generationMode === 'video';
+  const pacingDesc = isVideoMode
+    ? isShortForm
+      ? 'SHORT-FORM VIDEO PACING: rapid cuts every 1.2s to 1.8s (min dwell 0.8s, fast cut below 1.1s, max dwell 2.0s)'
+      : 'LONG-FORM VIDEO PACING: cinematic scene progression every 1.5s to 2.5s (min dwell 0.8s, fast cut below 1.2s, max dwell 3.0s)'
+    : isShortForm
+      ? 'SHORT-FORM PHRASE-CUT IMAGE PACING: rapid phrase-level cuts every 2 to 6 words (~0.7s to 2.0s per image) so every spoken phrase lands on a distinct visual frame'
+      : 'LONG-FORM PHRASE-CUT IMAGE PACING: phrase-level visual cuts every 2 to 6 words (~0.7s to 2.4s per image) along natural grammatical phrase boundaries so every spoken phrase receives its own fresh visual composition';
+
+  const segmentationRule1 = isVideoMode
+    ? '1. PICTURES, NOT GRAMMAR: Split by what is visibly distinct in the world. Never cut inside a clause that has no picture on its own (e.g. "was the worst", "as if he", "of the coffin lid"). Merge fragments into the beat carrying the noun or verb.'
+    : '1. PHRASE-LEVEL VISUAL SEGMENTATION (2-6 WORDS PER BEAT): Split spoken narration at natural grammatical/syntactic phrase boundaries aiming for ~2 to 6 words per beat (example: "If you pay off" | "your mortgage" | "ten years early," | "your lender" | "might hit you" | "with a massive penalty"). NEVER strand bare articles, possessives, or hanging prepositions away from their noun (never leave "with a" or "of the" as a solo beat). Give EVERY phrase beat a distinct focal subject, shotSize, or angle so adjacent beats never depict the same frozen shot.';
+
+  const dynamicRule5 = isVideoMode
+    ? '5. FAST CUTS: Allowed ONLY if intensity="high" (a reveal, shock, escalation) and newInfo has a genuine distinct visual element. Max 25% of beats in a scene.'
+    : '5. VISUAL SHIFT PER PHRASE: Each 2-6 word beat MUST vary shotSize, angle, or focal subject/detail in depicts & newInfo (e.g. action closeup -> mortgaged house -> calendar turning -> lender silhouette -> warning stamp).';
 
   const indexedWordsText = words
     .map((w) => `[${w.index}] ${w.word} (${w.startSec}s-${w.endSec}s)`)
@@ -328,11 +343,11 @@ ${indexedWordsText}
 """
 
 RULES FOR BEAT PLANNING:
-1. PICTURES, NOT GRAMMAR: Split by what is visibly distinct in the world. Never cut inside a clause that has no picture on its own (e.g. "was the worst", "as if he", "of the coffin lid"). Merge fragments into the beat carrying the noun or verb.
+${segmentationRule1}
 2. CONTINUOUS TILING: The first beat of scene 0 must start at word 0. Every beat's startWordIndex must equal the previous beat's endWordIndex + 1. The final beat must end at word ${words.length - 1}.
 3. FIGURATIVE LINES: For lines in Bible Referents (e.g. "the worst thing God could send them. They were wrong."), mark kind="figurative", set referentId, and depict the concrete referent (the risen dead), NOT the spoken metaphor.
 4. WITHHELD MYSTERIES: For moments that the story hides (e.g. what calls the dead), mark kind="withheld-effect", and depict only physical effects or reactions (faces turning, dust sifting, bell swinging), NEVER the source.
-5. FAST CUTS: Allowed ONLY if intensity="high" (a reveal, shock, escalation) and newInfo has a genuine distinct visual element. Max 25% of beats in a scene.
+${dynamicRule5}
 6. OVERLAY TEXT: If the narration mentions an explicit date or year (e.g. "1348"), put it in "overlayText" for the video editor. NEVER put dates or numbers into the image description.
 7. SHOT VOCABULARY: shotSize in ['wide', 'medium', 'close-up', 'extreme close-up', 'over-the-shoulder']. Angle in ['eye level', 'high', 'low', 'overhead', 'dutch tilt']. OTS strictly requires two people.
 
@@ -353,53 +368,21 @@ Output valid JSON matching the schema.`;
       temperature: 0.2,
     });
   } else {
-    const modelName = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-4-hydrogen';
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-
-    const generationConfig: Record<string, any> = {
-      responseMimeType: 'application/json',
+    parsed = await executeGeminiSchemaCall<any>({
+      apiKey,
+      prompt,
+      modelQuality,
       responseSchema: BEAT_PLAN_SCHEMA,
-    };
-    if (modelName !== 'gemini-4-hydrogen') {
-      generationConfig.temperature = 0.2;
-    }
-
-    const payload = {
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig,
-    };
-
-    const response = await fetchWithExponentialBackoff(
-      () =>
-        fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-          signal: userSignal,
-        }),
-      {
-        initialDelayMs: 2000,
-        maxAttempts: 4,
-        onRetry: (attempt, _max, delayMs) => {
-          if (onStatusMessage) {
-            onStatusMessage(`Planning visual story beats (Attempt ${attempt}/4, waiting ${Math.round(delayMs / 1000)}s)...`);
-          }
-        },
-      }
-    );
-
-    if (!response.ok) {
-      const errText = await response.text().catch(() => '');
-      throw new Error(sanitizeGenericErrorMessage(`Beat Plan API error (${response.status}): ${errText}`, apiKey, 'gemini'));
-    }
-
-    const json = await response.json();
-    const rawText = extractGeminiResponseText(json);
-    if (!rawText) {
-      throw new Error('Empty response from Beat Plan generator');
-    }
-
-    parsed = JSON.parse(rawText);
+      temperature: 0.2,
+      thinkingLevel: 'minimal',
+      errorContext: 'Beat Plan generation',
+      userSignal,
+      onRetryMessage: (attempt, _max, delayMs) => {
+        if (onStatusMessage) {
+          onStatusMessage(`Planning visual story beats (Attempt ${attempt}/4, waiting ${Math.round(delayMs / 1000)}s)...`);
+        }
+      },
+    });
   }
   const rawScenes: PlannedScene[] = (parsed.scenes || []).map((sc: any, scIdx: number) => {
     const beats: PlannedBeat[] = (sc.beats || []).map((b: any, bIdx: number) => {

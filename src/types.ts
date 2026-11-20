@@ -141,6 +141,7 @@ export interface StoryGenerationResult {
   assumptions?: string[];
   authorNotes?: string;
   timingSource?: 'actual' | 'estimated';
+  progress?: PartialGenerationProgress;
   seriesRoadmap?: {
     episodeNumber: number;
     title: string;
@@ -198,4 +199,13 @@ export interface AssistantChatMessage {
   timestamp: number;
 }
 
-export type ActivePage = 'generator' | 'terms' | 'privacy' | 'guide' | 'byok-security' | 'error-403';
+export interface PartialGenerationProgress {
+  completedScenes: number;
+  totalPlannedScenes?: number;
+  isPartial?: boolean;
+  stageLabel?: string;
+}
+
+export type OnPartialStoryCallback = (partialResult: StoryGenerationResult) => void;
+
+export type ActivePage = 'generator' | 'ai-usage' | 'terms' | 'privacy' | 'guide' | 'byok-security' | 'error-403';

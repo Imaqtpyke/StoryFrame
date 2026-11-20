@@ -5,13 +5,10 @@
  * and performs an independent critic call per scene.
  */
 
-import { StoryBible, AiProvider } from '../types';
-import { NumberedWord } from './stage0Prepare';
+import { StoryBible, AiProvider, GenerationMode } from '../types';
 import { WrittenPromptBeat } from './stage3PromptWriter';
-import { MIN_DWELL, FAST_CUT_BELOW, MAX_DWELL } from './stage2BeatPlan';
-import { fetchWithExponentialBackoff } from '../utils/retryFetch';
 import { callGroqChatCompletion } from './groqClient';
-import { extractGeminiResponseText } from './unifiedAiService';
+import { executeGeminiSchemaCall } from './unifiedAiService';
 
 export interface BeatCheckResult {
   passed: boolean;
@@ -320,7 +317,8 @@ export function verifyBeatCodeChecks(
   beat: WrittenPromptBeat,
   sceneBeats: WrittenPromptBeat[],
   bible: StoryBible,
-  format: 'short' | 'long' = 'long'
+  format: 'short' | 'long' = 'long',
+  generationMode: GenerationMode = 'image'
 ): BeatCheckResult {
   const issues: string[] = [];
 
@@ -352,10 +350,11 @@ export function verifyBeatCodeChecks(
   const entityCheck = verifyEntityWhitelist(beat, bible);
   if (!entityCheck.passed) issues.push(...entityCheck.issues);
 
-  // Pacing boundaries
-  const maxDwell = format === 'short' ? 2.0 : 3.0;
-  if (beat.estimatedSeconds < 0.8 || beat.estimatedSeconds > maxDwell) {
-    issues.push(`Beat duration (~${beat.estimatedSeconds}s) violates dwell bounds (0.8s - ${maxDwell}s)`);
+  // Pacing boundaries (Image Phrase Cuts allow 2-word phrases down to 0.45s without triggering repairs)
+  const minDwell = generationMode === 'video' ? 0.8 : 0.45;
+  const maxDwell = format === 'short' ? 2.2 : 3.0;
+  if (beat.estimatedSeconds < minDwell || beat.estimatedSeconds > maxDwell) {
+    issues.push(`Beat duration (~${beat.estimatedSeconds}s) violates dwell bounds (${minDwell}s - ${maxDwell}s)`);
   }
 
   return { passed: issues.length === 0, issues };
@@ -417,34 +416,21 @@ Return ONLY the corrected image prompt text as plain string with no markdown for
         };
       }
     } else {
-      const modelName = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-4-hydrogen';
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-
-      const payload: Record<string, any> = {
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      };
-      if (modelName !== 'gemini-4-hydrogen') {
-        payload.generationConfig = { temperature: 0.1 };
-      }
-
-      const response = await fetchWithExponentialBackoff(() =>
-        fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-          signal: userSignal,
-        })
-      );
-
-      if (response.ok) {
-        const json = await response.json();
-        const fixedText = extractGeminiResponseText(json);
-        if (fixedText) {
-          return {
-            ...beat,
-            imagePrompt: fixedText.replace(/^["']|["']$/g, ''),
-          };
-        }
+      const fixedText = await executeGeminiSchemaCall<string>({
+        apiKey,
+        prompt,
+        modelQuality,
+        responseMimeType: 'text/plain',
+        temperature: 0.1,
+        thinkingLevel: 'minimal',
+        errorContext: 'Beat repair',
+        userSignal,
+      });
+      if (typeof fixedText === 'string' && fixedText.trim()) {
+        return {
+          ...beat,
+          imagePrompt: fixedText.trim().replace(/^["']|["']$/g, ''),
+        };
       }
     }
   } catch (err: any) {
@@ -517,34 +503,15 @@ Output JSON format:
       );
       parsed = JSON.parse(rawText);
     } else {
-      const modelName = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-4-hydrogen';
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-
-      const generationConfig: Record<string, any> = {
+      parsed = await executeGeminiSchemaCall<any>({
+        apiKey,
+        prompt,
+        modelQuality,
         responseMimeType: 'application/json',
-      };
-      if (modelName !== 'gemini-4-hydrogen') {
-        generationConfig.temperature = 0.1;
-      }
-
-      const response = await fetchWithExponentialBackoff(() =>
-        fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            generationConfig,
-          }),
-        })
-      );
-
-      if (response.ok) {
-        const json = await response.json();
-        const rawText = extractGeminiResponseText(json);
-        if (rawText) {
-          parsed = JSON.parse(rawText);
-        }
-      }
+        temperature: 0.1,
+        thinkingLevel: 'minimal',
+        errorContext: `Scene ${sceneIndex} critic`,
+      });
     }
 
     if (parsed) {
@@ -576,9 +543,10 @@ export async function stage4VerifyAndRepairScene(
   onStatusMessage?: (msg: string) => void,
   provider: AiProvider = 'gemini',
   groqModel?: string,
-  options?: { runLlmCritic?: boolean }
+  options?: { runLlmCritic?: boolean; generationMode?: GenerationMode }
 ): Promise<WrittenPromptBeat[]> {
   const verifiedBeats: WrittenPromptBeat[] = [];
+  const genMode = options?.generationMode || 'image';
 
   for (let i = 0; i < beats.length; i++) {
     if (userSignal?.aborted) {
@@ -586,7 +554,7 @@ export async function stage4VerifyAndRepairScene(
     }
 
     let currentBeat = beats[i];
-    const initialCheck = verifyBeatCodeChecks(currentBeat, beats, bible, format);
+    const initialCheck = verifyBeatCodeChecks(currentBeat, beats, bible, format, genMode);
 
     if (!initialCheck.passed) {
       if (onStatusMessage) {
@@ -595,12 +563,12 @@ export async function stage4VerifyAndRepairScene(
 
       // Round 1 Repair
       let repaired = await repairFailingBeat(currentBeat, initialCheck.issues, bible, apiKey, modelQuality, provider, groqModel, userSignal);
-      let secondCheck = verifyBeatCodeChecks(repaired, beats, bible, format);
+      let secondCheck = verifyBeatCodeChecks(repaired, beats, bible, format, genMode);
 
       // Round 2 Repair if still failing
       if (!secondCheck.passed) {
         repaired = await repairFailingBeat(repaired, secondCheck.issues, bible, apiKey, modelQuality, provider, groqModel, userSignal);
-        secondCheck = verifyBeatCodeChecks(repaired, beats, bible, format);
+        secondCheck = verifyBeatCodeChecks(repaired, beats, bible, format, genMode);
       }
 
       if (!secondCheck.passed) {

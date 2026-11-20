@@ -33,6 +33,7 @@ import {
   Image as ImageIcon,
   Zap,
   AlertTriangle,
+  Square,
 } from 'lucide-react';
 
 import {
@@ -57,6 +58,10 @@ interface ResultsViewProps {
     platform: string;
     characterSheet?: Record<string, string>;
   }) => void;
+  isGeneratingMore?: boolean;
+  totalPlannedScenes?: number;
+  generationStatusMessage?: string | null;
+  onCancelGeneration?: () => void;
 }
 
 const toRomanNumeral = (num: number): string => {
@@ -97,6 +102,10 @@ export default function ResultsView({
   onBackToEdit,
   onReset,
   onStartEpisodeDraft,
+  isGeneratingMore = false,
+  totalPlannedScenes,
+  generationStatusMessage,
+  onCancelGeneration,
 }: ResultsViewProps) {
   const [copiedIndex, setCopiedIndex] = useState<string | null>(null);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
@@ -177,16 +186,27 @@ export default function ResultsView({
     };
   });
 
+  const storySignatureRef = useRef<string>('');
   useEffect(() => {
     const firstScene = normalizedScenes[0];
     const firstBeat = firstScene?.beats?.[0];
-    if (firstScene && firstBeat) {
+    if (!firstScene || !firstBeat) return;
+
+    const currentSignature = `${result.title || ''}::${firstScene.narratorLine || ''}`;
+    const hasCurrentSelection = normalizedScenes.some(
+      (s) =>
+        s.index === desktopSelection.sceneIndex &&
+        (s.beats || []).some((b) => b.beatIndex === desktopSelection.beatIndex)
+    );
+
+    if (storySignatureRef.current !== currentSignature || !hasCurrentSelection) {
+      storySignatureRef.current = currentSignature;
       setDesktopSelection({
         sceneIndex: firstScene.index,
         beatIndex: firstBeat.beatIndex,
       });
     }
-  }, [result]);
+  }, [result.title, normalizedScenes, desktopSelection.sceneIndex, desktopSelection.beatIndex]);
 
   useMemo(() => {
     return lintStoryboard(normalizedScenes, result.characterSheet, result.styleProfile);
@@ -569,7 +589,9 @@ export default function ResultsView({
     downloadAnchor.remove();
   };
 
-  const allExpanded = Object.values(expandedScenes).every(Boolean);
+  const allExpanded =
+    normalizedScenes.length > 0 &&
+    normalizedScenes.every((s) => expandedScenes[s.index] ?? true);
 
   return (
     <div className="w-full space-y-5 font-narrative text-[#F5F5F0]">
@@ -659,6 +681,41 @@ export default function ResultsView({
           </button>
         </div>
       </div>
+
+      {/* Live Progressive Scene-by-Scene Status Banner */}
+      {isGeneratingMore && (
+        <div
+          id="live-generation-banner"
+          role="status"
+          aria-live="polite"
+          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 bg-[#161614] border border-amber-500/40 rounded-[3px]"
+        >
+          <div className="flex items-start sm:items-center gap-3 min-w-0">
+            <span className="w-2 h-2 rounded-[1px] bg-amber-400 animate-pulse shrink-0 mt-1.5 sm:mt-0" />
+            <div className="min-w-0 space-y-0.5">
+              <div className="text-xs sm:text-sm font-display font-medium text-white">
+                Rendering Finished Scenes: {normalizedScenes.length}
+                {totalPlannedScenes ? ` of ${totalPlannedScenes}` : ''} Scenes Ready
+              </div>
+              <p className="text-xs text-[#A0A09A] truncate">
+                {generationStatusMessage ||
+                  'Only completed scenes and beats are shown below. Remaining scenes appear automatically as they finish.'}
+              </p>
+            </div>
+          </div>
+          {onCancelGeneration && (
+            <button
+              type="button"
+              id="stop-live-generation-btn"
+              onClick={onCancelGeneration}
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-[#1E1E1B] hover:bg-red-950/50 text-[#E6E6E0] hover:text-red-200 border border-white/15 hover:border-red-500/40 text-xs font-display font-medium transition-colors rounded-[3px] shrink-0 cursor-pointer"
+            >
+              <Square size={11} className="shrink-0" />
+              <span>Stop Generation</span>
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Readable Scene & Section Jump Strip */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-hide">

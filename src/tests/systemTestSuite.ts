@@ -50,7 +50,7 @@ import {
   sanitizeSharedVisualStyle,
 } from '../services/beatProgressionEngine';
 import { sanitizeGroqErrorMessage, extractCleanJson, GROQ_API_BASE_URL, sanitizePromptText, tryRepairTruncatedJson } from '../services/groqClient';
-import { robustJsonParse } from '../services/unifiedAiService';
+import { robustJsonParse, extractCompletedStoryboardFields } from '../services/unifiedAiService';
 import {
   sanitizeKineticMotionForImage,
   resolveStyleAndCastingCompatibility,
@@ -69,6 +69,13 @@ import {
   summarizeGroundedCheckpoint,
 } from '../services/groundedCheckpoint';
 import { getGroundedProgressForRequest, clearGroundedProgressForRequest } from '../services/groundedPipeline';
+import {
+  extractAndRecordGeminiUsage,
+  extractAndRecordGroqUsage,
+  getAiUsageSnapshot,
+  resetAiUsage,
+  formatCompactTokenCount,
+} from '../services/aiUsageStorage';
 import { Scene, Beat, StyleProfile, StoryGenerationResult } from '../types';
 
 interface TestResult {
@@ -3453,6 +3460,244 @@ function runTestSuite33() {
   );
 }
 
+// ============================================================================
+// 34. OPTION B PHRASE CUTS, FRAMING DEDUP, STREAM PARSER, AI USAGE & STAGE 4
+// ============================================================================
+function runTestSuite34() {
+  console.log('\n--- Running Test Suite 34: Option B Phrase Cuts, Streaming JSON & AI Usage ---');
+
+  // 34.1 Option B 2-6 word grammar-aware splitting with zero stranded trailing articles/prepositions
+  const mortgageSentence =
+    'If you pay off your mortgage ten years early, your lender might hit you with a massive penalty.';
+  const phraseCuts = splitPhraseIntoSubBeats(mortgageSentence, 6);
+  const allWithinCeiling = phraseCuts.every((p) => p.split(/\s+/).filter(Boolean).length <= 6);
+  const noStrandedTail = phraseCuts.every(
+    (p) => !/\b(?:with a|of the|into a|at the|by a|from a|on a|in the)$/i.test(p.trim())
+  );
+  assert(
+    phraseCuts.length >= 4 && allWithinCeiling && noStrandedTail,
+    'Suite 34: Option B Phrase Cuts, Streaming JSON & AI Usage',
+    '34.1 Splits Image Narration Into 2-6 Word Grammatical Phrases Without Stranded Preposition Tails',
+    `cuts=${JSON.stringify(phraseCuts)}`
+  );
+
+  // 34.2 Option B preserves 6 distinct visual phrase beats across one sentence
+  const mortgageStyle: StyleProfile = {
+    artStyle: 'Handcrafted miniature stop-motion diorama',
+    colorPalette: 'Warm ivory paper, oak brown, crimson ink',
+    lighting: 'Warm tungsten key light with deep shadow falloff',
+    eraAndSetting: 'Miniature financial desktop',
+  };
+  const mortgageBeats: Beat[] = [
+    {
+      beatIndex: 1,
+      textSpan: 'If you pay off',
+      shotType: 'Close-Up',
+      cameraAngle: 'eye-level',
+      cameraMovement: 'Static Frame',
+      imagePrompt: 'Close-Up, eye-level on hands sliding brass coins across oak wood grain. Shot on 85mm f/2.0.',
+      estimatedSeconds: 1.0,
+    },
+    {
+      beatIndex: 2,
+      textSpan: 'your mortgage',
+      shotType: 'Medium Shot',
+      cameraAngle: 'high-angle',
+      cameraMovement: 'Static Frame',
+      imagePrompt: 'Medium Shot, high-angle of a miniature paper house sitting inside a ledger border. Shot on 50mm f/2.8.',
+      estimatedSeconds: 0.7,
+    },
+    {
+      beatIndex: 3,
+      textSpan: 'ten years early,',
+      shotType: 'Extreme Close-Up',
+      cameraAngle: 'eye-level',
+      cameraMovement: 'Static Frame',
+      imagePrompt: 'Extreme Close-Up, eye-level on desk calendar flipping forward to balance zero. Shot on 100mm macro f/2.8.',
+      estimatedSeconds: 0.8,
+    },
+    {
+      beatIndex: 4,
+      textSpan: 'your lender',
+      shotType: 'Low-Angle Shot',
+      cameraAngle: 'low-angle',
+      cameraMovement: 'Static Frame',
+      imagePrompt: 'Low-Angle Shot, low-angle looming upward at a suited figure behind dark shadows. Shot on 35mm f/2.0.',
+      estimatedSeconds: 0.7,
+    },
+    {
+      beatIndex: 5,
+      textSpan: 'might hit you',
+      shotType: 'Point-of-View (POV)',
+      cameraAngle: 'high-angle',
+      cameraMovement: 'Static Frame',
+      imagePrompt: 'Point-of-View (POV), high-angle looking down as a heavy contract ledger slides forward. Shot on 24mm f/4.0.',
+      estimatedSeconds: 0.8,
+    },
+    {
+      beatIndex: 6,
+      textSpan: 'with a massive penalty.',
+      shotType: 'Extreme Close-Up',
+      cameraAngle: 'eye-level',
+      cameraMovement: 'Static Frame',
+      imagePrompt: 'Extreme Close-Up, eye-level of crimson wax penalty stamp slamming onto parchment. Shot on 85mm f/2.8.',
+      estimatedSeconds: 1.0,
+    },
+  ];
+  const progressedMortgage = deduplicateAndProgressSceneBeats(mortgageBeats, {
+    styleProfile: mortgageStyle,
+    isLongForm: false,
+    isVideoMode: false,
+  });
+  assert(
+    progressedMortgage.length === 6 &&
+      progressedMortgage[0].textSpan === 'If you pay off' &&
+      progressedMortgage[5].textSpan === 'with a massive penalty.',
+    'Suite 34: Option B Phrase Cuts, Streaming JSON & AI Usage',
+    '34.2 Preserves All 6 Distinct 2-6 Word Image Phrase Beats Without Over-Merging',
+    `count=${progressedMortgage.length}`
+  );
+
+  // 34.3 Fixes doubled framing openers ("eye-level of eye-level" and "Wide eye-level")
+  const fixedDoubleEye = formatFinalBeatPrompt(
+    {
+      beatIndex: 1,
+      textSpan: 'you sign a loan',
+      shotType: 'Medium Shot',
+      cameraAngle: 'eye-level',
+      cameraMovement: 'Static Frame',
+      imagePrompt: 'Vertical 9:16 portrait composition, Medium Shot, eye-level of eye-level of brass scale sitting on desk. --ar 9:16',
+      estimatedSeconds: 1.2,
+    },
+    false,
+    false,
+    { styleProfile: mortgageStyle }
+  );
+  const fixedWideEye = formatFinalBeatPrompt(
+    {
+      beatIndex: 2,
+      textSpan: 'inside the office',
+      shotType: 'Wide Establishing Shot',
+      cameraAngle: 'eye-level',
+      cameraMovement: 'Static Frame',
+      imagePrompt: 'Wide eye-level establishing oak table inside miniature bank hall. --ar 16:9',
+      estimatedSeconds: 1.4,
+    },
+    true,
+    false,
+    { styleProfile: mortgageStyle }
+  );
+  assert(
+    !/eye-level of eye-level/i.test(fixedDoubleEye.imagePrompt) &&
+      !/\bWide eye-level\b/i.test(fixedWideEye.imagePrompt) &&
+      fixedWideEye.imagePrompt.includes('Wide Establishing Shot, eye-level'),
+    'Suite 34: Option B Phrase Cuts, Streaming JSON & AI Usage',
+    '34.3 Eliminates "eye-level of eye-level" and "Wide eye-level" Duplicate Framing Openers',
+    `eye=${fixedDoubleEye.imagePrompt} | wide=${fixedWideEye.imagePrompt}`
+  );
+
+  // 34.4 Incremental SSE JSON buffer extracts finished Scene 1 before Scene 2 closes
+  const streamingChunk = `{
+    "styleProfile": { "artStyle": "Stop-motion diorama", "colorPalette": "Warm oak", "lighting": "Warm key", "eraAndSetting": "Desktop" },
+    "characterSheet": { "Homeowner": "Clay figure in grey knit sweater" },
+    "scenes": [
+      {
+        "index": 1,
+        "narratorLine": "If you pay off your mortgage early.",
+        "estimatedSeconds": 2.4,
+        "beats": [
+          { "beatIndex": 1, "textSpan": "If you pay off", "shotType": "Close-Up", "cameraAngle": "eye-level", "imagePrompt": "Coins on desk.", "estimatedSeconds": 1.2 }
+        ]
+      },
+      {
+        "index": 2,
+        "narratorLine": "Your lender hits you`;
+  const extractedPartial = extractCompletedStoryboardFields(streamingChunk);
+  assert(
+    extractedPartial.scenes.length === 1 &&
+      extractedPartial.scenes[0].index === 1 &&
+      extractedPartial.styleProfile?.artStyle === 'Stop-motion diorama' &&
+      extractedPartial.characterSheet?.Homeowner?.includes('grey knit sweater'),
+    'Suite 34: Option B Phrase Cuts, Streaming JSON & AI Usage',
+    '34.4 Extracts Finished Scene 1 and Continuity Metadata While Scene 2 Is Still Streaming',
+    `scenes=${extractedPartial.scenes.length}`
+  );
+
+  // 34.5 AI usage tracker records Gemini & Groq tokens cleanly across buckets and formats compact counts
+  resetAiUsage();
+  extractAndRecordGeminiUsage(
+    { usageMetadata: { promptTokenCount: 1200, candidatesTokenCount: 800, thoughtsTokenCount: 150, totalTokenCount: 2150 } },
+    'gemini-4-hydrogen'
+  );
+  extractAndRecordGroqUsage(
+    { usage: { prompt_tokens: 300, completion_tokens: 200, total_tokens: 500 } },
+    'openai/gpt-oss-120b'
+  );
+  const usageSnap = getAiUsageSnapshot();
+  const formattedCount = formatCompactTokenCount(usageSnap.session.totalTokens);
+  const geminiModelStats = usageSnap.byModel['gemini:gemini-4-hydrogen'];
+  const groqModelStats = usageSnap.byModel['groq:openai/gpt-oss-120b'];
+  resetAiUsage();
+  const clearedSnap = getAiUsageSnapshot();
+  assert(
+    usageSnap.session.requests === 2 &&
+      usageSnap.session.inputTokens === 1500 &&
+      usageSnap.session.outputTokens === 1000 &&
+      usageSnap.session.thoughtTokens === 150 &&
+      usageSnap.session.totalTokens === 2650 &&
+      usageSnap.allTime.totalTokens === 2650 &&
+      geminiModelStats?.requests === 1 &&
+      geminiModelStats?.totalTokens === 2150 &&
+      groqModelStats?.requests === 1 &&
+      groqModelStats?.totalTokens === 500 &&
+      formattedCount === '2.65k' &&
+      clearedSnap.session.totalTokens === 0 &&
+      Object.keys(clearedSnap.byModel).length === 0,
+    'Suite 34: Option B Phrase Cuts, Streaming JSON & AI Usage',
+    '34.5 Records Gemini & Groq Token Metadata (Including Per-Model Breakdown) and Supports Reset',
+    `snap=${JSON.stringify(usageSnap.session)} byModel=${JSON.stringify(usageSnap.byModel)} fmt=${formattedCount}`
+  );
+
+  // 34.6 Stage 4 deterministic dwell verification allows 0.55s Image Phrase Cuts while preserving 0.8s floor in Video mode
+  const shortPhraseBeat = {
+    beatIndex: 1,
+    wordRange: [0, 2] as [number, number],
+    textSpan: 'your mortgage',
+    depicts: 'Miniature house balanced on oak ledger',
+    kind: 'literal' as const,
+    intensity: 'medium' as const,
+    subjectIds: ['house'],
+    shotSize: 'medium',
+    angle: 'eye level',
+    newInfo: 'Miniature house sits inside ledger boundary',
+    estimatedSeconds: 0.55,
+    imagePrompt:
+      'Cinematic 16:9 widescreen composition, Medium shot framing on a miniature paper house sitting inside a wooden ledger frame lit by soft studio lamp. 50mm f/2.8 lens.',
+  };
+  const stage4Bible = {
+    cast: [],
+    threat: { canonicalLook: '', allowedVariants: [] },
+    locations: [{ id: 'house', visualLock: 'Miniature paper house on oak ledger' }],
+    motifs: [],
+    events: ['House appears on ledger'],
+    referents: [],
+    withheld: [],
+    forbidden: [],
+    worldStyle: 'Miniature diorama',
+    assumptions: [],
+  };
+  const imageCheck = verifyBeatCodeChecks(shortPhraseBeat, [shortPhraseBeat], stage4Bible, 'long', 'image');
+  const videoCheck = verifyBeatCodeChecks(shortPhraseBeat, [shortPhraseBeat], stage4Bible, 'long', 'video');
+  assert(
+    imageCheck.passed === true &&
+      videoCheck.passed === false &&
+      videoCheck.issues.some((iss) => iss.includes('0.8s')),
+    'Suite 34: Option B Phrase Cuts, Streaming JSON & AI Usage',
+    '34.6 Stage 4 Permits 0.55s Image Phrase Cuts Without False Repairs While Guarding 0.8s Video Floor',
+    `img=${JSON.stringify(imageCheck)} | vid=${JSON.stringify(videoCheck)}`
+  );
+}
+
 runTestSuite21().then(() => {
   runTestSuite23();
   runTestSuite24();
@@ -3465,6 +3710,7 @@ runTestSuite21().then(() => {
   runTestSuite31();
   runTestSuite32();
   runTestSuite33();
+  runTestSuite34();
   console.log('\n====================================================================');
   console.log('                  FULL-SYSTEM VERIFICATION REPORT                  ');
   console.log('====================================================================');

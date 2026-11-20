@@ -252,6 +252,13 @@
   - Added batched Stage 3 writing (`stage3WriteScenePromptsBatch`, 4 scenes per LLM call) in `src/services/stage3PromptWriter.ts` and skipped redundant LLM critic calls when all 7 deterministic Stage 4 checks pass (`src/services/stage4VerifyRepair.ts`), cutting ~50-80 sequential calls on 577-word scripts down to ~8-12 calls.
   - Added story-specific `thumbnailHook` output to Stage 1 (`stage1StoryBible.ts`) replacing the hardcoded `"THE UNTOLD STORY"` fallback in `groundedPipeline.ts`.
   - Updated `ResultsErrorView.tsx` and `App.tsx` to display saved scene progress (`X of Y scenes completed`) with `Resume Breakdown` and `Start Fresh` actions.
+- [x] **Option B Image Phrase Cuts (2-6w), Speedup, Progressive Scene Results & AI Usage Footer (Suite 34, 219/219 passing):**
+  - Applied Option B Phrase-Level Visual Segmentation (2 to 6 words per beat along natural grammar boundaries, zero stranded hanging articles/prepositions) for Text to Image across Short Form and Long Form while keeping Text to Video untouched (`beatSplitting.ts`, `beatProgressionEngine.ts`, `stage2BeatPlan.ts`, `stage4VerifyRepair.ts`, `geminiClient.ts`, `enhanceStoryArchitect.ts`).
+  - Fixed `eye-level of eye-level` and `Wide eye-level` doubled framing openers in `formatFinalBeatPrompt` (`beatProgressionEngine.ts`).
+  - Applied latency optimizations: `thinkingLevel: 'minimal'` (`'low'` Stage 1 Story Bible) with HTTP 400 fallback (`unifiedAiService.ts`), 35-60 word Token Diet prompts, 2 concurrent Stage 3 batches per wave (`SCENE_BATCH_SIZE = 3`) in `groundedPipeline.ts`, and `0.45s` min dwell for Image Phrase Cuts.
+  - Wired Progressive Scene-by-Scene Results Display via SSE `streamJsonLlmWithSceneProgress` (`unifiedAiService.ts`), wave emissions (`groundedPipeline.ts`), and `ResultsView.tsx` live generation banner (`Stop Generation`, selection preservation, zero unfinished scene placeholders).
+  - Created `src/services/aiUsageStorage.ts` (with per-model `byModel` breakdown) and converted the footer widget into a dedicated `AI Usage` button (`Footer.tsx`, `#footer-ai-usage-btn`) navigating to the standalone `AiUsageView.tsx` page (`Session`, `Today`, `All Time`, token mix bar, model breakdown table, and `Reset Usage`).
+  - Added Suite 34 automated verification tests (`219 / 219` passing).
 
 ## Active Testing & Planned Future Roadmap (Post-Testing)
 - [ ] **Genre Stress-Testing Loop (In Progress):**

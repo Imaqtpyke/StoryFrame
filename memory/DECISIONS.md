@@ -317,4 +317,13 @@
 - **Date:** 2026-11-19
 - **Status:** Active
 
+## Option B Image Phrase Cuts, Pipeline Speedup, Progressive Scenes & AI Usage Footer
+- **Fact/Decision:**
+  1. Implemented **Option B Always-On Phrase-Level Visual Segmentation (2 to 6 words per beat)** exclusively for **Text to Image** across Short Form (9:16) and Long Form (16:9) in `beatSplitting.ts`, `beatProgressionEngine.ts`, `stage2BeatPlan.ts`, `stage4VerifyRepair.ts`, `geminiClient.ts`, and `enhanceStoryArchitect.ts`, preventing bare stranded articles/prepositions (`"with a"`, `"of the"`) and fixing doubled framing openers (`eye-level of eye-level`, `Wide eye-level`). Kept **Text to Video** behavior untouched.
+  2. Accelerated breakdown latency via `thinkingLevel: 'minimal'` on structured JSON calls (`'low'` on Stage 1 Story Bible) with automatic HTTP 400 fallback, 35-60 word Token Diet prompts, 2 concurrent Stage 3 batches per wave (`SCENE_BATCH_SIZE = 3`) in `groundedPipeline.ts`, and `0.45s` min dwell allowance in Image Phrase Cut verification so short phrases avoid unnecessary LLM repairs.
+  3. Implemented Progressive Scene-by-Scene Results Display (`unifiedAiService.ts` SSE `streamJsonLlmWithSceneProgress` / `extractCompletedStoryboardFields`, `groundedPipeline.ts`, `App.tsx`, `ResultsView.tsx`), showing completed scenes immediately as they finish without rendering unfinished scenes, with a compact live banner and `Stop Generation` button while preserving active beat selection.
+  4. Added persistent Real AI Token Usage tracking (`aiUsageStorage.ts`, wired across `geminiClient.ts`, `groqClient.ts`, `unifiedAiService.ts`, and `assistantChatService.ts`) surfaced via a clean `AI Usage` footer button (`Footer.tsx`, `#footer-ai-usage-btn`) navigating to a dedicated standalone `AiUsageView.tsx` page (`activePage === 'ai-usage'`) displaying Current Session, Today, All Time, token mix bar, per-model breakdown (`byModel`), and `Reset Usage` confirmation.
+- **Context:** Eliminates multi-minute waiting before inspecting Scene 1, cuts `gemini-4-hydrogen` latency dramatically, achieves granular 2-6 word image storytelling with clean camera diversity, and gives creators transparent token usage telemetry without cluttering the footer.
+- **Date:** 2026-11-20
+- **Status:** Active
 

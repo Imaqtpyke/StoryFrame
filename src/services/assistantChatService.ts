@@ -1,5 +1,6 @@
 import { AssistantChatMessage } from '../types';
 import { fetchWithExponentialBackoff } from '../utils/retryFetch';
+import { extractAndRecordGeminiUsage } from './aiUsageStorage';
 
 const CHAT_STORAGE_KEY = 'storyframe_assistant_chat_history_v1';
 
@@ -246,6 +247,7 @@ export async function sendChatMessage(
     }
 
     const resJson = await resp.json();
+    extractAndRecordGeminiUsage(resJson, targetModel);
     const content = extractGeminiResponseText(resJson);
     if (!content) {
       throw new Error('An error occurred, please try again.');

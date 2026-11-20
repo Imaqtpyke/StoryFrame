@@ -2,7 +2,7 @@
 // In BYOK mode, calls are dispatched straight from the browser to Google Generative Language API.
 // API keys are strictly kept in browser memory / sessionStorage and never sent to any remote backend.
 
-import { GenerateStoryRequest, StoryGenerationResult, StyleProfile, Beat } from '../types';
+import { GenerateStoryRequest, OnPartialStoryCallback, StoryGenerationResult, StyleProfile, Beat } from '../types';
 import {
   extractTemporalAnchor,
   cleanRedundantOnScreenText,
@@ -30,7 +30,11 @@ import {
 import { generateEnhancedStory } from './enhanceStoryArchitect';
 import { fetchWithExponentialBackoff } from '../utils/retryFetch';
 import { executeGroundedPipeline } from './groundedPipeline';
-import { executeJsonLlmCall } from './unifiedAiService';
+import {
+  executeJsonLlmCall,
+  PartialStoryboardStreamState,
+  streamJsonLlmWithSceneProgress,
+} from './unifiedAiService';
 import { compileThumbnailPrompt } from './promptCompiler';
 
 function removeEmDashes(text: string): string {
@@ -309,6 +313,157 @@ export function assembleCleanPrompt(
   return `${orientationText}, ${cleaned} ${arFlag}`.trim();
 }
 
+export function buildPartialStoryResultFromStream(params: {
+  partial: PartialStoryboardStreamState;
+  req: GenerateStoryRequest;
+  isLongForm: boolean;
+  isVideoMode: boolean;
+  targetVideoDuration: number;
+  autoArchitectMode?: boolean;
+}): StoryGenerationResult | null {
+  const { partial, req, isLongForm, isVideoMode, targetVideoDuration, autoArchitectMode } = params;
+  if (!Array.isArray(partial.scenes) || partial.scenes.length === 0) {
+    return null;
+  }
+
+  const rawStyleProfile = partial.styleProfile || {};
+  const cleanedArtStyle = sanitizeSharedVisualStyle(
+    removeEmDashes(rawStyleProfile.artStyle || req.characterStyle || 'Cinematic Rendering')
+  );
+  const preliminaryStyleProfile: StyleProfile = {
+    artStyle: cleanedArtStyle || removeEmDashes(req.characterStyle || 'Cinematic Rendering'),
+    colorPalette: removeEmDashes(rawStyleProfile.colorPalette || 'Harmonious color grading matching narrative tone'),
+    lighting: removeEmDashes(rawStyleProfile.lighting || 'Cinematic lighting'),
+    eraAndSetting: removeEmDashes(rawStyleProfile.eraAndSetting || 'Atmospheric story setting'),
+    lensAndFilmStock: removeEmDashes(rawStyleProfile.lensAndFilmStock || 'Shot on 35mm prime lens, fine film grain'),
+  };
+  const sanitizedStyleProfile: StyleProfile = isMonochromeStyle(preliminaryStyleProfile)
+    ? {
+        ...preliminaryStyleProfile,
+        colorPalette: sanitizeMonochromeLighting(preliminaryStyleProfile.colorPalette, preliminaryStyleProfile),
+        lighting:
+          sanitizeMonochromeLighting(preliminaryStyleProfile.lighting, preliminaryStyleProfile) ||
+          'Stark high-contrast chiaroscuro lighting with deep pitch-black shadows and crisp white highlights',
+      }
+    : preliminaryStyleProfile;
+
+  const sanitizedCharacterSheet: Record<string, string> = {};
+  if (partial.characterSheet && typeof partial.characterSheet === 'object') {
+    for (const [key, val] of Object.entries(partial.characterSheet)) {
+      if (typeof val === 'string' && val.trim().length > 0) {
+        sanitizedCharacterSheet[key.trim()] = sanitizeCharacterIdentitySheet(removeEmDashes(val.trim()));
+      }
+    }
+  }
+
+  const sanitizedLocationSheet: Record<string, string> = {};
+  if (partial.locationSheet && typeof partial.locationSheet === 'object') {
+    for (const [key, val] of Object.entries(partial.locationSheet)) {
+      if (typeof val === 'string' && val.trim().length > 0) {
+        sanitizedLocationSheet[key.trim()] = removeEmDashes(val.trim());
+      }
+    }
+  }
+
+  const normalizedCharSheet = normalizeContinuitySheetKeys(sanitizedCharacterSheet);
+  const normalizedLocSheet = normalizeContinuitySheetKeys(sanitizedLocationSheet);
+
+  const partialScenes = partial.scenes
+    .filter((sc) => sc && Array.isArray(sc.beats) && sc.beats.length > 0)
+    .map((sc: any, sIdx: number) => {
+      const sceneIndex = typeof sc.index === 'number' ? sc.index : sIdx + 1;
+      const narratorLine = removeEmDashes(sc.narratorLine || '');
+      const cleanBeats: Beat[] = sc.beats
+        .filter((b: any) => b && (typeof b.textSpan === 'string' || typeof b.imagePrompt === 'string'))
+        .map((b: any, bIdx: number) => {
+          const beatIndex = typeof b.beatIndex === 'number' ? b.beatIndex : bIdx + 1;
+          const textSpan = removeEmDashes(b.textSpan || '');
+          let prompt = removeEmDashes(b.imagePrompt || '');
+          prompt = expandEntityKeysInPrompt(prompt, normalizedCharSheet, normalizedLocSheet);
+          prompt = sanitizeMonochromeLighting(prompt, sanitizedStyleProfile);
+          const shotType = removeEmDashes(b.shotType || inferShotType(prompt, beatIndex));
+          const cameraAngle = removeEmDashes(b.cameraAngle || inferCameraAngle(prompt, beatIndex));
+          const cameraMovement = removeEmDashes(b.cameraMovement || inferCameraMovement(prompt, beatIndex));
+          prompt = sanitizeStillImageMotionAndOptics(prompt, shotType, isVideoMode);
+          prompt = cleanAndDeduplicatePrompt(prompt, isVideoMode);
+          prompt = assembleCleanPrompt(prompt, isLongForm);
+
+          return {
+            beatIndex,
+            textSpan,
+            shotType,
+            cameraAngle,
+            cameraMovement,
+            temporalAnchor: extractTemporalAnchor(textSpan) || undefined,
+            imagePrompt: removeEmDashes(prompt),
+            estimatedSeconds:
+              typeof b.estimatedSeconds === 'number' && b.estimatedSeconds > 0 ? b.estimatedSeconds : 1.5,
+          };
+        });
+
+      const progressedBeats = deduplicateAndProgressSceneBeats(cleanBeats, {
+        isLongForm,
+        isVideoMode,
+        styleProfile: sanitizedStyleProfile,
+        characterSheet: normalizedCharSheet,
+        locationSheet: normalizedLocSheet,
+      });
+
+      const sceneSeconds = isVideoMode
+        ? targetVideoDuration
+        : Math.max(
+            1,
+            Math.round(progressedBeats.reduce((sum, b) => sum + (b.estimatedSeconds || 1.5), 0) * 10) / 10
+          );
+
+      return {
+        index: sceneIndex,
+        narratorLine,
+        estimatedSeconds: sceneSeconds,
+        beats: progressedBeats,
+      };
+    });
+
+  if (partialScenes.length === 0) return null;
+
+  const totalDurationSeconds =
+    Math.round(partialScenes.reduce((sum, s) => sum + (s.estimatedSeconds || 0), 0) * 10) / 10;
+
+  return {
+    styleProfile: sanitizedStyleProfile,
+    characterSheet: normalizedCharSheet,
+    locationSheet: normalizedLocSheet,
+    totalDurationSeconds,
+    scenes: partialScenes,
+    generationMode: isVideoMode ? 'video' : 'image',
+    targetVideoDuration: isVideoMode ? targetVideoDuration : undefined,
+    autoArchitectMode,
+    hookAnalysis:
+      partial.hookAnalysis && typeof partial.hookAnalysis === 'object'
+        ? {
+            headlineHook: partial.hookAnalysis.headlineHook,
+            hookType: partial.hookAnalysis.hookType,
+            hookRationale: partial.hookAnalysis.hookRationale,
+          }
+        : undefined,
+    thumbnail: partial.thumbnail
+      ? compileThumbnailPrompt({
+          rawThumbnail: partial.thumbnail,
+          styleProfile: sanitizedStyleProfile,
+          characterSheet: normalizedCharSheet,
+          storyPremise: req.story,
+          format: req.format,
+          platform: req.platform,
+        })
+      : undefined,
+    progress: {
+      completedScenes: partialScenes.length,
+      isPartial: true,
+      stageLabel: `${partialScenes.length} ${partialScenes.length === 1 ? 'scene' : 'scenes'} ready`,
+    },
+  };
+}
+
 // ============================================================================
 // ORIGINAL STORY GENERATOR (Toggle OFF)
 // 100% pure original workflow: natural beat pacing, unforced narrative rhythm,
@@ -318,7 +473,8 @@ export async function generateOriginalStory(
   req: GenerateStoryRequest,
   apiKey: string,
   userSignal?: AbortSignal,
-  onStatusMessage?: (msg: string) => void
+  onStatusMessage?: (msg: string) => void,
+  onPartialResult?: OnPartialStoryCallback
 ): Promise<StoryGenerationResult> {
   const {
     story,
@@ -343,7 +499,7 @@ export async function generateOriginalStory(
 
   // Long-form 16:9 landscape text-to-image is routed to the 5-stage Grounded Pipeline
   if (isLongForm && !isVideoMode) {
-    return executeGroundedPipeline(req, apiKey, userSignal, onStatusMessage);
+    return executeGroundedPipeline(req, apiKey, userSignal, onStatusMessage, onPartialResult);
   }
 
   let durationInstruction = '';
@@ -557,17 +713,19 @@ CLAUSE & MICRO-ACTION BEAT SEGMENTATION RULES (CRITICAL):
      3) CAMERA PERSPECTIVE (e.g. wide establishing -> over-the-shoulder -> POV -> macro insert -> reaction close-up).
      4) CHARACTER ACTION (e.g. reaching -> turning -> extending -> receiving -> reacting).
    - STRICT BAN ON REPETITIVE PROMPTS: Never describe the same frozen action across consecutive beats! If a spoken fragment merely finishes a sentence without introducing a new physical event, sustain the shot or combine the sub-words into a single coherent visual beat.
-3. Dynamic Visual-Event Pacing (~1.5s to 3.0s default) + Selective Rapid Montage (~0.7s to 1.2s):
-   - BASELINE PACING (~1.5s to 3.0s per beat): Cut to a new beat when a genuine physical action, object state transition, perspective shift, reaction, or reveal occurs. NEVER isolate plain grammar connectors ("But he has one problem:", "target for kings", "him live.") into stub beats.
-   - EXCEPTION A - PARALLEL ACTION-TRIPLET / LIST MONTAGE (~0.7s to 1.2s per beat, regardless of total word count): Whenever narration lists 2-3+ serialized actions or sensory beats (e.g. "perfectly mimicking every blink, every breath, every move."), split EVERY item into its own rapid cut with a RADICALLY DIFFERENT shot scale and focal noun so diffusion prompts stay distinct:
-     * Beat 1 ("perfectly mimicking every blink,"): Extreme Close-Up macro on half-shut eyelids in exact 1:1 frozen mirror symmetry (no full room).
-     * Beat 2 ("every breath,"): Extreme Close-Up macro on faint frozen condensation breath mist blooming on cold mirror glass beside parted lips in 1:1 synchrony.
-     * Beat 3 ("every move."): Medium Shot framing raised hand and tilted shoulder posture mirrored 1:1 with neutral unsmiling symmetry.
-   - EXCEPTION B - SEMANTIC-ANCHOR & TEMPORAL-ORIGIN FLASHBACK DECOMPOSITION (~0.8s to 1.3s per beat): Whenever a short 7-14 word clause packs Subject Reveal + Observation Verb + Childhood/Birth Origin (e.g. "It's an entity that has studied you since birth,"), split into associative visual cuts:
-     * Beat 1 ("It's an entity"): Medium Close-Up showcasing the unsmiling stylized entity silhouette clearly.
-     * Beat 2 ("that has studied"): Over-the-Shoulder or deep-shadow frame showing the protagonist facing forward completely unaware in crisp foreground focus while the unsmiling entity looms behind in shadow watching (NEVER fuse heads or make protagonist already look back).
-     * Beat 3 ("you since birth,"): Time-origin flashback showing the INFANT protagonist swaddled INSIDE a wooden nursery crib while the shadowy entity lurks/hides behind the crib slats in deep shadow watching. NEVER inject adult turtleneck/jeans onto the baby, NEVER reuse the adult bedroom, and NEVER etch dates onto mirrors!
-   - EXCEPTION C - REPEATED NEGATIONS & CLIMAX TURNS (~0.8s to 1.5s per beat): Split repeated rhetorical negatives ("You never reach out." hands motionless at sides -> "You never cross." feet halted back from glass threshold) and separate late twist beats cleanly ("half-second late." protagonist turning while neutral reflection lags -> "Now it's smiling." Extreme Close-Up on unnatural grin -> "And you never smiled." Close-Up on protagonist's stone-still unsmiling mouth).
+3. Option B Phrase-Level Visual Segmentation (2 to 6 Words Per Beat, Natural Grammar):
+   - SEGMENTATION CADENCE (~0.7s to 2.0s per image beat): Break spoken sentences into crisp 2 to 6 word visual phrases along natural grammatical boundaries so every short spoken phrase earns its own fresh image!
+     * Example: "If you pay off your mortgage ten years early, your lender might hit you with a massive penalty" ->
+       - Beat 1 ("If you pay off"): Close-Up on homeowner's hands sliding gold coins onto an oak desk.
+       - Beat 2 ("your mortgage"): Medium Shot of a miniature suburban house inside a ledger border.
+       - Beat 3 ("ten years early,"): Extreme Close-Up on desk calendar pages flipping forward to empty balance zero.
+       - Beat 4 ("your lender"): Low-Angle Shot looming upward at the suited lender sitting behind tall shadow.
+       - Beat 5 ("might hit you"): Point-of-View of heavy ledger sliding sharply forward across the table.
+       - Beat 6 ("with a massive penalty"): Macro Detail of crimson rubber warning stamp slamming onto contract paper.
+   - NO STRANDED GRAMMAR FRAGMENTS: Never isolate bare articles or hanging prepositions away from their noun (never output solo beats like "with a", "of the", "into a"). Keep articles/prepositions attached to the noun or verb phrase they modify.
+   - EXCEPTION A - PARALLEL ACTION-TRIPLET / LIST MONTAGE (~0.7s to 1.2s per beat): Split serialized items ("every blink, every breath, every move.") into distinct shot scales and focal nouns.
+   - EXCEPTION B - SEMANTIC-ANCHOR & TEMPORAL-ORIGIN FLASHBACK ("It's an entity that has studied you since birth,"): Split cleanly into Entity reveal -> Shadow stalking unaware protagonist -> Infant protagonist inside wooden nursery crib (no adult clothing on baby, no modern bedroom).
+   - EXCEPTION C - REPEATED NEGATIONS & CLIMAX TURNS: Split repeated rhetorical negatives ("You never reach out." -> "You never cross.") and separate lag beats from smile twists ("half-second late." -> "Now it's smiling." -> "And you never smiled.").
    - 100% SPOKEN NARRATION INVARIANT: Every single word in each scene's "narratorLine" MUST appear in exact sequential order across its "beats[].textSpan". Never drop or truncate trailing clauses!
    - SYNCHRONIZED SHOT METADATA & OPENING: Ensure each beat's "shotType" and "cameraAngle" match the exact framing described at the start of "imagePrompt" 1-for-1.
    - CHRONOLOGICAL ERA & LOCATION LOCK: Once a scene transitions into a new historical period or location, strictly maintain that era/environment across subsequent beats (except explicit infancy/childhood flashbacks, which shift to a nursery/childhood space).
@@ -625,15 +783,15 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
      * "shotType" captures FRAMING/PERSPECTIVE: "Extreme Wide Shot | Wide Establishing Shot | Medium Shot | Medium Close-Up | Close-Up | Extreme Close-Up | Over-the-Shoulder (OTS) | Point-of-View (POV) | Whip-Pan".
      * "cameraAngle" captures STRICTLY vertical/tilt camera angle: "eye-level | high-angle | low-angle | birds-eye | worms-eye | dutch-tilt". NEVER put "over-the-shoulder" or "pov" in cameraAngle! And keep beat shotType synchronized 1-for-1 with the opening words of imagePrompt.
 
-8. High-Density Visual Prompts (MANDATORY 75-110 WORDS PER BEAT, NEVER FRUGAL):
-   - Every visual beat MUST be rich, textured, and deeply descriptive (target 75 to 110 descriptive words per beat). Never write frugal, minimal, or brief prompts.
-   - Weave in the 5 required cinematic layers:
-     1) Exact framing, camera angle, and camera motion.
-     2) Grounded subject biomechanics, posture, facial micro-expressions, garment fabric folds, and tactile physical interaction.
-     3) Environmental depth, tactile textures (surfaces, particles, dust, moisture, ground elements).
-     4) Atmospheric lighting Kelvin, directional shadow falloff, and rim light contrast.
-     5) Precise optical lens prescription (focal length in mm, aperture) and aspect ratio flag.
-   - DO NOT copy-paste the entire character sheet paragraph multiple times within the prompt. Weave locked traits directly into the scene action.
+8. Crisp, Focused Visual Prompts (CONCISE 35-60 WORDS PER BEAT):
+   - Keep each visual beat prompt tight, vivid, and fast to read (target 35 to 60 words per beat - avoid bloated filler paragraphs; our continuity post-processor weaves full character locks cleanly).
+   - Weave in the 5 required cinematic layers concisely:
+     1) Exact framing and vertical/tilt camera angle.
+     2) Subject posture, gaze, garment cues, and specific focal physical interaction.
+     3) Tangible foreground/background surfaces and textures.
+     4) Atmospheric lighting Kelvin (or chiaroscuro for monochrome).
+     5) Single lens prescription (focal length/aperture) and aspect ratio flag.
+   - DO NOT copy-paste the entire character sheet paragraph multiple times within the prompt.
 
 9. "THE DIFFERENCE" & COUNTERFACTUAL JUXTAPOSITION RULE (STRICT NO-DUPLICATION BEAT PROGRESSION):
    - When the story presents a hypothetical, comparative, or "what if" premise (e.g. "What would happen if...", "Instead of X, Y...", "The ecosystems of Earth would have evolved completely differently..."):
@@ -733,7 +891,7 @@ Format: ${isLongForm ? 'Long form (16:9)' : 'Short form (9:16)'}
 Platform: ${platform}
 ${durationInstruction}${customBeatsPrompt}`;
 
-  const parsedData = await executeJsonLlmCall<any>({
+  const parsedData = await streamJsonLlmWithSceneProgress<any>({
     provider: req.aiProvider || 'gemini',
     apiKey,
     systemPrompt,
@@ -744,6 +902,20 @@ ${durationInstruction}${customBeatsPrompt}`;
     onStatusMessage,
     temperature: 0.3,
     topP: 0.85,
+    thinkingLevel: 'minimal',
+    onPartialStoryboard: onPartialResult
+      ? (partial) => {
+          const built = buildPartialStoryResultFromStream({
+            partial,
+            req,
+            isLongForm,
+            isVideoMode,
+            targetVideoDuration,
+            autoArchitectMode: false,
+          });
+          if (built) onPartialResult(built);
+        }
+      : undefined,
   });
 
   // Auto-continuation safeguard: if a long script truncated mid-JSON (especially in multi-scene Text to Video),
@@ -811,6 +983,7 @@ ${needThumb ? '- "thumbnail": { "heroMoment": "...", "expression": "...", "bgDes
         onStatusMessage,
         temperature: 0.25,
         topP: 0.85,
+        thinkingLevel: 'minimal',
       });
 
       const contScenes = Array.isArray(contData?.scenes) ? contData.scenes : [];
@@ -1218,10 +1391,11 @@ export async function generateStoryDirectly(
   req: GenerateStoryRequest,
   apiKey: string,
   userSignal?: AbortSignal,
-  onStatusMessage?: (msg: string) => void
+  onStatusMessage?: (msg: string) => void,
+  onPartialResult?: OnPartialStoryCallback
 ): Promise<StoryGenerationResult> {
   if (req.autoArchitectMode) {
-    return generateEnhancedStory(req, apiKey, userSignal, onStatusMessage);
+    return generateEnhancedStory(req, apiKey, userSignal, onStatusMessage, onPartialResult);
   }
-  return generateOriginalStory(req, apiKey, userSignal, onStatusMessage);
+  return generateOriginalStory(req, apiKey, userSignal, onStatusMessage, onPartialResult);
 }

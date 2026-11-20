@@ -1506,6 +1506,23 @@ export function formatFinalBeatPrompt(
   }
 
   // Check if prose already opens with shot framing; strip contradictory trailing shot-size labels, or prepend framing when absent
+  const angleOnlyOpeningRegex =
+    /^(eye[-\s]*level|low[-\s]*angle|high[-\s]*angle|birds?[-\s]*eye|worms?[-\s]*eye|dutch[-\s]*tilt)(?:\s+(?:framing|shot|view|angle))?(?:\s*,|\s+of\b|\s+showing\b|\s+depicting\b|\s*:)?\s*/i;
+  if (angleOnlyOpeningRegex.test(body)) {
+    body = body.replace(angleOnlyOpeningRegex, '').trim();
+  }
+
+  // Expand bare shot-size + angle opener (e.g. "Wide eye-level," -> "Wide Establishing Shot, eye-level,")
+  body = body
+    .replace(
+      /^Wide\s+(eye[-\s]*level|low[-\s]*angle|high[-\s]*angle|birds?[-\s]*eye|worms?[-\s]*eye|dutch[-\s]*tilt)\b/i,
+      'Wide Establishing Shot, $1'
+    )
+    .replace(
+      /^Medium\s+(eye[-\s]*level|low[-\s]*angle|high[-\s]*angle|birds?[-\s]*eye|worms?[-\s]*eye|dutch[-\s]*tilt)\b/i,
+      'Medium Shot, $1'
+    );
+
   const hasOpeningFraming =
     /^(?:Extreme\s+Wide|Wide\s+Establishing|Wide|Medium\s+Close-Up|Medium|Extreme\s+Close-Up|Close-Up|Macro|Over-the-Shoulder|Point-of-View|First-person|Whip[-\s]*Pan|Low-angle|High-angle|Birds-eye|Worms-eye|Dutch)/i.test(
       body
@@ -1540,8 +1557,9 @@ export function formatFinalBeatPrompt(
     }
   }
 
-  // Final punctuation, dangling preposition & spacing cleanup
+  // Final punctuation, duplicated angle-of-angle guard, dangling preposition & spacing cleanup
   body = body
+    .replace(/\b(eye[-\s]*level|low[-\s]*angle|high[-\s]*angle|birds?[-\s]*eye|worms?[-\s]*eye|dutch[-\s]*tilt)\s+of\s+\1\b/gi, '$1 of')
     .replace(/\b(?:in|with)\s+a\s+(?=(?:from\s+a|at\s+eye[-\s]*level|at\s+(?:low|high)[-\s]*angle|with\s+a\s+(?:tense\s+)?dutch|birds?[-\s]*eye|worms?[-\s]*eye)\b)/gi, '')
     .replace(/\),\s+(Shot\s+on\b|Visual\s+Style:)/g, '). $1')
     .replace(/,\s+(Shot\s+on\s+\d{2,3}mm\b)/g, '. $1')
@@ -1675,11 +1693,13 @@ export function verifyAndRepairSceneNarrationCoverage(
       };
     }
 
-    // Partition longer missing narration into visual-event chunks (~6-11 words per beat under Option A), keeping montage/flashback cues distinct
-    const missingChunks = splitPhraseIntoSubBeats(missingText, 11);
+    // Partition longer missing narration into 2-6 word phrase cuts in Image Mode (or broader chunks in Video Mode)
+    const recoveryWordTarget = options.isVideoMode ? 11 : 6;
+    const missingChunks = splitPhraseIntoSubBeats(missingText, recoveryWordTarget);
     const mergedMissingChunks: string[] = [];
     for (const chunk of missingChunks) {
       if (
+        options.isVideoMode &&
         mergedMissingChunks.length > 0 &&
         (getWordCount(chunk) <= 4 || getWordCount(mergedMissingChunks[mergedMissingChunks.length - 1]) + getWordCount(chunk) <= 11) &&
         !extractGeographicAnchor(chunk) &&
@@ -1828,25 +1848,50 @@ export function sanitizeEraBleedAcrossScenes(
 }
 
 /**
- * Checks whether a short spoken span is a connective filler fragment (e.g. "But he has one problem:",
- * "target for kings", "him live.") rather than a standalone visual event or cartographic/temporal anchor.
+ * Checks whether a short spoken span is a broken/connective stub fragment (e.g. a colon lead-in
+ * "But he has one problem:" or bare 1-2 function words like "with a", "him live.") rather than a
+ * valid 2-6 word visual phrase or cartographic/temporal anchor.
  */
-function isShortConnectiveFragment(beat: Beat): boolean {
+function isShortConnectiveFragment(beat: Beat, isVideoMode: boolean = false): boolean {
   if (isIntentionalMontageOrSemanticBeat(beat)) {
     return false;
   }
-  const words = getWordCount(beat.textSpan);
-  const secs = beat.estimatedSeconds || 1.5;
-  if (words <= 2 && secs <= 1.8 && !extractTemporalAnchor(beat.textSpan) && !extractGeographicAnchor(beat.textSpan)) {
+  const span = (beat.textSpan || '').trim();
+  if (extractTemporalAnchor(span) || extractGeographicAnchor(span)) {
+    return false;
+  }
+  // Colon-terminated lead-ins ("But he has one problem:") with short word count are always stub fragments
+  if (/:$/.test(span) && getWordCount(span) <= 5) {
     return true;
   }
-  if (words > FILLER_FRAGMENT_MAX_WORDS && secs > FILLER_FRAGMENT_MAX_SECONDS) {
-    return false;
+  const words = getWordCount(span);
+  const secs = beat.estimatedSeconds || 1.5;
+
+  if (isVideoMode) {
+    return words <= FILLER_FRAGMENT_MAX_WORDS || secs < FILLER_FRAGMENT_MAX_SECONDS;
   }
-  if (extractTemporalAnchor(beat.textSpan) || extractGeographicAnchor(beat.textSpan)) {
-    return false;
+
+  // In Image Mode (Option B Phrase-Level Segmentation), preserve healthy 2-6 word phrases.
+  // Only flag 1-2 word bare grammatical leftovers with negligible content weight or sub-0.5s slips.
+  if (words <= 1 || secs < 0.5) {
+    return true;
   }
-  return words <= FILLER_FRAGMENT_MAX_WORDS || secs < FILLER_FRAGMENT_MAX_SECONDS;
+  if (words === 2) {
+    const cleanTokens = span
+      .toLowerCase()
+      .replace(/[^a-z\s]/g, '')
+      .split(/\s+/)
+      .filter(Boolean);
+    const bareFunctionSet = new Set([
+      'a', 'an', 'the', 'of', 'to', 'in', 'on', 'at', 'by', 'for', 'with', 'from', 'and', 'but', 'or', 'if', 'as',
+      'is', 'are', 'was', 'were', 'be', 'been', 'it', 'its', 'that', 'this', 'he', 'she', 'they', 'we', 'you',
+      'him', 'her', 'them', 'his', 'their', 'your', 'my', 'our', 'live',
+    ]);
+    if (cleanTokens.length > 0 && cleanTokens.every((t) => bareFunctionSet.has(t))) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -2109,15 +2154,21 @@ export function deduplicateAndProgressSceneBeats(
     const combinedSeconds = Math.round(((prev.estimatedSeconds || 1.5) + (curr.estimatedSeconds || 1.5)) * 10) / 10;
     const combinedWords = getWordCount(`${prev.textSpan} ${curr.textSpan}`);
 
-    const currIsTinyConnector = isShortConnectiveFragment(curr);
-    const prevIsTinyConnector = isShortConnectiveFragment(prev);
+    const currIsTinyConnector = isShortConnectiveFragment(curr, isVideoMode);
+    const prevIsTinyConnector = isShortConnectiveFragment(prev, isVideoMode);
     const distinctMontageSubjects = hasDistinctMontageFocalSubject(prev, curr);
+
+    // In Image Mode (Option B Phrase Cuts), only merge if beats are near-identical clones (sim >= 0.50)
+    // OR one of them is a genuine broken stub/colon fragment; preserve distinct 2-6 word visual phrases.
+    const simThreshold = isVideoMode ? 0.46 : 0.52;
+    const maxCombinedPhraseWords =
+      isVideoMode || currIsTinyConnector || prevIsTinyConnector ? VISUAL_EVENT_MAX_WORDS : 11;
 
     const shouldMergeAdjacent =
       combinedSeconds <= maxMergeSeconds &&
-      combinedWords <= VISUAL_EVENT_MAX_WORDS &&
+      combinedWords <= maxCombinedPhraseWords &&
       !(distinctMontageSubjects && sim < 0.68) &&
-      (sim >= 0.46 || currIsTinyConnector || prevIsTinyConnector);
+      (sim >= simThreshold || currIsTinyConnector || prevIsTinyConnector);
 
     if (shouldMergeAdjacent) {
       prev.textSpan = `${prev.textSpan.trim()} ${curr.textSpan.trim()}`.trim();

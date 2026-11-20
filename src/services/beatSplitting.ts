@@ -1,7 +1,9 @@
 import { Beat, Scene, StyleProfile } from '../types';
 
-export const MAX_BEAT_SECONDS = 2.4;
-export const MAX_BEAT_WORDS = 10;
+export const MAX_BEAT_SECONDS = 2.2;
+export const MAX_BEAT_WORDS = 6;
+export const IMAGE_PHRASE_MAX_WORDS = 6;
+export const IMAGE_PHRASE_MIN_WORDS = 2;
 
 /**
  * Detects whether a beat's text span or spoken phrase contains a date, year, century, decade, or elapsed time anchor.
@@ -325,7 +327,15 @@ const SPLIT_CONNECTORS = new Set([
   'when', 'while', 'where', 'as', 'because', 'although', 'though', 'since', 'unless', 'until',
   'with', 'without', 'to', 'from', 'in', 'into', 'on', 'onto', 'at', 'by', 'for', 'of',
   'through', 'over', 'under', 'between', 'around', 'about', 'across', 'behind', 'before', 'after',
-  'then', 'now', 'just', 'even', 'like'
+  'then', 'now', 'just', 'even', 'like',
+  'your', 'his', 'her', 'their', 'our', 'my',
+  'might', 'could', 'would', 'should', 'will', 'must', 'suddenly'
+]);
+
+const HANGING_TAIL_WORDS = new Set([
+  'a', 'an', 'the', 'your', 'my', 'his', 'her', 'their', 'our', 'its',
+  'in', 'on', 'at', 'by', 'for', 'to', 'of', 'with', 'from', 'into', 'onto',
+  'and', 'but', 'or', 'if', 'that', 'which', 'as', 'while', 'when'
 ]);
 
 const DYNAMIC_SHOT_CYCLE = [
@@ -539,44 +549,76 @@ export function splitPhraseIntoSubBeats(phrase: string, maxWordsPerBeat: number 
       continue;
     }
 
-    // Need to split words by conjunctions, prepositions, or clause boundaries
+    // Need to split words by conjunctions, prepositions, or grammatical phrase starts
     let currentChunk: string[] = [];
-    
+
     for (let i = 0; i < words.length; i++) {
       const word = words[i];
       const lowerCleanWord = word.toLowerCase().replace(/[^a-z]/g, '');
 
       const isConnector = SPLIT_CONNECTORS.has(lowerCleanWord);
-      const isReachingMax = currentChunk.length >= Math.max(3, Math.floor(maxWordsPerBeat * 0.75));
+      const isReachingMax = currentChunk.length >= Math.max(2, Math.floor(maxWordsPerBeat * 0.75));
       const remainingWords = words.length - i;
+      const prevClean =
+        currentChunk.length > 0
+          ? currentChunk[currentChunk.length - 1].toLowerCase().replace(/[^a-z]/g, '')
+          : '';
+      const endsWithHangingTail = HANGING_TAIL_WORDS.has(prevClean);
 
-      if (currentChunk.length >= 2 && (isConnector || isReachingMax) && remainingWords >= 2) {
+      if (
+        currentChunk.length >= 2 &&
+        !endsWithHangingTail &&
+        (isConnector || isReachingMax) &&
+        remainingWords >= 2
+      ) {
         clauseChunks.push(currentChunk.join(' '));
         currentChunk = [word];
       } else {
         currentChunk.push(word);
-        if (currentChunk.length >= maxWordsPerBeat) {
-          clauseChunks.push(currentChunk.join(' '));
-          currentChunk = [];
+        if (currentChunk.length >= maxWordsPerBeat && remainingWords >= 2) {
+          // If the last word in currentChunk is a hanging article/preposition, push it to the next phrase
+          if (HANGING_TAIL_WORDS.has(lowerCleanWord) && currentChunk.length >= 3) {
+            const shifted = currentChunk.pop()!;
+            clauseChunks.push(currentChunk.join(' '));
+            currentChunk = [shifted];
+          } else {
+            clauseChunks.push(currentChunk.join(' '));
+            currentChunk = [];
+          }
         }
       }
     }
 
     if (currentChunk.length > 0) {
-      clauseChunks.push(currentChunk.join(' '));
+      if (currentChunk.length === 1 && clauseChunks.length > 0) {
+        const lastPrev = clauseChunks[clauseChunks.length - 1];
+        const combinedCount = getWordCount(lastPrev) + 1;
+        if (combinedCount <= maxWordsPerBeat + 1) {
+          clauseChunks[clauseChunks.length - 1] = `${lastPrev} ${currentChunk[0]}`;
+        } else {
+          clauseChunks.push(currentChunk.join(' '));
+        }
+      } else {
+        clauseChunks.push(currentChunk.join(' '));
+      }
     }
   }
 
-  // Final check: if any chunk is still > maxWordsPerBeat, forcefully cut into smaller chunks
+  // Final check: if any chunk is still > maxWordsPerBeat, split cleanly into 2-6 word chunks
   const resultChunks: string[] = [];
-  const fallbackChunkSize = Math.max(4, Math.floor(maxWordsPerBeat * 0.75));
+  const fallbackChunkSize = Math.max(3, Math.min(maxWordsPerBeat, Math.floor(maxWordsPerBeat * 0.85)));
   for (const chunk of clauseChunks) {
     const words = chunk.split(/\s+/).filter(Boolean);
     if (words.length <= maxWordsPerBeat) {
       resultChunks.push(chunk);
     } else {
       for (let i = 0; i < words.length; i += fallbackChunkSize) {
-        resultChunks.push(words.slice(i, i + fallbackChunkSize).join(' '));
+        const slice = words.slice(i, i + fallbackChunkSize);
+        if (slice.length === 1 && resultChunks.length > 0) {
+          resultChunks[resultChunks.length - 1] = `${resultChunks[resultChunks.length - 1]} ${slice[0]}`;
+        } else {
+          resultChunks.push(slice.join(' '));
+        }
       }
     }
   }
@@ -619,24 +661,28 @@ export function enforceBeatCeilings(
       ? originalBeat.estimatedSeconds
       : Math.max(1.0, Math.min(maxBeatSeconds, Math.round(wordCount * 0.35 * 10) / 10));
 
-    // Do NOT artificially subdivide a beat if it already has a rich visual prompt from the AI generator,
-    // unless it is an extraordinarily long run-on sentence exceeding 14 words or 3.5 seconds.
+    // In Image Mode (Option B Phrase-Level Segmentation), target 2-6 words per visual beat;
+    // split beats that stretch beyond 7 words or 2.5 seconds into grammar-safe 2-6 word phrases.
     const hasRichPrompt = Boolean(originalBeat.imagePrompt && originalBeat.imagePrompt.trim().length > 30);
-    const shouldSplit = hasRichPrompt
-      ? (wordCount > 14 || seconds > 3.5)
-      : (wordCount > maxBeatWords || seconds > maxBeatSeconds || (isVideoMode && deduplicatedInputBeats.length === 1 && wordCount >= 5));
+    const shouldSplit = isVideoMode
+      ? hasRichPrompt
+        ? (wordCount > 14 || seconds > 3.5)
+        : (wordCount > maxBeatWords || seconds > maxBeatSeconds || (deduplicatedInputBeats.length === 1 && wordCount >= 5))
+      : hasRichPrompt
+        ? (wordCount > 7 || seconds > 2.5)
+        : (wordCount > maxBeatWords || seconds > maxBeatSeconds);
 
     if (shouldSplit) {
       const targetChunkWords = isVideoMode
         ? Math.max(3, Math.min(maxBeatWords, Math.ceil(wordCount / (targetVideoDuration <= 6 ? 2 : 3))))
-        : Math.min(8, MAX_BEAT_WORDS);
+        : IMAGE_PHRASE_MAX_WORDS;
       const subPhrases = splitPhraseIntoSubBeats(text, targetChunkWords);
 
       if (subPhrases.length > 1) {
         const subDuration = Math.round((seconds / subPhrases.length) * 10) / 10;
         subPhrases.forEach((subText, subIdx) => {
           const subWordCount = getWordCount(subText);
-          const subEstimatedSec = Math.max(0.8, Math.round(subWordCount * 0.35 * 10) / 10);
+          const subEstimatedSec = Math.max(0.7, Math.round(subWordCount * 0.35 * 10) / 10);
           const shotCycleIdx = (bIdx + subIdx) % DYNAMIC_SHOT_CYCLE.length;
           const moveCycleIdx = (bIdx + subIdx) % DYNAMIC_MOVEMENT_CYCLE.length;
           const angleCycleIdx = (bIdx + subIdx) % DYNAMIC_ANGLE_CYCLE.length;
@@ -656,7 +702,7 @@ export function enforceBeatCeilings(
           const baseSubPrompt = originalBeat.imagePrompt
             ? (subIdx === 0
                 ? originalBeat.imagePrompt
-                : `Distinct moment depicting "${subText.replace(/["']/g, '')}" in progression from: ${sanitizeImagePromptShotFraming(originalBeat.imagePrompt)}`)
+                : `${assignedShotType}, ${assignedCameraAngle} framing focusing tightly on "${subText.replace(/["']/g, '')}" in progression from: ${sanitizeImagePromptShotFraming(originalBeat.imagePrompt)}`)
             : subText;
 
           validatedBeats.push(alignProseWithShotType({
@@ -666,7 +712,7 @@ export function enforceBeatCeilings(
             shotType: assignedShotType,
             cameraAngle: assignedCameraAngle,
             cameraMovement: assignedCameraMovement,
-            estimatedSeconds: Math.min(maxBeatSeconds, Math.max(0.8, subEstimatedSec || subDuration)),
+            estimatedSeconds: Math.min(maxBeatSeconds, Math.max(0.7, subEstimatedSec || subDuration)),
             imagePrompt: baseSubPrompt,
           }));
         });

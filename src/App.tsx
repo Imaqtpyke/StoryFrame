@@ -8,6 +8,7 @@ import ResultsSkeleton from './components/ResultsSkeleton';
 import ResultsErrorView from './components/ResultsErrorView';
 import Forbidden403View from './components/Forbidden403View';
 import LegalView from './components/LegalViews';
+import AiUsageView from './components/AiUsageView';
 import ScrollToTopButton from './components/ScrollToTopButton';
 import HistoryModal from './components/HistoryModal';
 import AssistantChatDrawer from './components/AssistantChatDrawer';
@@ -73,12 +74,17 @@ function StoryFrameMain() {
         );
       }
 
-      // Direct client-side generation using BYOK with user signal support and retry status callback
+      // Direct client-side generation using BYOK with user signal support and progressive scene updates
       const responseData = await generateStoryDirectly(
         data,
         apiKey.trim(),
         controller.signal,
-        (msg) => setGenerationStatusMessage(msg)
+        (msg) => setGenerationStatusMessage(msg),
+        (partialResult) => {
+          if (!controller.signal.aborted && partialResult?.scenes && partialResult.scenes.length > 0) {
+            setResult(partialResult);
+          }
+        }
       );
       setResult(responseData);
 
@@ -113,6 +119,7 @@ function StoryFrameMain() {
     }
     setIsLoading(false);
     setErrorMessage(null);
+    setResult((prev) => (prev ? { ...prev, progress: undefined } : prev));
   };
 
   const handleSelectFromHistory = (item: HistoryItem) => {
@@ -134,6 +141,10 @@ function StoryFrameMain() {
   };
 
   const handleBackToEdit = () => {
+    if (activeAbortControllerRef.current) {
+      activeAbortControllerRef.current.abort();
+      activeAbortControllerRef.current = null;
+    }
     setIsLoading(false);
     setResult(null);
     setErrorMessage(null);
@@ -142,6 +153,10 @@ function StoryFrameMain() {
   };
 
   const handleReset = () => {
+    if (activeAbortControllerRef.current) {
+      activeAbortControllerRef.current.abort();
+      activeAbortControllerRef.current = null;
+    }
     setIsLoading(false);
     setResult(null);
     setLastRequest(null);
@@ -266,14 +281,14 @@ function StoryFrameMain() {
             }}
           />
         ) : activePage === 'generator' ? (
-          isLoading ? (
+          isLoading && (!result || !result.scenes || result.scenes.length === 0) ? (
             <ResultsSkeleton
               request={lastRequest}
               onBackToEdit={handleBackToEdit}
               onCancelRequest={handleCancelRequest}
               statusMessage={generationStatusMessage}
             />
-          ) : errorMessage && lastRequest ? (
+          ) : !isLoading && errorMessage && lastRequest ? (
             <ResultsErrorView
               errorMessage={errorMessage}
               onBackToEdit={handleBackToEdit}
@@ -300,6 +315,10 @@ function StoryFrameMain() {
               onBackToEdit={handleBackToEdit}
               onReset={handleReset}
               onStartEpisodeDraft={handleStartEpisodeDraft}
+              isGeneratingMore={isLoading}
+              totalPlannedScenes={result.progress?.totalPlannedScenes}
+              generationStatusMessage={generationStatusMessage}
+              onCancelGeneration={handleCancelRequest}
             />
           ) : (
             <GeneratorForm
@@ -312,6 +331,11 @@ function StoryFrameMain() {
               onDirectResult={handleDirectResult}
             />
           )
+        ) : activePage === 'ai-usage' ? (
+          <AiUsageView
+            onBack={() => setActivePage('generator')}
+            onNavigate={setActivePage}
+          />
         ) : (
           <LegalView
             page={activePage}

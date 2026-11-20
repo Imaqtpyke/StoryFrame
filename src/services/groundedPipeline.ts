@@ -14,6 +14,8 @@ import {
   Scene,
   Beat,
   StyleProfile,
+  OnPartialStoryCallback,
+  StoryBible,
 } from '../types';
 import { stage0PrepareNarration } from './stage0Prepare';
 import { stage1GenerateStoryBible } from './stage1StoryBible';
@@ -30,7 +32,8 @@ import {
   summarizeGroundedCheckpoint,
 } from './groundedCheckpoint';
 
-const SCENE_BATCH_SIZE = 4;
+const SCENE_BATCH_SIZE = 3;
+const CONCURRENT_BATCHES = 2;
 
 export function getGroundedProgressForRequest(req: GenerateStoryRequest | null | undefined): GroundedCheckpointProgress | null {
   if (!req || !req.story || !req.story.trim()) return null;
@@ -81,11 +84,101 @@ function buildStoryDerivedHookFallback(storyText: string, events: string[]): str
   return 'WHAT HAPPENED NEXT';
 }
 
+function assembleGroundedStoryResult(params: {
+  req: GenerateStoryRequest;
+  bible: StoryBible;
+  scenes: Scene[];
+  cleanNarration: string;
+  authorNotes?: string;
+  timingSource?: 'actual' | 'estimated';
+  totalPlannedScenes?: number;
+  isPartial?: boolean;
+}): StoryGenerationResult {
+  const { req, bible, scenes, cleanNarration, authorNotes, timingSource, totalPlannedScenes, isPartial } = params;
+  const generationMode = req.generationMode || 'image';
+  const isVideo = generationMode === 'video';
+
+  const characterSheet: Record<string, string> = {};
+  for (const c of bible.cast) {
+    characterSheet[c.id] = `${c.role}: ${c.visualLock}`;
+  }
+  if (bible.threat && bible.threat.canonicalLook) {
+    characterSheet['Threat'] = bible.threat.canonicalLook;
+  }
+
+  const locationSheet: Record<string, string> = {};
+  for (const l of bible.locations) {
+    locationSheet[l.id] = l.visualLock;
+  }
+
+  const styleProfile: StyleProfile = {
+    artStyle: bible.worldStyle,
+    colorPalette: 'Grounded period tones',
+    lighting: 'Natural atmospheric lighting',
+    eraAndSetting: bible.locations.map((l) => l.id).join(', '),
+  };
+
+  const totalDurationSeconds = scenes.reduce((acc, sc) => acc + sc.estimatedSeconds, 0);
+
+  const fallbackHook = buildStoryDerivedHookFallback(cleanNarration, bible.events || []);
+  const hookText = (bible.thumbnailHook?.hookText || '').trim() || fallbackHook;
+
+  const thumbnail = compileThumbnailPrompt({
+    rawThumbnail: {
+      heroMoment:
+        (bible.thumbnailHook?.heroMoment || '').trim() ||
+        bible.events[bible.events.length - 1] ||
+        'The decisive turning point of the narrative',
+      expression:
+        (bible.thumbnailHook?.expression || '').trim() ||
+        'intense, emotionally charged, and highly focused',
+      bgDescription: `${styleProfile.eraAndSetting} with deep atmospheric depth`,
+      accentColor: 'golden hour amber',
+      hookText,
+      alternateHooks:
+        Array.isArray(bible.thumbnailHook?.alternateHooks) && bible.thumbnailHook.alternateHooks.length > 0
+          ? bible.thumbnailHook.alternateHooks
+          : [fallbackHook, 'THE FINAL TURNING POINT'],
+    },
+    styleProfile,
+    characterSheet,
+    storyPremise: req.story,
+    format: req.format,
+    platform: req.platform,
+  });
+
+  return {
+    totalDurationSeconds: Math.round(totalDurationSeconds * 10) / 10,
+    styleProfile,
+    characterSheet,
+    locationSheet,
+    scenes: [...scenes],
+    generationMode,
+    targetVideoDuration: req.targetVideoDuration || (isVideo ? 5 : undefined),
+    thumbnail,
+    storyBible: bible,
+    assumptions: bible.assumptions,
+    authorNotes,
+    timingSource,
+    progress: isPartial
+      ? {
+          completedScenes: scenes.length,
+          totalPlannedScenes,
+          isPartial: true,
+          stageLabel: totalPlannedScenes
+            ? `Scene ${scenes.length} of ${totalPlannedScenes} ready`
+            : `${scenes.length} scenes ready`,
+        }
+      : undefined,
+  };
+}
+
 export async function executeGroundedPipeline(
   req: GenerateStoryRequest,
   apiKey: string,
   userSignal?: AbortSignal,
-  onStatusMessage?: (msg: string) => void
+  onStatusMessage?: (msg: string) => void,
+  onPartialResult?: OnPartialStoryCallback
 ): Promise<StoryGenerationResult> {
   const modelQuality = req.modelQuality || 'standard';
   const format = req.format || 'short';
@@ -162,7 +255,7 @@ export async function executeGroundedPipeline(
     }
   } else {
     if (onStatusMessage) {
-      onStatusMessage(`Stage 2: Segmenting picture-based beats (${format === 'short' ? 'rapid short-form' : 'cinematic long-form'})...`);
+      onStatusMessage(`Stage 2: Segmenting phrase-level beats (${format === 'short' ? '9:16 portrait' : '16:9 widescreen'})...`);
     }
     plannedScenes = await stage2GenerateBeatPlan(
       prepared.words,
@@ -189,183 +282,188 @@ export async function executeGroundedPipeline(
   }
 
   // --------------------------------------------------------------------------
-  // Stages 3 & 4: Batched Scene Prompt Writing & Fast Verification + Checkpointing
+  // Stages 3 & 4: Concurrent 2-Batch Stage 3 Waves + Stage 4 Verification & Checkpointing
   // --------------------------------------------------------------------------
   const finalScenes: Scene[] = Array.isArray(checkpoint?.completedScenes)
     ? [...checkpoint.completedScenes]
     : [];
   let previousDepicts: string[] = Array.isArray(checkpoint?.lastDepicts) ? [...checkpoint.lastDepicts] : [];
 
-  const startIdx = finalScenes.length;
+  // Immediately surface resumed completed scenes if resuming from checkpoint
+  if (onPartialResult && finalScenes.length > 0 && finalScenes.length < plannedScenes.length) {
+    onPartialResult(
+      assembleGroundedStoryResult({
+        req,
+        bible,
+        scenes: finalScenes,
+        cleanNarration: prepared.cleanNarration,
+        authorNotes: prepared.authorNotes,
+        timingSource: prepared.timingSource,
+        totalPlannedScenes: plannedScenes.length,
+        isPartial: true,
+      })
+    );
+  }
 
-  for (let batchStart = startIdx; batchStart < plannedScenes.length; batchStart += SCENE_BATCH_SIZE) {
+  const pendingBatches: { batchStart: number; batchSlice: PlannedScene[] }[] = [];
+  for (let bs = finalScenes.length; bs < plannedScenes.length; bs += SCENE_BATCH_SIZE) {
+    pendingBatches.push({
+      batchStart: bs,
+      batchSlice: plannedScenes.slice(bs, bs + SCENE_BATCH_SIZE),
+    });
+  }
+
+  for (let w = 0; w < pendingBatches.length; w += CONCURRENT_BATCHES) {
     if (userSignal?.aborted) {
       throw new DOMException('Cancelled by user', 'AbortError');
     }
 
-    const batchSlice = plannedScenes.slice(batchStart, batchStart + SCENE_BATCH_SIZE);
-    const batchInput = batchSlice.map((ps, offset) => ({
-      sceneIndex: ps.index || batchStart + offset + 1,
-      beats: ps.beats,
-    }));
-
-    const firstSceneNum = batchInput[0].sceneIndex;
-    const lastSceneNum = batchInput[batchInput.length - 1].sceneIndex;
-    const rangeLabel = firstSceneNum === lastSceneNum ? `Scene ${firstSceneNum}` : `Scenes ${firstSceneNum}-${lastSceneNum}`;
+    const waveBatches = pendingBatches.slice(w, w + CONCURRENT_BATCHES);
+    const waveFirstScene = waveBatches[0].batchSlice[0].index || waveBatches[0].batchStart + 1;
+    const lastWaveBatch = waveBatches[waveBatches.length - 1];
+    const waveLastScene =
+      lastWaveBatch.batchSlice[lastWaveBatch.batchSlice.length - 1].index ||
+      lastWaveBatch.batchStart + lastWaveBatch.batchSlice.length;
 
     if (onStatusMessage) {
       onStatusMessage(
-        `Stage 3: Writing visual prompts for ${rangeLabel} of ${plannedScenes.length}${batchStart > 0 ? ` (${batchStart} saved)` : ''}...`
+        `Stage 3: Writing visual prompts for Scenes ${waveFirstScene}-${waveLastScene} of ${plannedScenes.length}${finalScenes.length > 0 ? ` (${finalScenes.length} ready)` : ''}...`
       );
     }
 
-    const writtenMap = await stage3WriteScenePromptsBatch(
-      batchInput,
-      bible,
-      previousDepicts,
-      format,
-      generationMode,
-      apiKey,
-      modelQuality,
-      userSignal,
-      onStatusMessage,
-      provider,
-      groqModel
-    );
-
-    for (let offset = 0; offset < batchSlice.length; offset++) {
-      const plannedScene = batchSlice[offset];
-      const sceneNum = plannedScene.index || batchStart + offset + 1;
-      const writtenBeats = writtenMap.get(sceneNum) || plannedScene.beats.map((b) => ({
-        ...b,
-        imagePrompt: `${b.shotSize} ${format === 'short' ? 'portrait' : 'landscape'} framing, ${b.angle}. ${b.depicts}. ${bible.worldStyle}`,
+    // Dispatch up to 2 Stage 3 batches concurrently, threading planned depicts between Batch A and Batch B
+    const wavePromises = waveBatches.map((wb, waveIdx) => {
+      const batchInput = wb.batchSlice.map((ps, offset) => ({
+        sceneIndex: ps.index || wb.batchStart + offset + 1,
+        beats: ps.beats,
       }));
+      const contextDepicts =
+        waveIdx === 0
+          ? previousDepicts
+          : (waveBatches[waveIdx - 1].batchSlice[waveBatches[waveIdx - 1].batchSlice.length - 1]?.beats || [])
+              .slice(-2)
+              .map((b) => b.depicts);
 
-      if (onStatusMessage) {
-        onStatusMessage(`Stage 4: Running quality checks for Scene ${sceneNum} of ${plannedScenes.length}...`);
-      }
-
-      const verifiedBeats = await stage4VerifyAndRepairScene(
-        sceneNum,
-        plannedScene.narratorLine,
-        writtenBeats,
+      return stage3WriteScenePromptsBatch(
+        batchInput,
         bible,
+        contextDepicts,
         format,
+        generationMode,
         apiKey,
         modelQuality,
         userSignal,
         onStatusMessage,
         provider,
-        groqModel,
-        { runLlmCritic: false }
+        groqModel
       );
-
-      previousDepicts = verifiedBeats.slice(-2).map((b) => b.depicts);
-
-      const beatsForScene: Beat[] = verifiedBeats.map((vb) => ({
-        beatIndex: vb.beatIndex,
-        textSpan: vb.textSpan,
-        imagePrompt: vb.imagePrompt,
-        estimatedSeconds: vb.estimatedSeconds,
-        shotType: vb.shotSize,
-        cameraAngle: vb.angle,
-        cameraMovement: isVideo ? 'Continuous Camera Pan' : 'Static',
-        wordRange: vb.wordRange,
-        depicts: vb.depicts,
-        kind: vb.kind,
-        referentId: vb.referentId,
-        intensity: vb.intensity,
-        subjectIds: vb.subjectIds,
-        newInfo: vb.newInfo,
-        overlayText: vb.overlayText,
-        flaggedIssue: vb.flaggedIssue,
-      }));
-
-      finalScenes.push({
-        index: sceneNum,
-        narratorLine: plannedScene.narratorLine,
-        estimatedSeconds: plannedScene.estimatedSeconds,
-        beats: beatsForScene,
-      });
-    }
-
-    // Persist checkpoint after every completed batch so transient busy errors never erase finished work
-    saveGroundedCheckpoint({
-      key: checkpointKey,
-      totalWords: prepared.words.length,
-      updatedAt: Date.now(),
-      bible,
-      plannedScenes,
-      completedScenes: finalScenes,
-      lastDepicts: previousDepicts,
     });
+
+    const waveWrittenMaps = await Promise.all(wavePromises);
+
+    // Run deterministic Stage 4 verification sequentially across the wave batches and stream scene progress
+    for (let waveIdx = 0; waveIdx < waveBatches.length; waveIdx++) {
+      const wb = waveBatches[waveIdx];
+      const writtenMap = waveWrittenMaps[waveIdx];
+
+      for (let offset = 0; offset < wb.batchSlice.length; offset++) {
+        const plannedScene = wb.batchSlice[offset];
+        const sceneNum = plannedScene.index || wb.batchStart + offset + 1;
+        const writtenBeats =
+          writtenMap.get(sceneNum) ||
+          plannedScene.beats.map((b) => ({
+            ...b,
+            imagePrompt: `${b.shotSize} ${format === 'short' ? 'portrait' : 'landscape'} framing, ${b.angle}. ${b.depicts}. ${bible.worldStyle}`,
+          }));
+
+        if (onStatusMessage) {
+          onStatusMessage(`Stage 4: Running quality checks for Scene ${sceneNum} of ${plannedScenes.length}...`);
+        }
+
+        const verifiedBeats = await stage4VerifyAndRepairScene(
+          sceneNum,
+          plannedScene.narratorLine,
+          writtenBeats,
+          bible,
+          format,
+          apiKey,
+          modelQuality,
+          userSignal,
+          onStatusMessage,
+          provider,
+          groqModel,
+          { runLlmCritic: false, generationMode }
+        );
+
+        previousDepicts = verifiedBeats.slice(-2).map((b) => b.depicts);
+
+        const beatsForScene: Beat[] = verifiedBeats.map((vb) => ({
+          beatIndex: vb.beatIndex,
+          textSpan: vb.textSpan,
+          imagePrompt: vb.imagePrompt,
+          estimatedSeconds: vb.estimatedSeconds,
+          shotType: vb.shotSize,
+          cameraAngle: vb.angle,
+          cameraMovement: isVideo ? 'Continuous Camera Pan' : 'Static',
+          wordRange: vb.wordRange,
+          depicts: vb.depicts,
+          kind: vb.kind,
+          referentId: vb.referentId,
+          intensity: vb.intensity,
+          subjectIds: vb.subjectIds,
+          newInfo: vb.newInfo,
+          overlayText: vb.overlayText,
+          flaggedIssue: vb.flaggedIssue,
+        }));
+
+        finalScenes.push({
+          index: sceneNum,
+          narratorLine: plannedScene.narratorLine,
+          estimatedSeconds: plannedScene.estimatedSeconds,
+          beats: beatsForScene,
+        });
+      }
+
+      // Checkpoint after each batch within the wave
+      saveGroundedCheckpoint({
+        key: checkpointKey,
+        totalWords: prepared.words.length,
+        updatedAt: Date.now(),
+        bible,
+        plannedScenes,
+        completedScenes: finalScenes,
+        lastDepicts: previousDepicts,
+      });
+
+      // Surface finished scenes progressively in UI as each batch completes
+      if (onPartialResult && finalScenes.length > 0 && finalScenes.length < plannedScenes.length) {
+        onPartialResult(
+          assembleGroundedStoryResult({
+            req,
+            bible,
+            scenes: finalScenes,
+            cleanNarration: prepared.cleanNarration,
+            authorNotes: prepared.authorNotes,
+            timingSource: prepared.timingSource,
+            totalPlannedScenes: plannedScenes.length,
+            isPartial: true,
+          })
+        );
+      }
+    }
   }
 
   // Clear temporary checkpoint now that all scenes succeeded cleanly
   clearGroundedCheckpoint(checkpointKey);
 
-  // Build characterSheet and locationSheet from Bible
-  const characterSheet: Record<string, string> = {};
-  for (const c of bible.cast) {
-    characterSheet[c.id] = `${c.role}: ${c.visualLock}`;
-  }
-  if (bible.threat && bible.threat.canonicalLook) {
-    characterSheet['Threat'] = bible.threat.canonicalLook;
-  }
-
-  const locationSheet: Record<string, string> = {};
-  for (const l of bible.locations) {
-    locationSheet[l.id] = l.visualLock;
-  }
-
-  const styleProfile: StyleProfile = {
-    artStyle: bible.worldStyle,
-    colorPalette: 'Grounded period tones',
-    lighting: 'Natural atmospheric lighting',
-    eraAndSetting: bible.locations.map((l) => l.id).join(', '),
-  };
-
-  const totalDurationSeconds = finalScenes.reduce((acc, sc) => acc + sc.estimatedSeconds, 0);
-
-  const fallbackHook = buildStoryDerivedHookFallback(prepared.cleanNarration, bible.events || []);
-  const hookText = (bible.thumbnailHook?.hookText || '').trim() || fallbackHook;
-
-  const thumbnail = compileThumbnailPrompt({
-    rawThumbnail: {
-      heroMoment:
-        (bible.thumbnailHook?.heroMoment || '').trim() ||
-        bible.events[bible.events.length - 1] ||
-        'The decisive turning point of the narrative',
-      expression:
-        (bible.thumbnailHook?.expression || '').trim() ||
-        'intense, emotionally charged, and highly focused',
-      bgDescription: `${styleProfile.eraAndSetting} with deep atmospheric depth`,
-      accentColor: 'golden hour amber',
-      hookText,
-      alternateHooks:
-        Array.isArray(bible.thumbnailHook?.alternateHooks) && bible.thumbnailHook.alternateHooks.length > 0
-          ? bible.thumbnailHook.alternateHooks
-          : [fallbackHook, 'THE FINAL TURNING POINT'],
-    },
-    styleProfile,
-    characterSheet,
-    storyPremise: req.story,
-    format: req.format,
-    platform: req.platform,
-  });
-
-  return {
-    totalDurationSeconds: Math.round(totalDurationSeconds * 10) / 10,
-    styleProfile,
-    characterSheet,
-    locationSheet,
+  return assembleGroundedStoryResult({
+    req,
+    bible,
     scenes: finalScenes,
-    generationMode,
-    targetVideoDuration: req.targetVideoDuration || (isVideo ? 5 : undefined),
-    thumbnail,
-    storyBible: bible,
-    assumptions: bible.assumptions,
+    cleanNarration: prepared.cleanNarration,
     authorNotes: prepared.authorNotes,
     timingSource: prepared.timingSource,
-  };
+    totalPlannedScenes: plannedScenes.length,
+    isPartial: false,
+  });
 }

@@ -7,7 +7,7 @@
 // This file is strictly isolated from the original generator in geminiClient.ts.
 // ============================================================================
 
-import { GenerateStoryRequest, StoryGenerationResult, StyleProfile, Beat } from '../types';
+import { GenerateStoryRequest, OnPartialStoryCallback, StoryGenerationResult, StyleProfile, Beat } from '../types';
 import {
   extractTemporalAnchor,
 } from './beatSplitting';
@@ -22,9 +22,14 @@ import {
   sanitizeStillImageMotionAndOptics,
   synchronizeCharacterSheetWithFirstAppearances,
 } from './beatProgressionEngine';
-import { cleanAndDeduplicatePrompt, assembleCleanPrompt, sanitizeCharacterIdentitySheet } from './geminiClient';
+import {
+  cleanAndDeduplicatePrompt,
+  assembleCleanPrompt,
+  sanitizeCharacterIdentitySheet,
+  buildPartialStoryResultFromStream,
+} from './geminiClient';
 import { executeGroundedPipeline } from './groundedPipeline';
-import { executeJsonLlmCall } from './unifiedAiService';
+import { executeJsonLlmCall, streamJsonLlmWithSceneProgress } from './unifiedAiService';
 import { compileThumbnailPrompt } from './promptCompiler';
 
 function removeEmDashes(text: string): string {
@@ -159,7 +164,8 @@ export async function generateEnhancedStory(
   req: GenerateStoryRequest,
   apiKey: string,
   userSignal?: AbortSignal,
-  onStatusMessage?: (msg: string) => void
+  onStatusMessage?: (msg: string) => void,
+  onPartialResult?: OnPartialStoryCallback
 ): Promise<StoryGenerationResult> {
   const {
     story,
@@ -184,7 +190,7 @@ export async function generateEnhancedStory(
 
   // Long-form 16:9 landscape text-to-image is routed to the 5-stage Grounded Pipeline
   if (isLongForm && !isVideoMode) {
-    return executeGroundedPipeline(req, apiKey, userSignal, onStatusMessage);
+    return executeGroundedPipeline(req, apiKey, userSignal, onStatusMessage, onPartialResult);
   }
 
   let durationInstruction = '';
@@ -248,8 +254,17 @@ You MUST take their raw premise, question, draft, or concept and perform compreh
      ? `- MANDATORY MULTI-BEAT RULE: A single beat spanning an entire ${targetVideoDuration}-second video clip is STRICTLY FORBIDDEN.
    - Every ${targetVideoDuration}-second scene MUST be subdivided into ${targetVideoDuration <= 5 ? '2 to 3' : '3 to 4'} cohesive visual-event micro-beats whose "estimatedSeconds" add up cleanly to ${targetVideoDuration}.0s.
    - If a line stacks a semantic-anchor origin flashback ("It's an entity that has studied you since birth" with infant inside wooden crib) AND an action triplet ("every blink, every breath, every move"), repeated negations, or climax turns, SPILL across consecutive ${targetVideoDuration}-second clips (max <=${maxSpokenWordsPerScene} spoken words and <=3 cuts per clip) instead of cramming 5-6 cuts into one ${targetVideoDuration}s AI video clip.`
-     : `- DYNAMIC VISUAL-EVENT PACING RULE (~1.5s to 3.0s default + ~0.7s to 1.2s selective rapid montage): Partition each scene into progressive visual beats. Keep plain clauses at ~1.5s-3.0s and MERGE tiny grammar glue ("But he has one problem:", "him live.").
-   - SELECTIVE RAPID MONTAGE TRIGGERS (apply even on 7-14 word lines!):
+     : `- OPTION B PHRASE-LEVEL VISUAL SEGMENTATION (2 TO 6 WORDS PER BEAT, NATURAL GRAMMAR, ~0.7s TO 2.0s PER CUT): Partition spoken narration into crisp 2 to 6 word visual phrases along natural grammatical boundaries so every short phrase receives its own distinct image!
+     * Example: "If you pay off your mortgage ten years early, your lender might hit you with a massive penalty" ->
+       - Beat 1 ("If you pay off"): Close-Up on hands sliding coins across a desk.
+       - Beat 2 ("your mortgage"): Medium Shot of a miniature suburban house beside a contract ledger.
+       - Beat 3 ("ten years early,"): Extreme Close-Up on calendar pages flipping to zero balance.
+       - Beat 4 ("your lender"): Low-Angle Shot looming upward at the suited lender behind shadow.
+       - Beat 5 ("might hit you"): Point-of-View of heavy ledger sliding across the table.
+       - Beat 6 ("with a massive penalty"): Macro Detail of crimson stamp slamming onto paper.
+   - NO STRANDED ARTICLES OR HANGING PREPOSITIONS: Never isolate bare function words away from their noun (NEVER output solo beats like "with a", "of the", "into a"). Keep articles/prepositions attached to the noun or verb phrase they modify.
+   - DISTINCT VISUAL FOCUS PER CUT: Vary camera scale, angle, and subject focus between adjacent phrases so no two consecutive cuts look identical.
+   - SELECTIVE RAPID MONTAGE TRIGGERS (apply cleanly across short and long scenes):
      * ACTION-TRIPLET / PARALLEL LISTS ("every blink, every breath, every move."): Split each item into its own rapid 0.7s-1.2s beat with distinct shot scale & focal noun (Extreme Close-Up eyelids mid-blink -> Extreme Close-Up condensation frost mist on glass -> Medium Shot raised shoulder/hand posture, all in exact 1:1 synchrony).
      * SEMANTIC-ANCHOR + ORIGIN FLASHBACK ("It's an entity that has studied you since birth"): Split into (1) Entity showcase (unsmiling stylized silhouette), (2) Watching from behind (protagonist facing forward unaware in crisp foreground focus while entity looms behind in deep shadow), and (3) Origin flashback (INFANT protagonist swaddled INSIDE a wooden crib while shadowy entity hides behind crib slats watching; zero adult clothing, zero modern bedroom traits, zero etched mirror dates!).
      * REPEATED NEGATIONS & CLIMAX TURNS: Split repeated negatives ("You never reach out." hands motionless -> "You never cross." feet halted before glass threshold) and separate reflection lag from smile reveal ("half-second late." -> "Now it's smiling." -> "And you never smiled.").
@@ -297,8 +312,8 @@ You MUST take their raw premise, question, draft, or concept and perform compreh
     - ZERO SPLIT-WORD TEXT ARTIFACTS: Never visualize isolated split sentence words ("Margins.") printed boldly on props.
 
 14. TOKEN ECONOMY & DEDUPLICATION:
-    - Every beat prompt must be punchy and self-contained (45 to 80 descriptive words).
-    - DO NOT copy-paste the entire character sheet paragraph multiple times within the prompt. Weave locked traits directly into the scene action.
+    - Every beat prompt must be crisp, punchy, and self-contained (35 to 60 descriptive words in Image Mode, 45 to 70 in Video Mode).
+    - DO NOT copy-paste the entire character sheet paragraph multiple times within the prompt. Weave key traits concisely; our continuity compiler guarantees full locks.
 
 15. MANDATORY GLOBAL VISUAL TOKEN BIBLE & UNBREAKABLE COLOR/MATERIAL CONSISTENCY:
     - Establish and strictly enforce a unified, permanent visual anchor palette across all scenes and beats.
@@ -535,7 +550,7 @@ Format: ${isLongForm ? 'Long form (16:9)' : 'Short form (9:16)'}
 Platform: ${platform}
 ${durationInstruction}`;
 
-  const parsedData = await executeJsonLlmCall<any>({
+  const parsedData = await streamJsonLlmWithSceneProgress<any>({
     provider: req.aiProvider || 'gemini',
     apiKey,
     systemPrompt,
@@ -546,6 +561,20 @@ ${durationInstruction}`;
     onStatusMessage,
     temperature: 0.3,
     topP: 0.85,
+    thinkingLevel: 'minimal',
+    onPartialStoryboard: onPartialResult
+      ? (partial) => {
+          const built = buildPartialStoryResultFromStream({
+            partial,
+            req,
+            isLongForm: format === 'long',
+            isVideoMode,
+            targetVideoDuration,
+            autoArchitectMode: true,
+          });
+          if (built) onPartialResult(built);
+        }
+      : undefined,
   });
 
   // Sanitize styleProfile (strip hero pronoun wardrobe leaks from shared artStyle, and enforce monochrome lighting purity)
@@ -627,6 +656,7 @@ Return ONLY valid JSON with "scenes": [ ...starting at index ${nextSceneIndex}..
         onStatusMessage,
         temperature: 0.25,
         topP: 0.85,
+        thinkingLevel: 'minimal',
       });
       if (Array.isArray(contData?.scenes) && contData.scenes.length > 0) {
         if (!parsedData.scenes) parsedData.scenes = [];
