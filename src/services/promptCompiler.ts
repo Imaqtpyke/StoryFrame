@@ -1033,8 +1033,9 @@ export function compileCtaPrompt(params: {
     primaryCharClause = `${formattedName} (locked visual identity: ${cleanDesc})`;
   }
 
-  // Question resolution
-  const { primaryQuestion, alternateQuestions } = inferStoryAdaptiveCtaQuestion(params.storyPremise, primaryCharName);
+  // Question resolution (strip production age prefixes like "Adult " / "Young " so the viewer question reads naturally)
+  const ctaQuestionSubject = primaryCharName.replace(/^(?:Adult|Young|Old|Older|Teen|Child|Elder)\s+/i, '').trim() || primaryCharName;
+  const { primaryQuestion, alternateQuestions } = inferStoryAdaptiveCtaQuestion(params.storyPremise, ctaQuestionSubject);
   const activeQuestion =
     params.questionText && params.questionText.trim().length > 0
       ? params.questionText.trim()

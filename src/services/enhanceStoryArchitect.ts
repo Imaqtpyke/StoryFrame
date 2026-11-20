@@ -463,7 +463,7 @@ Your task is to take a story and generate a production-ready, nested scene-and-b
 SCHEMA AND STRUCTURE REQUIREMENTS:
 1. Style Profile:
    Analyze the whole story to generate a top-level "styleProfile" object containing:
-   - "artStyle": visual art medium, rendering technique, or illustration style: "${characterStyle || 'consistent visual style'}"
+   - "artStyle": pure visual art medium and rendering technique: "${characterStyle || 'consistent visual style'}" (describe medium/textures only, NEVER plot transitions like portals between flashbacks)
    - "colorPalette": harmonious color palette matching the specific mood
    - "lighting": lighting style and atmospheric quality
    - "eraAndSetting": historical or fictional period, geography, and environmental backdrop
@@ -554,11 +554,10 @@ STRICT CONSTRAINTS:
 Do not include markdown code fences or backticks, just raw JSON.`;
 
   const shouldUsePilotCap = Boolean(
-    onConfirmContinueAfterScene2 &&
-      (!durationSeconds || durationSeconds > 14 || isVideoMode || isLongForm)
+    onConfirmContinueAfterScene2 && (!isCustomBeats || (customScenes?.length || 0) > 2)
   );
   const pilotRuleNote = shouldUsePilotCap
-    ? `\n\nCHECKPOINT PILOT RULE (CRITICAL): Generate ONLY Scene 1 and Scene 2 first in "scenes" (maximum 2 scenes total in this response) along with complete "hookAnalysis", "styleProfile", "characterSheet", "locationSheet", and "thumbnail". Also set top-level "hasMoreScenes": true if the full story arc needs Scene 3+, or "hasMoreScenes": false ONLY if the entire enhanced story concludes completely inside those 1-2 scenes.`
+    ? `\n\nCHECKPOINT PILOT RULE (CRITICAL HARD LIMIT): Output AT MOST 2 scene objects inside "scenes" (index 1 and index 2 ONLY). NEVER output Scene 3, Scene 4, or Scene 5 in this response. Generate Scene 1 and Scene 2 along with complete "hookAnalysis", "styleProfile", "characterSheet", "locationSheet", and "thumbnail". Also set top-level "hasMoreScenes": true if the full story arc needs Scene 3+, or "hasMoreScenes": false ONLY if the entire enhanced story concludes completely inside those 1-2 scenes.`
     : '';
 
   const userPrompt = `[PIPELINE: AUTO STORY ARCHITECT & HOOK OPTIMIZER ACTIVE - Research concept, engineer viral opening hook, write full-sentence voiceover script, and generate breakdown]
@@ -604,7 +603,7 @@ ${durationInstruction}${pilotRuleNote}`;
       : undefined,
   });
 
-  const finalizeEnhancedStoryboard = async (dataObj: any): Promise<StoryGenerationResult> => {
+  const finalizeEnhancedStoryboard = async (dataObj: any, skipLlmRepair = false): Promise<StoryGenerationResult> => {
     // Sanitize styleProfile (strip hero pronoun wardrobe leaks from shared artStyle, and enforce monochrome lighting purity)
     const rawStyleProfile = dataObj.styleProfile || {};
     const cleanedArtStyle = sanitizeSharedVisualStyle(removeEmDashes(rawStyleProfile.artStyle || characterStyle || 'Cinematic Rendering'));
@@ -740,6 +739,7 @@ ${durationInstruction}${pilotRuleNote}`;
       groqModel: req.groqModel,
       userSignal,
       onStatusMessage,
+      skipLlmRepair,
     });
 
     const totalDuration = Math.round(scenesWithHints.reduce((sum: number, s: any) => sum + (s.estimatedSeconds || 0), 0) * 10) / 10;
@@ -791,10 +791,13 @@ ${durationInstruction}${pilotRuleNote}`;
 
   if (onConfirmContinueAfterScene2 && hasMoreBeyondScene2 && !userSignal?.aborted) {
     const pilotScenesSlice = initialEnhanceScenes.slice(0, 2);
-    const pilotFinalized = await finalizeEnhancedStoryboard({
-      ...parsedData,
-      scenes: pilotScenesSlice,
-    });
+    const pilotFinalized = await finalizeEnhancedStoryboard(
+      {
+        ...parsedData,
+        scenes: pilotScenesSlice,
+      },
+      true
+    );
 
     if (onPartialResult) {
       onPartialResult({

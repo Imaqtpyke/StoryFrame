@@ -527,33 +527,37 @@ export async function executeGroundedPipeline(
           estimatedSeconds: plannedScene.estimatedSeconds,
           beats: beatsForScene,
         });
-      }
 
-      // Checkpoint after each batch within the wave
-      saveGroundedCheckpoint({
-        key: checkpointKey,
-        totalWords: prepared.words.length,
-        updatedAt: Date.now(),
-        bible,
-        plannedScenes,
-        completedScenes: finalScenes,
-        lastDepicts: previousDepicts,
-      });
+        // Checkpoint and surface each finished scene progressively right after Stage 4
+        saveGroundedCheckpoint({
+          key: checkpointKey,
+          totalWords: prepared.words.length,
+          updatedAt: Date.now(),
+          bible,
+          plannedScenes,
+          completedScenes: finalScenes,
+          lastDepicts: previousDepicts,
+        });
 
-      // Surface finished scenes progressively in UI as each batch completes
-      if (onPartialResult && finalScenes.length > 0 && finalScenes.length < plannedScenes.length) {
-        onPartialResult(
-          assembleGroundedStoryResult({
-            req,
-            bible,
-            scenes: finalScenes,
-            cleanNarration: prepared.cleanNarration,
-            authorNotes: prepared.authorNotes,
-            timingSource: prepared.timingSource,
-            totalPlannedScenes: plannedScenes.length,
-            isPartial: true,
-          })
+        const shouldCapAtPilot = Boolean(
+          onConfirmContinueAfterScene2 && !hasAskedContinueAfterScene2 && plannedScenes.length > 2
         );
+        const visibleScenes = shouldCapAtPilot ? finalScenes.slice(0, 2) : finalScenes;
+
+        if (onPartialResult && visibleScenes.length > 0 && finalScenes.length < plannedScenes.length) {
+          onPartialResult(
+            assembleGroundedStoryResult({
+              req,
+              bible,
+              scenes: visibleScenes,
+              cleanNarration: prepared.cleanNarration,
+              authorNotes: prepared.authorNotes,
+              timingSource: prepared.timingSource,
+              totalPlannedScenes: plannedScenes.length,
+              isPartial: true,
+            })
+          );
+        }
       }
     }
 

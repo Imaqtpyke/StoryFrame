@@ -3698,7 +3698,181 @@ function runTestSuite34() {
   );
 }
 
-runTestSuite21().then(() => {
+// ============================================================================
+// 35. SSE STREAMING LATENCY, SCENE 2 PILOT GATE & VIRELIA PROMPT QUALITY
+// ============================================================================
+async function runTestSuite35() {
+  console.log('\n--- Running Test Suite 35: SSE Streaming Latency, Scene 2 Pilot Gate & Virelia Prompt Quality ---');
+
+  // 35.1 Scene-first JSON stream ordering: completed Scene 1 extracts immediately even BEFORE styleProfile or characterSheet arrive
+  const sceneFirstStream = `{
+  "scenes": [
+    {
+      "index": 1,
+      "narratorLine": "Two clockmakers built Virelia.",
+      "estimatedSeconds": 2.4,
+      "beats": [
+        {
+          "beatIndex": 1,
+          "textSpan": "Two clockmakers built Virelia.",
+          "estimatedSeconds": 2.4,
+          "shotType": "Wide Establishing Shot",
+          "cameraAngle": "eye-level",
+          "cameraMovement": "Static Frame",
+          "imagePrompt": "Wide Establishing Shot, eye-level inside a sunlit clocktower workshop."
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "narratorLine": "Juno never opened the case.`;
+  const sceneFirstPartial = extractCompletedStoryboardFields(sceneFirstStream);
+  assert(
+    sceneFirstPartial.scenes.length === 1 &&
+      sceneFirstPartial.scenes[0].index === 1 &&
+      !sceneFirstPartial.styleProfile &&
+      !sceneFirstPartial.characterSheet,
+    'Suite 35: SSE Streaming Latency, Scene 2 Pilot Gate & Virelia Prompt Quality',
+    '35.1 Extracts Completed Scene 1 Immediately When "scenes" Streams Before "styleProfile" or "characterSheet"',
+    `scenes=${sceneFirstPartial.scenes.length}`
+  );
+
+  // 35.2 Back-to-back appositive trait clones right after "Character (anchor), ..." are pruned once while preserving "-ing" action clauses
+  const vireliaCast: Record<string, string> = {
+    'Adult Juno': 'copper-red hair tied back, round brass goggles on her forehead, stained canvas apron, heavy leather vest',
+    'Young Juno': 'copper-red hair in braids, freckles on cheeks, patched wool sweater',
+    'Young Milo': 'dark curly hair, soot-smudged cheek, patched apron, carrying a tattered satchel',
+  };
+  const appositiveInput =
+    'Vertical 9:16 portrait composition, Medium Shot, eye-level framing Adult Juno, copper-red hair tied back, brass goggles, stained canvas apron, leaning forward over a workbench.';
+  const appositiveLocked = injectCompactCharacterLocks(
+    appositiveInput,
+    'Adult Juno examined the clockwork.',
+    'Adult Juno examined the clockwork.',
+    vireliaCast
+  );
+  // Also ensure an LLM-emitted "Adult Juno (anchor), copper-red hair tied back, brass goggles, leaning forward..." prunes duplicates
+  const preLockedAppositiveInput =
+    'Vertical 9:16 portrait composition, Medium Shot, eye-level framing Adult Juno (copper-red hair tied back, brass goggles, stained canvas apron), copper-red hair tied back, stained canvas apron, leaning forward over a workbench.';
+  const preLockedAppositiveOut = injectCompactCharacterLocks(
+    preLockedAppositiveInput,
+    'Adult Juno examined the clockwork.',
+    'Adult Juno examined the clockwork.',
+    { 'Adult Juno': 'copper-red hair tied back, brass goggles, stained canvas apron' }
+  );
+  const appositiveMatches = appositiveLocked.match(/copper-red hair/gi) || [];
+  const preLockedMatches = preLockedAppositiveOut.match(/copper-red hair/gi) || [];
+  assert(
+    appositiveLocked.includes('Adult Juno (') &&
+      appositiveMatches.length === 1 &&
+      appositiveLocked.includes('leaning forward over a workbench') &&
+      preLockedMatches.length === 1 &&
+      preLockedAppositiveOut.includes('leaning forward over a workbench'),
+    'Suite 35: SSE Streaming Latency, Scene 2 Pilot Gate & Virelia Prompt Quality',
+    '35.2 Prunes Back-to-Back Appositive Trait Clones After Character Lock While Preserving Action Clauses',
+    `out=${appositiveLocked} | pre=${preLockedAppositiveOut}`
+  );
+
+  // 35.3 Tight hand close-up suppresses facial/head traits and "carrying a tattered satchel" leakage
+  const handCloseUpInput =
+    'Vertical 9:16 portrait composition, Extreme Close-Up, eye-level focusing on Young Juno and Young Milo ink-smudged small hands gripping a tarnished lantern.';
+  const handCloseUpLocked = injectCompactCharacterLocks(
+    handCloseUpInput,
+    'Young Juno and Young Milo held the lantern.',
+    'Young Juno and Young Milo held the lantern.',
+    vireliaCast
+  );
+  assert(
+    !/\bfreckles\b|\bcheek\b|\btattered satchel\b|\bcarrying\b/i.test(handCloseUpLocked),
+    'Suite 35: SSE Streaming Latency, Scene 2 Pilot Gate & Virelia Prompt Quality',
+    '35.3 Blocks Facial Traits and Carried Bags From Leaking Onto Tight Hand Close-Ups',
+    `out=${handCloseUpLocked}`
+  );
+
+  // 35.4 Single-sentence shared artStyle scrubs plot/flashback transition descriptions cleanly
+  const dirtyArtStyle =
+    'Detailed painterly 2D animation with glowing blue time-portal transitions between childhood memories and the present.';
+  const cleanedArtStyle = sanitizeSharedVisualStyle(dirtyArtStyle);
+  assert(
+    cleanedArtStyle.includes('Detailed painterly 2D animation') &&
+      !/transitions\s+between\s+childhood\s+memories/i.test(cleanedArtStyle) &&
+      !/time-portal\s+transitions/i.test(cleanedArtStyle),
+    'Suite 35: SSE Streaming Latency, Scene 2 Pilot Gate & Virelia Prompt Quality',
+    '35.4 Strips Plot and Flashback Transition Clauses From Single-Sentence Shared Art Style',
+    `cleaned=${cleanedArtStyle}`
+  );
+
+  // 35.5 CTA intrigue question strips leading "Adult "/"Young " age prefix while keeping visual lock intact
+  const ctaData = compileCtaPrompt({
+    storyPremise: 'Adult Juno must choose between destroying the clockwork key or exposing Milo.',
+    styleProfile: {
+      artStyle: 'Detailed painterly 2D animation',
+      colorPalette: 'Warm amber brass and slate teal',
+      lighting: '3200K warm lantern key light',
+      eraAndSetting: 'Steampunk clockwork city of Virelia',
+    },
+    characterSheet: {
+      'Adult Juno': 'copper-red hair tied back, round brass goggles on her forehead, stained canvas apron',
+    },
+    format: 'short',
+    platform: 'tiktok',
+    modality: 'image',
+  });
+  assert(
+    !ctaData.questionText.includes('Adult Juno') &&
+      (ctaData.alternateQuestions || []).every((q) => !q.includes('Adult Juno')) &&
+      ctaData.compiledPrompt.includes('Adult Juno (locked visual identity:'),
+    'Suite 35: SSE Streaming Latency, Scene 2 Pilot Gate & Virelia Prompt Quality',
+    '35.5 Strips Leading Continuity Age Prefixes From CTA Intrigue Questions While Keeping Visual Sheet Lock',
+    `q=${ctaData.questionText} alts=${JSON.stringify(ctaData.alternateQuestions)}`
+  );
+
+  // 35.6 runTwoPhaseProgressionAndRepair honors skipLlmRepair: true without triggering remote network repair calls
+  const denseFlaggedScene: Scene[] = [
+    {
+      index: 1,
+      narratorLine: 'When Adult Juno finally returned home she opened the rusted iron gate and crossed the courtyard alone.',
+      estimatedSeconds: 3.0,
+      beats: [
+        {
+          beatIndex: 1,
+          textSpan: 'When Adult Juno finally returned home she opened the rusted iron gate and crossed the courtyard alone.',
+          shotType: 'Wide Establishing Shot',
+          cameraAngle: 'eye-level',
+          cameraMovement: 'Static Frame',
+          imagePrompt: 'Wide Establishing Shot, eye-level of Adult Juno walking through an iron gate.',
+          estimatedSeconds: 3.0,
+        },
+      ],
+    },
+  ];
+  const skippedRepairScenes = await runTwoPhaseProgressionAndRepair({
+    scenes: denseFlaggedScene,
+    styleProfile: {
+      artStyle: 'Detailed painterly 2D animation',
+      colorPalette: 'Warm brass and cool slate',
+      lighting: 'Soft golden hour key light',
+      eraAndSetting: 'Virelia workshop',
+    },
+    characterSheet: vireliaCast,
+    locationSheet: {},
+    isLongForm: false,
+    isVideoMode: false,
+    apiKey: 'AIzaSyTestKeyShouldNeverCallNetworkWhenSkipped123',
+    aiProvider: 'gemini',
+    skipLlmRepair: true,
+  });
+  assert(
+    skippedRepairScenes.length === 1 &&
+      skippedRepairScenes[0].beats.length >= 1 &&
+      skippedRepairScenes[0].beats[0].imagePrompt.includes('Adult Juno ('),
+    'Suite 35: SSE Streaming Latency, Scene 2 Pilot Gate & Virelia Prompt Quality',
+    '35.6 runTwoPhaseProgressionAndRepair Honors skipLlmRepair: true For Instant Scene 2 Pause Preview',
+    `len=${skippedRepairScenes.length}`
+  );
+}
+
+runTestSuite21().then(async () => {
   runTestSuite23();
   runTestSuite24();
   runTestSuite25();
@@ -3711,6 +3885,7 @@ runTestSuite21().then(() => {
   runTestSuite32();
   runTestSuite33();
   runTestSuite34();
+  await runTestSuite35();
   console.log('\n====================================================================');
   console.log('                  FULL-SYSTEM VERIFICATION REPORT                  ');
   console.log('====================================================================');
@@ -3737,4 +3912,5 @@ if (failed > 0) {
   process.exit(0);
 }
 });
+
 

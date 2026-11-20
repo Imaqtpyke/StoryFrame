@@ -337,3 +337,12 @@
 - **Date:** 2026-11-20
 - **Status:** Active
 
+## SSE Scene-First Streaming, Hard Scene 2 Gate & Virelia Prompt Quality Fixes (Suite 35)
+- **Fact/Decision:**
+  1. **True Scene-by-Scene Streaming (`unifiedAiService.ts`, `groundedPipeline.ts`):** Removed the `styleProfile || characterSheet` blocking condition inside `emitProgressIfReady()` so Scene 1 renders immediately when completed in SSE chunks regardless of key ordering; added `thinkingLevel` step-down retry (`minimal -> low -> none`) on HTTP 400 and capped `gemini-3.1-pro-preview` thinking tokens (`'low'` default) to eliminate 2-minute stalls; moved Long-Form Stage 4 `onPartialResult` emission inside the per-scene loop capped at 2 scenes prior to the gate.
+  2. **Hard Scene 2 Pilot Stop (`geminiClient.ts`, `enhanceStoryArchitect.ts`, `beatProgressionEngine.ts`):** Enforced `shouldUsePilotCap` unconditionally whenever `onConfirmContinueAfterScene2` is wired (except custom beats with 2 or fewer scenes), tightened Call 1 pilot schema to at most 2 scenes (`index 1` and `2` only), and added `skipLlmRepair: true` for the Scene 2 pause preview so `"Would you like to continue?"` displays immediately without Scenes 4-5 leaking or blocking on remote repair calls.
+  3. **Virelia Prompt Hygiene (`beatProgressionEngine.ts`, `promptCompiler.ts`):** Pruned back-to-back appositive trait clones right after `Character (anchor)` while preserving action clauses; stripped plural `cheeks?`, `freckles?`, and `carrying a ...` clauses from tight hand close-ups; scrubbed plot/flashback transition clauses even from single-sentence shared `artStyle`; stripped continuity age prefixes (`Adult `, `Young `, `Elder `) from CTA intrigue questions while retaining visual lock keys.
+- **Context:** Resolved the 2-minute initial load stall and Scene 4-5 leak before the Scene 2 confirmation gate surfaced in the TikTok 9:16 Virelia storyboard export audit (`225/225` tests passing).
+- **Date:** 2026-11-20
+- **Status:** Active
+

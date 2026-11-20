@@ -753,7 +753,7 @@ CLAUSE & MICRO-ACTION BEAT SEGMENTATION RULES (CRITICAL):
 SCHEMA AND STRUCTURE REQUIREMENTS:
 1. Style Profile:
    Analyze the whole story to generate a top-level "styleProfile" object containing:
-   - "artStyle": visual art medium, rendering technique, or illustration style adapting to the story's genre, tone, and character style input: "${characterStyle || 'consistent visual style'}"
+   - "artStyle": pure visual art medium and rendering technique (e.g. "Warm steampunk storybook animation with soft painterly textures, intricate brass machinery") - describe ONLY medium/textures/rendering, NEVER plot transitions like time portals between flashbacks adapting to: "${characterStyle || 'consistent visual style'}"
    - "colorPalette": harmonious color palette matching the specific mood of this story
    - "lighting": lighting style and atmospheric quality
    - "eraAndSetting": historical or fictional period, geography, and environmental backdrop of the story
@@ -887,10 +887,8 @@ STRICT CONSTRAINTS:
 }
 Do not include markdown code fences or backticks, just the raw JSON object.`;
 
-  const storyWordCount = story.trim().split(/\s+/).filter(Boolean).length;
   const shouldUsePilotCap = Boolean(
-    onConfirmContinueAfterScene2 &&
-      (isCustomBeats ? (customScenes?.length || 0) > 2 : isVideoMode || isLongForm || storyWordCount > 14)
+    onConfirmContinueAfterScene2 && (!isCustomBeats || (customScenes?.length || 0) > 2)
   );
 
   let customBeatsPrompt = '';
@@ -905,7 +903,7 @@ ${cs.beats.map((b, bIdx) => `  - Beat ${bIdx + 1} phrase: "${b.textSpan}"${b.use
 
   const automaticPilotPrompt =
     shouldUsePilotCap && !isCustomBeats
-      ? `\n\nCHECKPOINT PILOT RULE (CRITICAL): Generate ONLY Scene 1 and Scene 2 first in "scenes" (maximum 2 scenes total in this response), covering ONLY the opening 1 to 2 sentences/clips cleanly along with complete "styleProfile", "characterSheet", "locationSheet", and "thumbnail". Do NOT summarize or cram later sentences into Scene 1 or Scene 2. If the full story script truly completes within 1 or 2 scenes, finish it cleanly inside those 1-2 scenes.`
+      ? `\n\nCHECKPOINT PILOT RULE (CRITICAL HARD LIMIT): Output AT MOST 2 scene objects inside "scenes" (index 1 and index 2 ONLY). NEVER output Scene 3, Scene 4, or Scene 5 in this response. Cover ONLY the opening 1 to 2 sentences/clips cleanly along with complete "styleProfile", "characterSheet", "locationSheet", and "thumbnail". Do NOT summarize or cram later sentences into Scene 1 or Scene 2. If the full story script truly completes within 1 or 2 scenes, finish it cleanly inside those 1-2 scenes.`
       : '';
 
   const userPrompt = `Exact Story / Voiceover Script (preserve every word verbatim, DO NOT expand):
@@ -951,7 +949,8 @@ ${durationInstruction}${customBeatsPrompt}${automaticPilotPrompt}`;
 
   const finalizeStandardStoryboard = async (
     dataObj: any,
-    allowCoverageNotice: boolean
+    allowCoverageNotice: boolean,
+    skipLlmRepair = false
   ): Promise<StoryGenerationResult> => {
     // Sanitize styleProfile (strip hero pronoun wardrobe leaks from shared artStyle, and enforce monochrome lighting purity)
     const rawStyleProfile = dataObj.styleProfile || {};
@@ -1269,6 +1268,7 @@ ${durationInstruction}${customBeatsPrompt}${automaticPilotPrompt}`;
       groqModel: req.groqModel,
       userSignal,
       onStatusMessage,
+      skipLlmRepair,
     });
 
     const calculatedTotalSeconds = Math.round(scenesWithTransitionHints.reduce((sum: number, s: any) => sum + (s.estimatedSeconds || 0), 0) * 10) / 10;
@@ -1321,7 +1321,8 @@ ${durationInstruction}${customBeatsPrompt}${automaticPilotPrompt}`;
     const pilotScenesSlice = rawInitialScenes.slice(0, 2);
     const pilotFinalized = await finalizeStandardStoryboard(
       { ...parsedData, scenes: pilotScenesSlice },
-      false
+      false,
+      true
     );
 
     if (onPartialResult) {

@@ -1123,27 +1123,82 @@ export function injectCompactCharacterLocks(
       return !bodySigSet.has(item);
     });
 
+    const anchorTokenSet = new Set(anchorTokens);
+    const traitStopWords = new Set(['a', 'an', 'the', 'her', 'his', 'their', 'on', 'with', 'in', 'over', 'and', 'of', 'tiny', 'small']);
+    const actionVerbCheck =
+      /\b(?:[a-z]+ing|peeking|leaning|hunched|standing|sitting|seated|gripping|holding|looking|staring|reaching|walking|running|turning|swinging|pulling|pushing|adjusting|pointing|tightening|attaching|steady|steadying|resting|planted|looming|crouching|kneeling|smiling|frowning|listening|watching|peering|glancing)\b/i;
+    const pruneAppositiveTraitsAfterLock = (text: string): string => {
+      const existingLockRegex = new RegExp(`(${escapedName}\\s*\\([^)]+\\))\\s*,\\s*([^.]+)`, 'i');
+      return text.replace(existingLockRegex, (fullSeg, headAnchor, tailStr) => {
+        const parts = tailStr.split(/,\s*/);
+        let dropCount = 0;
+        for (const part of parts) {
+          const pTrim = part.trim();
+          if (!pTrim || actionVerbCheck.test(pTrim)) break;
+          const pWords = pTrim
+            .toLowerCase()
+            .replace(/[^a-z0-9\s-]/g, ' ')
+            .split(/[\s-]+/)
+            .filter(Boolean);
+          if (pWords.length === 0 || pWords.length > 9) break;
+          const contentWords = pWords.filter((w) => !traitStopWords.has(w));
+          if (contentWords.length === 0) break;
+          const overlap = contentWords.filter((w) => anchorTokenSet.has(w) || GENERIC_VISUAL_TRAIT_WORDS.has(w)).length;
+          if (overlap / contentWords.length >= 0.7) {
+            dropCount++;
+          } else {
+            break;
+          }
+        }
+        if (dropCount === 0) return fullSeg;
+        const keptTail = parts.slice(dropCount).join(', ').trim();
+        return keptTail ? `${headAnchor}, ${keptTail}` : headAnchor;
+      });
+    };
+
     // Skip duplicate lock only when inline prompt already preserves the character AND all signature eyewear/garments
     if (
       missingSigItems.length === 0 &&
       ((promptMentionsName && coverageRatio >= 0.5) || coverageRatio >= 0.72)
     ) {
+      updated = pruneAppositiveTraitsAfterLock(updated);
       continue;
     }
 
-    // For tight hand-only close-ups without inline sleeve cues (e.g. "Homeowner's hand"), scope lock to upper-body/skin clauses
+    // For tight hand-only close-ups without inline sleeve cues (e.g. "Homeowner's hand"), scope lock to upper-body/skin/garment cues without face/carrying bleed
     let scopedAnchor = compactAnchor;
     if (isHandDetailCloseUp) {
       const handClauses = compactAnchor
         .split(/,\s*/)
-        .filter((c) => !/\b(?:hair|trousers|pants|jeans|skirt|boots|shoes|sneakers|barefoot|tall|short|stature)\b/i.test(c));
+        .filter(
+          (c) =>
+            !/\b(?:hair|cheeks?|freckles?|face|facial|eyes|eyebrows?|nose|mouth|lips?|chin|jaw|forehead|ears?|head|neck|brow|goggles|spectacles|glasses|trousers|pants|jeans|skirt|boots|shoes|sneakers|barefoot|tall|short|stature)\b/i.test(
+              c
+            ) && !/^\s*carrying\s+/i.test(c)
+        );
       if (handClauses.length > 0) {
         scopedAnchor = handClauses.join(', ').trim();
+      } else {
+        // Only facial/hair/footwear/carrying traits remained outside hands -> skip injecting non-hand lock onto tight hands close-up
+        continue;
+      }
+      // If the hand close-up already names upper garments and only redundant garment phrasing remains, skip noisy Featuring wrap
+      const remainingTokens = scopedAnchor
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, ' ')
+        .split(/[\s-]+/)
+        .filter((w) => w.length > 3 && !STOP_WORDS.has(w));
+      const allCoveredByBody = remainingTokens.length > 0 && remainingTokens.every((t) => tokenMatchesBody(t));
+      if (!bodyHasUpperGarmentOrCuff && remainingTokens.length === 0) {
+        continue;
+      }
+      if (allCoveredByBody) {
+        continue;
       }
     } else if (isFootDetailCloseUp) {
       const footClauses = compactAnchor
         .split(/,\s*/)
-        .filter((c) => !/\b(?:hair|eyes|glasses|spectacles|eyewear|hat|cap|helmet|collar)\b/i.test(c));
+        .filter((c) => !/\b(?:hair|eyes|cheeks?|freckles?|glasses|spectacles|eyewear|hat|cap|helmet|collar)\b/i.test(c));
       if (footClauses.length > 0) {
         scopedAnchor = footClauses.join(', ').trim();
       }
@@ -1153,9 +1208,15 @@ export function injectCompactCharacterLocks(
       // Attach compact visual anchor right after the first non-possessive mention, or wrap cleanly as Featuring when only possessive ('s) appears
       const nonPossessiveRegex = new RegExp(`\\b(${escapedName})\\b(?!'s|\\s*\\()`, nameFlags);
       if (nonPossessiveRegex.test(updated)) {
-        updated = updated.replace(nonPossessiveRegex, `$1 (${scopedAnchor})`);
+        updated = updated.replace(nonPossessiveRegex, (_fullMatch, matchedName) => {
+          return `${matchedName} (${scopedAnchor})`;
+        });
+        updated = pruneAppositiveTraitsAfterLock(updated);
       } else {
-        updated = insertClauseBeforeStyleOrAr(updated, `Featuring ${charName} (${scopedAnchor})`);
+        updated = pruneAppositiveTraitsAfterLock(updated);
+        if (!new RegExp(`\\b${escapedName}\\s*\\(`, nameFlags).test(updated)) {
+          updated = insertClauseBeforeStyleOrAr(updated, `Featuring ${charName} (${scopedAnchor})`);
+        }
       }
     } else {
       // Character is active in the beat via alias, pronoun, or visual traits: inject canonical identity anchor cleanly
@@ -1407,12 +1468,22 @@ export function sanitizeStyleForEra(
  */
 export function sanitizeSharedVisualStyle(artStyle: string): string {
   if (!artStyle || typeof artStyle !== 'string') return '';
-  const sentences = artStyle
+  let cleanedStyle = artStyle
     .trim()
+    .replace(
+      /(?:,\s*|\s+and\s+)?(?:glowing\s+blue\s+)?(?:time-portal|portal|flashback|memory)?\s*\btransitions?\s+between\s+[^.,;]+(?:memories|past|present|flashback|childhood)[^.,;]*/gi,
+      ''
+    )
+    .replace(/,\s*,/g, ',')
+    .replace(/,\s*\./g, '.')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  const sentences = cleanedStyle
     .split(/(?<=[.!?])\s+/)
     .map((s) => s.trim())
     .filter(Boolean);
-  if (sentences.length <= 1) return artStyle.trim();
+  if (sentences.length <= 1) return cleanedStyle;
 
   const nonHeroSentences = sentences.filter((sent) => {
     const hasHeroPronounOutfit =
@@ -1424,7 +1495,7 @@ export function sanitizeSharedVisualStyle(artStyle: string): string {
   if (nonHeroSentences.length > 0) {
     return nonHeroSentences.join(' ').replace(/\s{2,}/g, ' ').trim();
   }
-  return artStyle.trim();
+  return cleanedStyle;
 }
 
 /**
@@ -2379,6 +2450,7 @@ export interface TwoPhaseProgressionParams {
   groqModel?: string;
   userSignal?: AbortSignal;
   onStatusMessage?: (msg: string) => void;
+  skipLlmRepair?: boolean;
 }
 
 /**
@@ -2448,7 +2520,7 @@ export async function runTwoPhaseProgressionAndRepair(
     !/^(?:mock|test|dummy|fake)/i.test(apiKey.trim()) &&
     !userSignal?.aborted;
 
-  if (flaggedScenes.length > 0 && hasLiveApiKey && apiKey) {
+  if (flaggedScenes.length > 0 && !params.skipLlmRepair && hasLiveApiKey && apiKey) {
     try {
       if (onStatusMessage) {
         onStatusMessage('Refining beat-to-beat visual progression and continuity...');

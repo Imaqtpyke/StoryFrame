@@ -152,17 +152,20 @@ export async function executeJsonLlmCall<T = any>(params: UnifiedJsonRequest): P
   const targetModel = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-4-hydrogen';
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${trimmedKey}`;
 
-  const buildGeminiPayload = (includeThinking: boolean): Record<string, any> => {
+  const isThinkingModel = targetModel === 'gemini-4-hydrogen' || targetModel === 'gemini-3.1-pro-preview';
+  const defaultThinking: 'minimal' | 'low' = targetModel === 'gemini-3.1-pro-preview' ? 'low' : 'minimal';
+
+  const buildGeminiPayload = (level: 'minimal' | 'low' | 'medium' | 'high' | 'none'): Record<string, any> => {
     const generationConfig: Record<string, any> = {
       responseMimeType: 'application/json',
     };
 
-    // Gemini 4 models (gemini-4-hydrogen) do not accept deprecated sampling parameters;
+    // Gemini 3 & 4 models reject legacy temperature/topP and use thinkingLevel;
     // cap thinkingLevel to avoid multi-minute reasoning stalls on structured JSON breakdowns
-    if (targetModel === 'gemini-4-hydrogen') {
-      if (includeThinking) {
+    if (isThinkingModel) {
+      if (level !== 'none') {
         generationConfig.thinkingConfig = {
-          thinkingLevel: thinkingLevel || 'low',
+          thinkingLevel: targetModel === 'gemini-3.1-pro-preview' && level === 'minimal' ? 'low' : level,
         };
       }
     } else {
@@ -186,12 +189,13 @@ export async function executeJsonLlmCall<T = any>(params: UnifiedJsonRequest): P
   };
 
   try {
+    const requestedLevel = thinkingLevel || defaultThinking;
     let resp = await fetchWithExponentialBackoff(
       () =>
         fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(buildGeminiPayload(true)),
+          body: JSON.stringify(buildGeminiPayload(requestedLevel)),
           signal: userSignal,
         }),
       {
@@ -204,15 +208,24 @@ export async function executeJsonLlmCall<T = any>(params: UnifiedJsonRequest): P
       }
     );
 
-    if (!resp.ok && resp.status === 400 && targetModel === 'gemini-4-hydrogen') {
+    if (!resp.ok && resp.status === 400 && isThinkingModel) {
       const firstErrText = await resp.text().catch(() => '');
       if (/\bthink/i.test(firstErrText)) {
+        const nextLevel = requestedLevel === 'minimal' ? 'low' : 'none';
         resp = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(buildGeminiPayload(false)),
+          body: JSON.stringify(buildGeminiPayload(nextLevel)),
           signal: userSignal,
         });
+        if (!resp.ok && resp.status === 400 && nextLevel === 'low') {
+          resp = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(buildGeminiPayload('none')),
+            signal: userSignal,
+          });
+        }
       } else {
         throw new Error(`API error (${resp.status}): ${firstErrText}`);
       }
@@ -267,14 +280,19 @@ export async function executeGeminiSchemaCall<T = any>(params: {
   const modelName = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-4-hydrogen';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
-  const buildPayload = (includeThinking: boolean): Record<string, any> => {
+  const isThinkingModel = modelName === 'gemini-4-hydrogen' || modelName === 'gemini-3.1-pro-preview';
+  const requestedLevel = modelName === 'gemini-3.1-pro-preview' && thinkingLevel === 'minimal' ? 'low' : thinkingLevel;
+
+  const buildPayload = (level: 'minimal' | 'low' | 'medium' | 'high' | 'none'): Record<string, any> => {
     const generationConfig: Record<string, any> = {};
     if (responseMimeType) generationConfig.responseMimeType = responseMimeType;
     if (responseSchema) generationConfig.responseSchema = responseSchema;
 
-    if (modelName === 'gemini-4-hydrogen') {
-      if (includeThinking) {
-        generationConfig.thinkingConfig = { thinkingLevel };
+    if (isThinkingModel) {
+      if (level !== 'none') {
+        generationConfig.thinkingConfig = {
+          thinkingLevel: modelName === 'gemini-3.1-pro-preview' && level === 'minimal' ? 'low' : level,
+        };
       }
     } else {
       generationConfig.temperature = temperature;
@@ -291,7 +309,7 @@ export async function executeGeminiSchemaCall<T = any>(params: {
       fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildPayload(true)),
+        body: JSON.stringify(buildPayload(requestedLevel)),
         signal: userSignal,
       }),
     {
@@ -303,15 +321,24 @@ export async function executeGeminiSchemaCall<T = any>(params: {
     }
   );
 
-  if (!response.ok && response.status === 400 && modelName === 'gemini-4-hydrogen') {
+  if (!response.ok && response.status === 400 && isThinkingModel) {
     const firstErrText = await response.text().catch(() => '');
     if (/\bthink/i.test(firstErrText)) {
+      const nextLevel = requestedLevel === 'minimal' ? 'low' : 'none';
       response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildPayload(false)),
+        body: JSON.stringify(buildPayload(nextLevel)),
         signal: userSignal,
       });
+      if (!response.ok && response.status === 400 && nextLevel === 'low') {
+        response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(buildPayload('none')),
+          signal: userSignal,
+        });
+      }
     } else {
       throw new Error(sanitizeGenericErrorMessage(`${errorContext} (${response.status}): ${firstErrText}`, apiKey, 'gemini'));
     }
@@ -554,7 +581,7 @@ export async function streamJsonLlmWithSceneProgress<T = any>(
 
   const emitProgressIfReady = () => {
     const partial = extractCompletedStoryboardFields(accumulatedText);
-    if (partial.scenes.length > lastEmittedSceneCount && (partial.styleProfile || partial.characterSheet)) {
+    if (partial.scenes.length > lastEmittedSceneCount) {
       lastEmittedSceneCount = partial.scenes.length;
       onPartialStoryboard(partial);
     }
@@ -653,14 +680,20 @@ export async function streamJsonLlmWithSceneProgress<T = any>(
   const targetModel = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-4-hydrogen';
   const streamEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:streamGenerateContent?alt=sse&key=${trimmedKey}`;
 
-  const buildPayload = (includeThinking: boolean): Record<string, any> => {
+  const isThinkingModel = targetModel === 'gemini-4-hydrogen' || targetModel === 'gemini-3.1-pro-preview';
+  const requestedLevel =
+    targetModel === 'gemini-3.1-pro-preview' && (thinkingLevel === 'minimal' || !thinkingLevel)
+      ? 'low'
+      : thinkingLevel || 'minimal';
+
+  const buildPayload = (level: 'minimal' | 'low' | 'medium' | 'high' | 'none'): Record<string, any> => {
     const generationConfig: Record<string, any> = {
       responseMimeType: 'application/json',
     };
-    if (targetModel === 'gemini-4-hydrogen') {
-      if (includeThinking) {
+    if (isThinkingModel) {
+      if (level !== 'none') {
         generationConfig.thinkingConfig = {
-          thinkingLevel: thinkingLevel || 'minimal',
+          thinkingLevel: targetModel === 'gemini-3.1-pro-preview' && level === 'minimal' ? 'low' : level,
         };
       }
     } else {
@@ -682,7 +715,7 @@ export async function streamJsonLlmWithSceneProgress<T = any>(
         fetch(streamEndpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(buildPayload(true)),
+          body: JSON.stringify(buildPayload(requestedLevel)),
           signal: userSignal,
         }),
       {
@@ -694,15 +727,24 @@ export async function streamJsonLlmWithSceneProgress<T = any>(
       }
     );
 
-    if (!resp.ok && resp.status === 400 && targetModel === 'gemini-4-hydrogen') {
+    if (!resp.ok && resp.status === 400 && isThinkingModel) {
       const errText = await resp.text().catch(() => '');
       if (/\bthink/i.test(errText)) {
+        const nextLevel = requestedLevel === 'minimal' ? 'low' : 'none';
         resp = await fetch(streamEndpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(buildPayload(false)),
+          body: JSON.stringify(buildPayload(nextLevel)),
           signal: userSignal,
         });
+        if (!resp.ok && resp.status === 400 && nextLevel === 'low') {
+          resp = await fetch(streamEndpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(buildPayload('none')),
+            signal: userSignal,
+          });
+        }
       }
     }
 
