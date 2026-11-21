@@ -38,9 +38,31 @@ export function sanitizePromptText(text: string): string {
 /**
  * Attempts to repair truncated JSON strings by balancing unclosed quotes, brackets, and braces.
  */
+export function stripReasoningWrappers(raw: string): string {
+  if (!raw || typeof raw !== 'string') return '';
+  // Remove complete <think>...</think> blocks emitted by reasoning models before JSON
+  let text = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  // If an unclosed <think> block is still open with no closing tag, inspect after any closing tag only
+  if (/^<think>/i.test(text) && !/<\/think>/i.test(text)) {
+    return '';
+  }
+  return text;
+}
+
+export function getGroqReasoningOptions(model: string): Record<string, any> {
+  const m = (model || '').toLowerCase();
+  if (/qwen/.test(m)) {
+    return { reasoning_effort: 'none', reasoning_format: 'hidden' };
+  }
+  if (/gpt-oss/.test(m)) {
+    return { reasoning_effort: 'low', reasoning_format: 'hidden' };
+  }
+  return {};
+}
+
 export function tryRepairTruncatedJson(raw: string): any {
   if (!raw || typeof raw !== 'string') return null;
-  let text = raw.trim();
+  let text = stripReasoningWrappers(raw) || raw.trim();
 
   // Strip code fences if present
   const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)(?:```|$)/i);
@@ -175,6 +197,7 @@ export async function callGroqChatCompletion(
     messages: sanitizedMessages,
     temperature,
     max_tokens: maxTokens,
+    ...(options.jsonMode ? getGroqReasoningOptions(model) : {}),
   };
 
   if (options.jsonMode) {
@@ -221,33 +244,42 @@ export async function callGroqChatCompletion(
       errorDetail = await response.text().catch(() => 'Unknown network error');
     }
 
-    // 1. If Groq failed JSON validation (code: json_validate_failed), check failed_generation first
-    if (response.status === 400 && (errorDetail.includes('Failed to validate JSON') || errorDetail.includes('json_validate_failed'))) {
+    // 1. If Groq failed JSON validation or rejected reasoning params, check failed_generation first
+    const isJsonValidateErr =
+      response.status === 400 &&
+      (errorDetail.includes('Failed to validate JSON') || errorDetail.includes('json_validate_failed'));
+    const isUnsupportedParamErr =
+      response.status === 400 &&
+      /(?:reasoning_effort|reasoning_format|response_format|stream_options|unsupported|unknown field|extra_forbidden)/i.test(errorDetail);
+
+    if (isJsonValidateErr) {
       if (failedGen && typeof failedGen === 'string' && failedGen.trim().length > 10) {
         const repaired = tryRepairTruncatedJson(failedGen);
         if (repaired && typeof repaired === 'object') {
           return JSON.stringify(repaired);
         }
       }
+    }
 
-      // 2. Fallback: Retry once WITHOUT response_format: json_object
-      // In raw mode, Groq does not reject the response via its strict proxy validator,
-      // and our client-side extractCleanJson will cleanly parse it.
-      if (options.jsonMode) {
+    if (isJsonValidateErr || isUnsupportedParamErr) {
+      // 2. Retry once WITHOUT response_format: json_object or optional reasoning params
+      // so client-side extractCleanJson cleanly extracts the structured JSON.
+      if (options.jsonMode || isUnsupportedParamErr) {
         if (options.onStatusMessage) {
-          options.onStatusMessage('Re-requesting from Groq with resilient JSON streaming...');
+          options.onStatusMessage('Re-requesting from Groq with resilient JSON mode...');
         }
         const fallbackPayload: Record<string, any> = {
-          ...payload,
+          model,
           messages: [
             ...sanitizedMessages,
             {
               role: 'user',
-              content: 'CRITICAL INSTRUCTION: Your output MUST be strictly valid, raw JSON only. Do not include markdown formatting or commentary.',
+              content: 'CRITICAL INSTRUCTION: Your output MUST be strictly valid, raw JSON only starting with {. Do not include markdown formatting or commentary.',
             },
           ],
+          temperature,
+          max_tokens: maxTokens,
         };
-        delete fallbackPayload.response_format;
 
         const fallbackResp = await executeRequest(fallbackPayload);
         if (fallbackResp.ok) {
@@ -294,7 +326,7 @@ export function extractCleanJson(raw: string): any {
     throw new Error('Empty response received from LLM.');
   }
 
-  const cleaned = raw.trim();
+  const cleaned = (stripReasoningWrappers(raw) || raw).trim();
 
   // 1. Try direct parse first
   try {

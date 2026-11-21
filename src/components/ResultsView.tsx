@@ -702,9 +702,11 @@ export default function ResultsView({
             <span className="w-2 h-2 rounded-[1px] bg-amber-400 animate-pulse shrink-0 mt-1.5 sm:mt-0" />
             <div className="min-w-0 space-y-0.5">
               <div className="text-xs sm:text-sm font-display font-medium text-white">
-                {normalizedScenes.length > 0
-                  ? `Streaming Storyboard: ${normalizedScenes.length}${totalPlannedScenes ? ` of ${totalPlannedScenes}` : ''} ${normalizedScenes.length === 1 ? 'Scene' : 'Scenes'} (${totalBeatsCount} ${totalBeatsCount === 1 ? 'Beat' : 'Beats'})`
-                  : 'Story Bible Locked: Preparing Scene 1, Beat 1'}
+                {result.progress?.stageLabel?.includes('All scenes finished')
+                  ? `Step 3: Compiling Cover Thumbnail & CTA Outro (${normalizedScenes.length} ${normalizedScenes.length === 1 ? 'Scene' : 'Scenes'} Ready)`
+                  : normalizedScenes.length > 0
+                    ? `Step 2: Streaming Scene ${normalizedScenes[normalizedScenes.length - 1].index}, Beat ${normalizedScenes[normalizedScenes.length - 1].beats.length} (${totalBeatsCount} ${totalBeatsCount === 1 ? 'Beat' : 'Beats'} Total)`
+                    : 'Step 1: Story Bible Locked - Preparing Scene 1, Beat 1'}
               </div>
               <p className="text-xs text-[#A0A09A] truncate">
                 {result.progress?.stageLabel ||

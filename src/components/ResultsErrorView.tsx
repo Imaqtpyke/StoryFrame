@@ -64,15 +64,15 @@ export default function ResultsErrorView({
           <div className="p-3.5 bg-emerald-950/25 border border-emerald-500/35 rounded-[2px] text-xs text-emerald-200 leading-relaxed">
             {resumeProgress.totalScenes > 0 && resumeProgress.completedScenes > 0 ? (
               <p>
-                Saved checkpoint: {resumeProgress.completedScenes} of {resumeProgress.totalScenes} scenes completed. Click Resume Breakdown to continue directly from Scene {resumeProgress.completedScenes + 1} without re-running finished scenes.
+                Saved checkpoint: {resumeProgress.completedScenes} of {resumeProgress.totalScenes} scenes completed. Click Resume Breakdown to resume from Scene {resumeProgress.completedScenes + 1} without re-running finished scenes.
               </p>
             ) : resumeProgress.totalScenes > 0 ? (
               <p>
-                Saved checkpoint: Story Bible and Beat Plan ({resumeProgress.totalScenes} scenes) are saved. Click Resume Breakdown to continue directly at Scene 1.
+                Saved checkpoint: Story Bible and Beat Plan ({resumeProgress.totalScenes} scenes) are saved. Click Resume Breakdown to start at Scene 1.
               </p>
             ) : (
               <p>
-                Saved checkpoint: Stage 1 Story Bible is saved. Click Resume Breakdown to continue directly from Stage 2.
+                Saved checkpoint: Stage 1 Story Bible is saved. Click Resume Breakdown to start Stage 2.
               </p>
             )}
           </div>

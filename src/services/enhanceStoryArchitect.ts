@@ -33,6 +33,7 @@ import {
   assembleCleanPrompt,
   sanitizeCharacterIdentitySheet,
   buildPartialStoryResultFromStream,
+  normalizeStoryBibleResponse,
 } from './geminiClient';
 import { executeGroundedPipeline } from './groundedPipeline';
 import { executeJsonLlmCall, streamJsonLlmWithSceneProgress } from './unifiedAiService';
@@ -509,8 +510,13 @@ Do not include markdown code fences or backticks, just the raw JSON object.`;
 Research the premise, preserve every exact number/currency/example from the user input, engineer a high-retention opening hook, outline the scene-by-scene spoken voiceover script (${durationInstruction}), and lock visual continuity.
 Rules:
 - "hookAnalysis": craft a punchy scroll-stopping opening hook (never start with "Imagine...", "Have you ever wondered...", or "Picture this...").
-- "styleProfile.artStyle": medium, textures, and rendering style matching "${characterStyle || (isVideoMode ? 'cinematic hyperrealism' : 'cinematic realism')}" (never embed character wardrobe sentences inside artStyle).
-- "characterSheet": EVERY recurring character, secondary role/antagonist, and recurring entity with permanent expression-free biometric traits and locked wardrobe.
+- "styleProfile": ALL 5 fields are REQUIRED and MUST be specific to this story (never generic placeholders):
+  * "artStyle": medium, textures, and rendering style matching "${characterStyle || (isVideoMode ? 'cinematic hyperrealism' : 'cinematic realism')}" (never embed character wardrobe sentences inside artStyle).
+  * "colorPalette": exact dominant palette grounded in this story.
+  * "lighting": concrete atmospheric lighting matching this story's mood and eras.
+  * "eraAndSetting": exact time period, weather, and world location from the story.
+  * "lensAndFilmStock": specific prime lens/stock profile.
+- "characterSheet": MUST list EVERY recurring character, creature/spirit, parent/relative, and distinct age/flashback variant with permanent expression-free biometric traits, accurate anatomy (e.g. paws vs hooves, never unstated wings), and locked wardrobe/accessories. Never leave empty when characters appear.
 - "locationSheet": EVERY recurring setting with concrete physical surfaces and props.
 - "scriptOutline": concise ordered list of the exact spoken voiceover sentences from Scene 1 to final Scene matching target duration.
 - Do not use em dashes. Output raw JSON only:
@@ -536,11 +542,13 @@ Rules:
   "scriptOutline": ["Scene 1 spoken line...", "Scene 2 spoken line..."]
 }`;
 
-  const bibleData = await executeJsonLlmCall<any>({
+  const bibleUserPrompt = `Premise:\n${story}\n\nRequested Style:\n${characterStyle || 'Consistent cinematic visual style matching premise.'}\nFormat: ${isLongForm ? '16:9 widescreen' : '9:16 vertical'}\nPlatform: ${platform}\n${durationInstruction}`;
+
+  const rawBibleData = await executeJsonLlmCall<any>({
     provider: req.aiProvider || 'gemini',
     apiKey,
     systemPrompt: enhanceBibleSystemPrompt,
-    userPrompt: `Premise:\n${story}\n\nRequested Style:\n${characterStyle || 'Consistent cinematic visual style matching premise.'}\nFormat: ${isLongForm ? '16:9 widescreen' : '9:16 vertical'}\nPlatform: ${platform}\n${durationInstruction}`,
+    userPrompt: bibleUserPrompt,
     modelQuality,
     groqModel: req.groqModel,
     userSignal,
@@ -549,6 +557,44 @@ Rules:
     topP: 0.85,
     thinkingLevel: 'minimal',
   });
+
+  let bibleData = normalizeStoryBibleResponse(rawBibleData);
+  if (
+    (Object.keys(bibleData.characterSheet).length === 0 || !bibleData.styleProfile?.colorPalette) &&
+    !userSignal?.aborted
+  ) {
+    try {
+      const retryRaw = await executeJsonLlmCall<any>({
+        provider: req.aiProvider || 'gemini',
+        apiKey,
+        systemPrompt: enhanceBibleSystemPrompt,
+        userPrompt: `${bibleUserPrompt}\n\nCRITICAL: Output the COMPLETE JSON with non-empty "characterSheet" entries for EVERY character, creature, relative, and flashback age variant, plus all 5 "styleProfile" fields.`,
+        modelQuality,
+        groqModel: req.groqModel,
+        userSignal,
+        onStatusMessage,
+        temperature: 0.25,
+        topP: 0.85,
+        thinkingLevel: 'minimal',
+      });
+      const retried = normalizeStoryBibleResponse(retryRaw);
+      bibleData = {
+        hookAnalysis: retried.hookAnalysis || bibleData.hookAnalysis,
+        styleProfile: { ...(bibleData.styleProfile || {}), ...(retried.styleProfile || {}) },
+        characterSheet:
+          Object.keys(retried.characterSheet).length > 0
+            ? { ...bibleData.characterSheet, ...retried.characterSheet }
+            : bibleData.characterSheet,
+        locationSheet:
+          Object.keys(retried.locationSheet).length > 0
+            ? { ...bibleData.locationSheet, ...retried.locationSheet }
+            : bibleData.locationSheet,
+        scriptOutline: retried.scriptOutline || bibleData.scriptOutline,
+      };
+    } catch {
+      // Keep initial normalized Story Bible if retry fails
+    }
+  }
 
   if (onPartialResult && !userSignal?.aborted) {
     const biblePartial = buildPartialStoryResultFromStream({
@@ -923,51 +969,65 @@ Return ONLY valid JSON with "scenes": [ ...starting at index ${nextSceneIndex}..
 
   if (canContinue) {
     if (onStatusMessage) {
-      onStatusMessage('Step 3: Generating cover thumbnail blueprint...');
+      onStatusMessage('Step 3: Compiling cover thumbnail & CTA outro...');
     }
-    try {
-      const thumbRaw = await executeJsonLlmCall<any>({
-        provider: req.aiProvider || 'gemini',
-        apiKey,
-        systemPrompt: `You are a high-CTR storyboard cover designer. Generate ONLY a JSON object for the story thumbnail using the locked cast and story scenes. No em dashes.
+    const thumbSystemPrompt = `You are a high-CTR storyboard cover designer. Generate ONLY a JSON object for the story thumbnail using the locked cast and story scenes. No em dashes.
 Schema:
 {
   "heroMoment": "one crisp sentence describing the central conflict or turning point",
   "expression": "intense, emotionally charged facial expression",
   "bgDescription": "dark, simplified high-contrast background with deep separation",
   "accentColor": "dramatic rim lighting color fitting the story palette",
-  "hookText": "bold 2 to 4 word curiosity headline in ALL CAPS",
+  "hookText": "bold 2 to 4 word curiosity headline in ALL CAPS specific to this story (never generic like SURVIVE)",
   "fontStyle": "story-adapted typography style",
   "alternateHooks": ["ALT HOOK 1", "ALT HOOK 2"]
-}`,
-        userPrompt: `Premise: ${story}
+}`;
+    const thumbUserPrompt = `Premise: ${story}
 Hook Headline: ${finalizedBeforeThumbnail.hookAnalysis?.headlineHook || ''}
 Style Profile: ${JSON.stringify(finalizedBeforeThumbnail.styleProfile)}
 Character Sheet: ${JSON.stringify(finalizedBeforeThumbnail.characterSheet)}
-Platform: ${platform} (${format === 'long' ? '16:9 widescreen' : '9:16 vertical'})`,
-        modelQuality,
-        groqModel: req.groqModel,
-        userSignal,
-        onStatusMessage,
-        temperature: 0.3,
-        topP: 0.85,
-        thinkingLevel: 'minimal',
-      });
-      if (thumbRaw && typeof thumbRaw === 'object') {
-        return {
-          ...finalizedBeforeThumbnail,
-          thumbnail: compileThumbnailPrompt({
-            rawThumbnail: thumbRaw,
-            styleProfile: finalizedBeforeThumbnail.styleProfile,
-            characterSheet: finalizedBeforeThumbnail.characterSheet,
-            storyPremise: story,
-            format,
-            platform,
-          }),
-        };
+Platform: ${platform} (${format === 'long' ? '16:9 widescreen' : '9:16 vertical'})`;
+
+    let thumbRaw: any = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const candidate = await executeJsonLlmCall<any>({
+          provider: req.aiProvider || 'gemini',
+          apiKey,
+          systemPrompt: thumbSystemPrompt,
+          userPrompt:
+            attempt === 0
+              ? thumbUserPrompt
+              : `${thumbUserPrompt}\n\nOutput strict raw JSON object with non-empty heroMoment and hookText keys.`,
+          modelQuality,
+          groqModel: req.groqModel,
+          userSignal,
+          onStatusMessage,
+          temperature: 0.3,
+          topP: 0.85,
+          thinkingLevel: 'minimal',
+        });
+        if (candidate && typeof candidate === 'object' && (candidate.heroMoment || candidate.hookText)) {
+          thumbRaw = candidate;
+          break;
+        }
+      } catch {
+        // Retry once before deterministic fallback
       }
-    } catch {
-      // Deterministic thumbnail fallback from finalizeEnhancedStoryboard remains intact
+    }
+
+    if (thumbRaw) {
+      return {
+        ...finalizedBeforeThumbnail,
+        thumbnail: compileThumbnailPrompt({
+          rawThumbnail: thumbRaw,
+          styleProfile: finalizedBeforeThumbnail.styleProfile,
+          characterSheet: finalizedBeforeThumbnail.characterSheet,
+          storyPremise: story,
+          format,
+          platform,
+        }),
+      };
     }
   }
 

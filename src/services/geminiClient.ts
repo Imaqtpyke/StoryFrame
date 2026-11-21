@@ -319,6 +319,72 @@ export function assembleCleanPrompt(
   return `${orientationText}, ${cleaned} ${arFlag}`.trim();
 }
 
+export function normalizeStoryBibleResponse(rawInput: any): {
+  styleProfile?: Record<string, any>;
+  characterSheet: Record<string, string>;
+  locationSheet: Record<string, string>;
+  hookAnalysis?: Record<string, any>;
+  scriptOutline?: string[];
+} {
+  const emptyResult = { characterSheet: {}, locationSheet: {} };
+  if (!rawInput || typeof rawInput !== 'object') return emptyResult;
+
+  const root =
+    (rawInput.storyBible && typeof rawInput.storyBible === 'object' ? rawInput.storyBible : null) ||
+    (rawInput.bible && typeof rawInput.bible === 'object' ? rawInput.bible : null) ||
+    rawInput;
+
+  const rawStyle = root.styleProfile || root.style_profile || undefined;
+  const styleProfile =
+    rawStyle && typeof rawStyle === 'object'
+      ? {
+          artStyle: rawStyle.artStyle || rawStyle.art_style || rawStyle.medium,
+          colorPalette: rawStyle.colorPalette || rawStyle.color_palette || rawStyle.palette,
+          lighting: rawStyle.lighting,
+          eraAndSetting: rawStyle.eraAndSetting || rawStyle.era_and_setting || rawStyle.setting,
+          lensAndFilmStock: rawStyle.lensAndFilmStock || rawStyle.lens_and_film_stock || rawStyle.lens,
+        }
+      : undefined;
+
+  const toSheetMap = (src: any): Record<string, string> => {
+    const out: Record<string, string> = {};
+    if (!src) return out;
+    if (Array.isArray(src)) {
+      for (const item of src) {
+        if (!item || typeof item !== 'object') continue;
+        const name = item.name || item.id || item.role || item.character || item.location;
+        const desc = item.visualLock || item.visual_lock || item.description || item.look || item.details;
+        if (typeof name === 'string' && name.trim() && typeof desc === 'string' && desc.trim()) {
+          out[name.trim()] = desc.trim();
+        }
+      }
+      return out;
+    }
+    if (typeof src === 'object') {
+      for (const [k, v] of Object.entries(src)) {
+        if (typeof v === 'string' && v.trim()) {
+          out[k.trim()] = v.trim();
+        } else if (v && typeof v === 'object') {
+          const nested = (v as any).visualLock || (v as any).description || (v as any).look;
+          if (typeof nested === 'string' && nested.trim()) {
+            out[k.trim()] = nested.trim();
+          }
+        }
+      }
+    }
+    return out;
+  };
+
+  const characterSheet = toSheetMap(root.characterSheet || root.character_sheet || root.characters || root.cast);
+  const locationSheet = toSheetMap(root.locationSheet || root.location_sheet || root.locations);
+  const hookAnalysis = root.hookAnalysis || root.hook_analysis;
+  const scriptOutline = Array.isArray(root.scriptOutline || root.script_outline)
+    ? (root.scriptOutline || root.script_outline).filter((s: any) => typeof s === 'string' && s.trim())
+    : undefined;
+
+  return { styleProfile, characterSheet, locationSheet, hookAnalysis, scriptOutline };
+}
+
 export function buildPartialStoryResultFromStream(params: {
   partial: PartialStoryboardStreamState;
   req: GenerateStoryRequest;
@@ -745,10 +811,10 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
    - NEVER write "(matching established look from Scene 1)" or "(matching established look)".
    - In EVERY beat's imagePrompt where the adult character or entity appears (even when referenced by pronoun "he/she"), weave a concise 14-18 word visual anchor of their locked face, hair, and key outfit directly into the action so every frame renders the same character consistently without bloating the prompt. EXCEPTION: For infancy/childhood flashback beats (e.g. baby in crib), NEVER inject adult clothing or bedroom traits onto the infant!
 
-3. Grounded Physical Posture & Natural Gestures (NO DEGREE OR PERCENTAGE MATH):
-   When characters appear in imagePrompt:
-   - LIMB PROPORTIONS: Arms, legs, and torso must maintain natural human or stylized scale.
-   - GROUNDED STANCE & FEET: Describe natural foot contact and gravity matching locked footwear (if wearing boots: "both boots planted firmly"; if barefoot per characterSheet: "bare feet pressed flat against cold floorboards"). STRICT BAN ON FLOATING FEET OR FOOTWEAR CONTRADICTIONS.
+3. Grounded Physical Posture, Anatomical Fidelity & Natural Gestures (NO DEGREE OR PERCENTAGE MATH):
+   When characters or creatures appear in imagePrompt:
+   - LIMB & ANATOMICAL FIDELITY: Arms, legs, paws, antlers, and silhouette MUST strictly match the locked characterSheet. NEVER invent unstated wings, horns, tails, or extra limbs on humans or creatures (e.g., if a spirit has paws and antlers, NEVER give it wings).
+   - GROUNDED STANCE & FEET: Describe natural foot or paw contact and gravity matching locked footwear (if wearing boots: "both boots planted firmly"; if barefoot per characterSheet: "bare feet pressed flat against cold floorboards"). STRICT BAN ON FLOATING FEET OR FOOTWEAR CONTRADICTIONS.
    - POSTURE & HAND ACTION: Describe natural shoulder engagement, hand grip, and facial expression using concrete physical language matching the beat's exact chronological emotion.
    - STRICTLY FORBIDDEN: NEVER write degree angles ("15 degrees", "25 degrees") or weight percentages ("70% weight") in visual prompts.
    - HEAD & GAZE VECTOR: Explicitly state head orientation and eye focus.
@@ -849,12 +915,17 @@ Do not include markdown code fences or backticks, just the raw JSON object.`;
   }
 
   const bibleSystemPrompt = `You are an expert film director and master continuity architect.
-Analyze the script and produce ONLY a crisp Story Bible JSON object so every visual beat stays 100% locked.
+Analyze the script carefully and produce ONLY a complete Story Bible JSON object so every visual beat stays 100% locked from Scene 1 to the final scene.
 Rules:
-- "styleProfile.artStyle": medium, textures, and rendering style adapting to "${characterStyle || (isVideoMode ? 'cinematic hyperrealism' : 'cinematic realism')}" (NEVER embed character pronoun/wardrobe sentences inside artStyle).
-- "characterSheet": EVERY recurring human character, secondary role/antagonist, and recurring entity mapped to readable spaced keys (e.g. "Lead Engineer", never CamelCase) with permanent biometric features, hair, eyewear, and wardrobe (ZERO transient expressions like "neutral facial features" or "smiling", ZERO frozen poses).
-- "locationSheet": recurring settings mapped to readable spaced keys with concrete physical surfaces and props.
-- Do not use em dashes. Output raw JSON only:
+- "styleProfile": ALL 5 fields are REQUIRED and MUST be specific to this story (never generic placeholders like "Harmonious color grading" or "Contemporary atmospheric setting"):
+  * "artStyle": medium, textures, and rendering style adapting to "${characterStyle || (isVideoMode ? 'cinematic hyperrealism' : 'cinematic realism')}" (never embed character wardrobe sentences inside artStyle).
+  * "colorPalette": exact dominant palette grounded in this story (e.g. cool twilight blues, snowy whites, forest greens, warm lantern amber).
+  * "lighting": concrete atmospheric lighting matching this story's mood and eras.
+  * "eraAndSetting": exact time period, weather, and world location from the script.
+  * "lensAndFilmStock": specific prime lens/stock profile.
+- "characterSheet": MUST list EVERY named character, creature/spirit, parent/relative, AND distinct age/flashback variant (for example, if a hero appears both as an adult/youth and in a childhood flashback, include separate locked entries such as "Young Healer Sable", "Child Sable", "Sable's Mother", and "Frost"). Each value MUST lock permanent physical traits, hair, build, anatomy (e.g. paws vs hooves, never unstated wings), and fixed wardrobe/accessories with ZERO transient expressions or frozen poses. Do NOT leave characterSheet empty when characters exist in the script.
+- "locationSheet": EVERY recurring setting mapped to readable spaced keys with concrete physical surfaces and props.
+- Do not use em dashes. Output raw JSON ONLY:
 {
   "styleProfile": {
     "artStyle": "string",
@@ -871,11 +942,13 @@ Rules:
   }
 }`;
 
-  const bibleData = await executeJsonLlmCall<any>({
+  const bibleUserPrompt = `Script:\n${story}\n\nRequested Style:\n${characterStyle || 'Consistent cinematic visual style matching the script.'}\nFormat: ${isLongForm ? '16:9 widescreen' : '9:16 vertical'}\nPlatform: ${platform}`;
+
+  let rawBibleData = await executeJsonLlmCall<any>({
     provider: req.aiProvider || 'gemini',
     apiKey,
     systemPrompt: bibleSystemPrompt,
-    userPrompt: `Script:\n${story}\n\nRequested Style:\n${characterStyle || 'Consistent cinematic visual style matching the script.'}\nFormat: ${isLongForm ? '16:9 widescreen' : '9:16 vertical'}\nPlatform: ${platform}`,
+    userPrompt: bibleUserPrompt,
     modelQuality,
     groqModel: req.groqModel,
     userSignal,
@@ -884,6 +957,50 @@ Rules:
     topP: 0.85,
     thinkingLevel: 'minimal',
   });
+
+  let bibleData = normalizeStoryBibleResponse(rawBibleData);
+  const bibleLooksIncomplete =
+    Object.keys(bibleData.characterSheet).length === 0 ||
+    !bibleData.styleProfile?.colorPalette ||
+    !bibleData.styleProfile?.eraAndSetting;
+
+  if (bibleLooksIncomplete && !userSignal?.aborted) {
+    if (onStatusMessage) {
+      onStatusMessage('Step 1: Completing character cast locks & Story Bible profile...');
+    }
+    try {
+      const retryRawBible = await executeJsonLlmCall<any>({
+        provider: req.aiProvider || 'gemini',
+        apiKey,
+        systemPrompt: bibleSystemPrompt,
+        userPrompt: `${bibleUserPrompt}\n\nCRITICAL: Your previous draft left characterSheet or styleProfile fields incomplete. Output the COMPLETE JSON with non-empty "characterSheet" entries for EVERY character, creature, relative, and flashback age variant in the script, plus all 5 "styleProfile" fields.`,
+        modelQuality,
+        groqModel: req.groqModel,
+        userSignal,
+        onStatusMessage,
+        temperature: 0.2,
+        topP: 0.85,
+        thinkingLevel: 'minimal',
+      });
+      const retriedBible = normalizeStoryBibleResponse(retryRawBible);
+      bibleData = {
+        styleProfile: {
+          ...(bibleData.styleProfile || {}),
+          ...(retriedBible.styleProfile || {}),
+        },
+        characterSheet:
+          Object.keys(retriedBible.characterSheet).length > 0
+            ? { ...bibleData.characterSheet, ...retriedBible.characterSheet }
+            : bibleData.characterSheet,
+        locationSheet:
+          Object.keys(retriedBible.locationSheet).length > 0
+            ? { ...bibleData.locationSheet, ...retriedBible.locationSheet }
+            : bibleData.locationSheet,
+      };
+    } catch {
+      // Proceed with initial normalized Story Bible if retry fails
+    }
+  }
 
   if (onPartialResult && !userSignal?.aborted) {
     const biblePartial = buildPartialStoryResultFromStream({
@@ -916,7 +1033,7 @@ Beats:
 ${cs.beats.map((b, bIdx) => `  - Beat ${bIdx + 1} phrase: "${b.textSpan}"${b.userGuidance ? ` | Director's Visual Note: "${b.userGuidance}"` : ''}${b.shotType ? ` | Preferred Shot: "${b.shotType}"` : ''}`).join('\n')}`).join('\n\n')}`;
   }
 
-  const lockedBiblePromptBlock = `LOCKED STORY BIBLE (MUST FOLLOW 100% — DO NOT REPEAT THIS OBJECT IN YOUR OUTPUT):
+  const lockedBiblePromptBlock = `LOCKED STORY BIBLE (MUST FOLLOW 100% - DO NOT REPEAT THIS OBJECT IN YOUR OUTPUT):
 Style Profile: ${JSON.stringify(bibleData?.styleProfile || {})}
 Character Sheet: ${JSON.stringify(bibleData?.characterSheet || {})}
 Location Sheet: ${JSON.stringify(bibleData?.locationSheet || {})}`;
@@ -1365,7 +1482,7 @@ Output ONLY { "scenes": [ ... ] } starting immediately with Scene 1 Beat 1.`;
     continuationAttempt++;
     if (onStatusMessage) {
       onStatusMessage(
-        `Completing remaining script scenes (${scriptCoverage.coveredWords}/${scriptCoverage.totalWords} words covered)...`
+        `Step 2: Finalizing remaining script scenes (${scriptCoverage.coveredWords}/${scriptCoverage.totalWords} words covered)...`
       );
     }
 
@@ -1477,50 +1594,64 @@ Return ONLY valid JSON containing:
 
   if (canContinue) {
     if (onStatusMessage) {
-      onStatusMessage('Step 3: Generating cover thumbnail blueprint...');
+      onStatusMessage('Step 3: Compiling cover thumbnail & CTA outro...');
     }
-    try {
-      const thumbRaw = await executeJsonLlmCall<any>({
-        provider: req.aiProvider || 'gemini',
-        apiKey,
-        systemPrompt: `You are a high-CTR storyboard cover designer. Generate ONLY a JSON object for the story thumbnail using the locked cast and story scenes. No em dashes.
+    const thumbSystemPrompt = `You are a high-CTR storyboard cover designer. Generate ONLY a JSON object for the story thumbnail using the locked cast and story scenes. No em dashes.
 Schema:
 {
   "heroMoment": "one crisp sentence describing the central conflict or turning point",
   "expression": "intense, emotionally charged facial expression",
   "bgDescription": "dark, simplified high-contrast background with deep separation",
   "accentColor": "dramatic rim lighting color fitting the story palette",
-  "hookText": "bold 2 to 4 word curiosity headline in ALL CAPS",
+  "hookText": "bold 2 to 4 word curiosity headline in ALL CAPS specific to this story (never generic like SURVIVE)",
   "fontStyle": "story-adapted typography style",
   "alternateHooks": ["ALT HOOK 1", "ALT HOOK 2"]
-}`,
-        userPrompt: `Story Script: ${story}
+}`;
+    const thumbUserPrompt = `Story Script: ${story}
 Style Profile: ${JSON.stringify(finalizedBeforeThumbnail.styleProfile)}
 Character Sheet: ${JSON.stringify(finalizedBeforeThumbnail.characterSheet)}
-Platform: ${platform} (${isLongForm ? '16:9 widescreen' : '9:16 vertical'})`,
-        modelQuality,
-        groqModel: req.groqModel,
-        userSignal,
-        onStatusMessage,
-        temperature: 0.3,
-        topP: 0.85,
-        thinkingLevel: 'minimal',
-      });
-      if (thumbRaw && typeof thumbRaw === 'object') {
-        return {
-          ...finalizedBeforeThumbnail,
-          thumbnail: compileThumbnailPrompt({
-            rawThumbnail: thumbRaw,
-            styleProfile: finalizedBeforeThumbnail.styleProfile,
-            characterSheet: finalizedBeforeThumbnail.characterSheet,
-            storyPremise: story,
-            format,
-            platform,
-          }),
-        };
+Platform: ${platform} (${isLongForm ? '16:9 widescreen' : '9:16 vertical'})`;
+
+    let thumbRaw: any = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const candidate = await executeJsonLlmCall<any>({
+          provider: req.aiProvider || 'gemini',
+          apiKey,
+          systemPrompt: thumbSystemPrompt,
+          userPrompt:
+            attempt === 0
+              ? thumbUserPrompt
+              : `${thumbUserPrompt}\n\nOutput strict raw JSON object with non-empty heroMoment and hookText keys.`,
+          modelQuality,
+          groqModel: req.groqModel,
+          userSignal,
+          onStatusMessage,
+          temperature: 0.3,
+          topP: 0.85,
+          thinkingLevel: 'minimal',
+        });
+        if (candidate && typeof candidate === 'object' && (candidate.heroMoment || candidate.hookText)) {
+          thumbRaw = candidate;
+          break;
+        }
+      } catch {
+        // Retry once on transient validation/parsing error before deterministic fallback
       }
-    } catch {
-      // Deterministic thumbnail fallback from finalizeStandardStoryboard remains intact
+    }
+
+    if (thumbRaw) {
+      return {
+        ...finalizedBeforeThumbnail,
+        thumbnail: compileThumbnailPrompt({
+          rawThumbnail: thumbRaw,
+          styleProfile: finalizedBeforeThumbnail.styleProfile,
+          characterSheet: finalizedBeforeThumbnail.characterSheet,
+          storyPremise: story,
+          format,
+          platform,
+        }),
+      };
     }
   }
 

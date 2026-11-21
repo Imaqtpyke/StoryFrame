@@ -3,9 +3,11 @@ import { fetchWithExponentialBackoff } from '../utils/retryFetch';
 import {
   callGroqChatCompletion,
   extractCleanJson,
+  getGroqReasoningOptions,
   GROQ_API_BASE_URL,
   sanitizeGroqErrorMessage,
   sanitizePromptText,
+  stripReasoningWrappers,
 } from './groqClient';
 import { extractAndRecordGeminiUsage, extractAndRecordGroqUsage } from './aiUsageStorage';
 
@@ -377,9 +379,13 @@ export interface PartialStoryboardStreamState {
  * Incrementally parses top-level metadata objects and completed elements inside `"scenes": [...]`
  * from a partially streamed JSON buffer so finished scenes can render before the full response ends.
  */
-export function extractCompletedStoryboardFields(buffer: string): PartialStoryboardStreamState {
+export function extractCompletedStoryboardFields(rawBuffer: string): PartialStoryboardStreamState {
   const empty: PartialStoryboardStreamState = { scenes: [] };
-  if (!buffer || typeof buffer !== 'string') return empty;
+  if (!rawBuffer || typeof rawBuffer !== 'string') return empty;
+
+  const stripped = stripReasoningWrappers(rawBuffer);
+  if (!stripped) return empty;
+  const buffer = stripped;
 
   const rootStart = buffer.indexOf('{');
   if (rootStart === -1) return empty;
@@ -780,13 +786,13 @@ export async function streamJsonLlmWithSceneProgress<T = any>(
   let lastEmittedSignature = '';
   let lastUsageChunk: any = null;
 
-  const emitProgressIfReady = () => {
+  const emitProgressIfReady = (): boolean => {
     const partial = extractCompletedStoryboardFields(accumulatedText);
     const hasData =
       partial.scenes.length > 0 ||
       (Array.isArray(partial.prompts) && partial.prompts.length > 0) ||
       Boolean(partial.styleProfile || partial.characterSheet || partial.hookAnalysis);
-    if (!hasData) return;
+    if (!hasData) return false;
 
     const sceneSig = partial.scenes
       .map((s: any, idx: number) => {
@@ -806,27 +812,42 @@ export async function streamJsonLlmWithSceneProgress<T = any>(
     if (signature !== lastEmittedSignature) {
       lastEmittedSignature = signature;
       onPartialStoryboard(partial);
+      return true;
     }
+    return false;
   };
 
-  // Provider: GROQ CLOUD STREAMING
+  // Provider: GROQ CLOUD STREAMING (retries with stream: true intact on 400 validation errors)
   if (provider === 'groq') {
     const targetModel = groqModel || (modelQuality === 'high' ? 'openai/gpt-oss-120b' : 'qwen/qwen3.8-27b');
-    try {
-      const payload = {
+    const baseMessages = [
+      { role: 'system', content: sanitizePromptText(systemPrompt) },
+      { role: 'user', content: sanitizePromptText(userPrompt) },
+    ];
+
+    const runGroqStreamAttempt = async (strictJson: boolean): Promise<Response> => {
+      const attemptPayload: Record<string, any> = {
         model: targetModel,
-        messages: [
-          { role: 'system', content: sanitizePromptText(systemPrompt) },
-          { role: 'user', content: sanitizePromptText(userPrompt) },
-        ],
+        messages: strictJson
+          ? baseMessages
+          : [
+              ...baseMessages,
+              {
+                role: 'user',
+                content:
+                  'CRITICAL INSTRUCTION: Output strictly valid, raw JSON only starting directly with { and no markdown fences or commentary.',
+              },
+            ],
         temperature,
         max_tokens: maxTokens || 8192,
-        response_format: { type: 'json_object' },
         stream: true,
-        stream_options: { include_usage: true },
+        ...(strictJson ? getGroqReasoningOptions(targetModel) : {}),
       };
+      if (strictJson) {
+        attemptPayload.response_format = { type: 'json_object' };
+      }
 
-      const resp = await fetchWithExponentialBackoff(
+      return fetchWithExponentialBackoff(
         () =>
           fetch(GROQ_API_BASE_URL, {
             method: 'POST',
@@ -834,7 +855,7 @@ export async function streamJsonLlmWithSceneProgress<T = any>(
               'Content-Type': 'application/json',
               Authorization: `Bearer ${trimmedKey}`,
             },
-            body: JSON.stringify(payload),
+            body: JSON.stringify(attemptPayload),
             signal: userSignal,
           }),
         {
@@ -842,11 +863,26 @@ export async function streamJsonLlmWithSceneProgress<T = any>(
           maxAttempts: 4,
           onRetry: (attempt, maxAttempts, delayMs) => {
             if (onStatusMessage) {
-              onStatusMessage(`Groq busy. Retrying in ${Math.ceil(delayMs / 1000)}s (Attempt ${attempt}/${maxAttempts})...`);
+              onStatusMessage(
+                `Groq busy. Retrying in ${Math.ceil(delayMs / 1000)}s (Attempt ${attempt}/${maxAttempts})...`
+              );
             }
           },
         }
       );
+    };
+
+    try {
+      let resp = await runGroqStreamAttempt(true);
+
+      // If Groq rejects strict json_object or optional reasoning params during streaming,
+      // retry WHILE KEEPING stream: true active instead of silently dropping to non-streaming.
+      if (!resp.ok && resp.status === 400) {
+        if (onStatusMessage) {
+          onStatusMessage('Switching Groq stream to resilient live JSON mode...');
+        }
+        resp = await runGroqStreamAttempt(false);
+      }
 
       if (!resp.ok || !resp.body || typeof resp.body.getReader !== 'function') {
         return executeJsonLlmCall<T>(params);
@@ -875,10 +911,31 @@ export async function streamJsonLlmWithSceneProgress<T = any>(
             const delta = chunk?.choices?.[0]?.delta?.content;
             if (typeof delta === 'string') {
               accumulatedText += delta;
-              emitProgressIfReady();
+              if (emitProgressIfReady()) {
+                // Yield one turn so React paints each newly completed beat/scene progressively
+                // rather than batching fast Groq LPU bursts into one render
+                await new Promise((resolve) => setTimeout(resolve, 0));
+              }
             }
           } catch {
             // Ignore partial SSE frames
+          }
+        }
+      }
+
+      if (sseBuffer.trim().startsWith('data:')) {
+        const trailing = sseBuffer.trim().slice(5).trim();
+        if (trailing && trailing !== '[DONE]') {
+          try {
+            const chunk = JSON.parse(trailing);
+            if (chunk?.usage || chunk?.x_groq?.usage) lastUsageChunk = chunk;
+            const delta = chunk?.choices?.[0]?.delta?.content;
+            if (typeof delta === 'string') {
+              accumulatedText += delta;
+              emitProgressIfReady();
+            }
+          } catch {
+            // Ignore trailing incomplete chunk
           }
         }
       }

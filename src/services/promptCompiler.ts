@@ -532,6 +532,25 @@ export function inferStoryAdaptiveFont(styleText = '', narrativeText = ''): stri
   return 'ultra-bold condensed heavy sans-serif with clean sharp outlines';
 }
 
+export function buildStoryDerivedHookFallback(storyText: string, events: string[] = []): string {
+  const source = (events[events.length - 1] || storyText || '').trim();
+  const stop = new Set(
+    'the a an in on at to of and or is was were are that this with for from into over as by his her their its may must can'.split(
+      ' '
+    )
+  );
+  const words = source
+    .replace(/[^a-zA-Z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((w) => w.length > 2 && !stop.has(w.toLowerCase()));
+  const tailSlice = words.length > 5 ? words.slice(-4, -1) : words.slice(0, 3);
+  const keywords = (tailSlice.length >= 2 ? tailSlice : words.slice(0, 3)).map((w) => w.toUpperCase());
+  if (keywords.length >= 2) {
+    return keywords.join(' ');
+  }
+  return 'WHAT HAPPENED NEXT';
+}
+
 /**
  * Compiles a production-grade, safe-zone compliant thumbnail prompt and clean plate prompt
  */
@@ -553,9 +572,15 @@ export function compileThumbnailPrompt(params: {
 
   const isMono = isMonochromeStyle(params.styleProfile);
   const raw = params.rawThumbnail || {};
-  const rawHeroMoment = (
-    raw.heroMoment || 'The climactic turning point and central conflict of the story'
-  ).trim();
+  const premiseSentences = (params.storyPremise || '')
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const derivedPremiseMoment =
+    premiseSentences[premiseSentences.length - 1] ||
+    premiseSentences[0] ||
+    'The decisive turning point and central conflict of the story';
+  const rawHeroMoment = (raw.heroMoment || derivedPremiseMoment).trim();
   const heroMoment = sanitizeMonochromeLighting(
     expandEntityKeysInPrompt(rawHeroMoment, params.characterSheet),
     params.styleProfile
@@ -577,13 +602,14 @@ export function compileThumbnailPrompt(params: {
     ? 'stark high-contrast white'
     : rawAccentColor;
 
-  // Clean hook text: uppercase, max 4 words, no stray punctuation
-  let cleanHook = (raw.hookText || 'SURVIVE').replace(/["'’]/g, '').trim().toUpperCase();
+  // Clean hook text: uppercase, max 4 words, derive from story premise instead of generic "SURVIVE"
+  const storyFallbackHook = buildStoryDerivedHookFallback(params.storyPremise || '');
+  let cleanHook = (raw.hookText || storyFallbackHook).replace(/["'’]/g, '').trim().toUpperCase();
   const hookWords = cleanHook.split(/\s+/).filter(Boolean);
   if (hookWords.length > 4) {
     cleanHook = hookWords.slice(0, 4).join(' ');
   }
-  if (!cleanHook) cleanHook = 'SURVIVE';
+  if (!cleanHook) cleanHook = storyFallbackHook;
 
   const storyAdaptiveFont =
     raw.fontStyle && raw.fontStyle.trim().length > 0

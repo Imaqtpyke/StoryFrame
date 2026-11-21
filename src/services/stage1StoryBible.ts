@@ -152,7 +152,7 @@ ${narration}
 """
 
 RULES FOR THE STORY BIBLE:
-1. CAST: Extract only people explicitly mentioned in the text. Visual locks must use ONLY facts from the story. Where silent (clothing, age), choose the simplest, least-inventive historical option and record it in "assumptions".
+1. CAST: Extract EVERY named person, creature/spirit, parent/relative, AND distinct child/adult age variant mentioned in the text as separate entries. Visual locks must specify permanent features, clothing, and accurate anatomy (never unstated wings/extra limbs). Where silent (clothing, age), choose the simplest story-consistent option and record it in "assumptions".
 2. THREAT: Define one canonical physical description for antagonists/creatures/monsters. Kept strictly separate from global art style.
 3. LOCATIONS: Extract real environments with physical architecture and era-accurate details.
 4. MOTIFS: Recurring physical items or props.

@@ -648,6 +648,11 @@ export function synchronizeCharacterSheetWithFirstAppearances(
     const charIsChild = /\b(?:child|nine-year-old|\d+-year-old\s+(?:boy|girl|child)|young\s+(?:boy|girl)|little\s+(?:boy|girl))\b/i.test(
       `${charName} ${baseDesc}`
     );
+    const charIsFlashbackRole =
+      charIsChild ||
+      /\b(?:mother|father|grandmother|grandfather|parent|elder|mentor|late\s+(?:mother|father))\b/i.test(
+        `${charName} ${baseDesc}`
+      );
 
     let firstBeat: Beat | undefined;
     for (const b of allBeats) {
@@ -655,7 +660,7 @@ export function synchronizeCharacterSheetWithFirstAppearances(
       if (!p || isCharacterFreeBeat(p, b.textSpan || '')) continue;
       const bodyOnly = p.replace(/\s*--ar\s+[0-9:]+.*$/i, '').replace(/\bVisual Style:[^.]*\.?/gi, '');
       const beatIsFlashback = isInfancyOrChildhoodFlashback(b.textSpan || '', bodyOnly);
-      if (beatIsFlashback && !charIsChild) continue;
+      if (beatIsFlashback && !charIsFlashbackRole) continue;
       if (!beatIsFlashback && charIsChild && !/\b(?:girl|boy|child|young)\b/i.test(bodyOnly)) continue;
 
       const mentionsSelf =
@@ -881,7 +886,7 @@ export function injectCompactCharacterLocks(
       .filter(Boolean)
   );
   const bodyHasCharacterSubject =
-    /\b(?:man|woman|boy|girl|child|baby|infant|person|figure|silhouette|stickman|cat|dog|inventor|artist|soldier|enforcer|enforcers|operative|operatives|scientist|engineer|astronaut|astronauts|photographer|detective|archivist|homeowner|lender|entity|creature|creatures|sketches|drawings|crowd|people|eyes|face|hands|fingers|shoulders|boots|feet|hair)\b/i.test(
+    /\b(?:man|woman|boy|girl|child|baby|infant|person|figure|silhouette|stickman|cat|dog|inventor|artist|soldier|enforcer|enforcers|operative|operatives|scientist|engineer|astronaut|astronauts|photographer|detective|archivist|homeowner|lender|entity|creature|creatures|spirit|snow-spirit|mother|father|healer|sketches|drawings|crowd|people|eyes|face|hand|hands|finger|fingers|arm|arms|shoulder|shoulders|boots|feet|hair)\b/i.test(
       bodyLower
     );
 
@@ -895,9 +900,13 @@ export function injectCompactCharacterLocks(
   const spanHasFemalePronoun = /\b(?:she|her|hers)\b/i.test(spanLower);
   const spanHasMalePronoun = /\b(?:he|him|his)\b/i.test(spanLower);
   const spanHasPluralPronoun = /\b(?:they|them|their|theirs)\b/i.test(spanLower);
+  const spanHasNeutralPronoun = /\b(?:it|its)\b/i.test(spanLower);
 
   const bodyHasFemaleCue = /\b(?:woman|girl|mother|sister|daughter|lady|actress|she|her|hers)\b/i.test(bodyLower);
   const bodyHasMaleCue = /\b(?:man|boy|father|brother|son|guy|actor|he|him|his)\b/i.test(bodyLower);
+  const bodyHasNeutralCue = /\b(?:it|its|creature|spirit|snow-spirit|animal|beast|fox|wolf|deer|owl|companion)\b/i.test(
+    bodyLower
+  );
   const promptHasExplicitChild =
     /\b(?:young\s+girl|young\s+boy|nine-year-old|\d+-year-old\s+(?:boy|girl|child)|childhood\s+(?:summer\s+)?flashback|both\s+children|little\s+girl|little\s+boy|boyhood|girlhood)\b/i.test(
       bodyLower
@@ -945,25 +954,59 @@ export function injectCompactCharacterLocks(
   for (const [charName, fullDesc] of charEntries) {
     if (!fullDesc || fullDesc.trim().length < 6) continue;
 
-    // Protect infancy/childhood flashback beats (e.g. baby protagonist in crib) from adult wardrobe/age locks
-    const isEntityKey = /\b(?:entity|creature|mimic|shadow|warden|monster|stalker|doppelganger)\b/i.test(
-      `${charName} ${fullDesc}`
-    );
-    if (isFlashback && !isEntityKey) {
-      continue;
-    }
-
     const escapedName = charName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const isCommonNounName = COMMON_NOUN_CHARACTER_NAMES.has(charName.trim().toLowerCase());
     const nameFlags = isCommonNounName ? '' : 'i';
     const nameRegex = new RegExp(`\\b${escapedName}(?:'s)?\\b`, nameFlags);
     const aliasRegex = buildCharacterAliasRegex(charName, allCharNames);
 
+    const charIsChild =
+      /\b(?:child|nine-year-old|\d+-year-old\s+(?:boy|girl|child)|young\s+(?:boy|girl)|little\s+(?:boy|girl)|boyhood|girlhood)\b/i.test(
+        `${charName} ${fullDesc}`
+      );
+    const isEntityKey = /\b(?:entity|creature|mimic|shadow|warden|monster|stalker|doppelganger|spirit|snow-spirit)\b/i.test(
+      `${charName} ${fullDesc}`
+    );
+    const isFlashbackFamilyOrMentor =
+      charIsChild ||
+      /\b(?:mother|father|grandmother|grandfather|parent|mentor|elder|late\s+(?:mother|father))\b/i.test(
+        `${charName} ${fullDesc}`
+      );
+
+    // Protect childhood/infancy flashback beats from present-day adult lead locks leaking in
+    // (even when labeled "infant protagonist"), while keeping child variants, flashback relatives (Mother), and entities/creatures active.
+    if (isFlashback && !isEntityKey && !isFlashbackFamilyOrMentor) {
+      continue;
+    }
+
+    // Safe distinctive role/species matching when character name itself is not repeated (e.g. "mother" -> "Sable's Mother", "snow-spirit" -> "Frost")
+    const roleTerms: string[] = [];
+    const rolePatterns = /\b(snow-spirit|spirit|mother|father|grandmother|grandfather|healer|creature|wolf|fox|owl|deer)\b/gi;
+    let roleMatch: RegExpExecArray | null;
+    while ((roleMatch = rolePatterns.exec(`${charName} ${fullDesc}`)) !== null) {
+      const term = roleMatch[1].toLowerCase();
+      if (!roleTerms.includes(term)) {
+        const claimedByOther = charEntries.some(
+          ([otherName, otherDesc]) =>
+            otherName !== charName && new RegExp(`\\b${term.replace('-', '[-\\s]?')}\\b`, 'i').test(`${otherName} ${otherDesc}`)
+        );
+        if (!claimedByOther) {
+          roleTerms.push(term);
+        }
+      }
+    }
+    const roleRegex =
+      roleTerms.length > 0
+        ? new RegExp(`\\b(?:${roleTerms.map((t) => t.replace('-', '[-\\s]?')).join('|')})(?:'s)?\\b`, 'i')
+        : null;
+
     const promptMentionsName =
       nameRegex.test(bodyWithoutStyleOrAr) || (aliasRegex ? aliasRegex.test(bodyWithoutStyleOrAr) : false);
     const beatMentionsName = nameRegex.test(textSpan) || (aliasRegex ? aliasRegex.test(textSpan) : false);
     const narrationMentionsName =
       nameRegex.test(sceneNarration) || (aliasRegex ? aliasRegex.test(sceneNarration) : false);
+    const promptMentionsUniqueRole = Boolean(roleRegex && roleRegex.test(bodyWithoutStyleOrAr));
+    const beatMentionsUniqueRole = Boolean(roleRegex && roleRegex.test(textSpan));
 
     const compactAnchor = buildCompactCharacterAnchor(fullDesc, CHARACTER_ANCHOR_MAX_WORDS);
     if (!compactAnchor) continue;
@@ -987,11 +1030,9 @@ export function injectCompactCharacterLocks(
       !isPluralChar && /\b(?:woman|girl|female|mother|sister|daughter|lady|actress)\b/i.test(fullDesc);
     const isMaleChar =
       !isPluralChar && !isFemaleChar && /\b(?:man|boy|male|father|brother|son|guy|actor)\b/i.test(fullDesc);
+    const isNeutralCreatureChar =
+      !isPluralChar && !isFemaleChar && !isMaleChar && isEntityKey;
 
-    const charIsChild =
-      /\b(?:child|nine-year-old|\d+-year-old\s+(?:boy|girl|child)|young\s+(?:boy|girl)|little\s+(?:boy|girl)|boyhood|girlhood)\b/i.test(
-        `${charName} ${fullDesc}`
-      );
     const charIsAdult =
       !charIsChild &&
       /\b(?:adult|mid-thirties|late twenties|early twenties|thirties|forties|fifties|older woman|older man|elderly|middle-aged|silver-streaked)\b/i.test(
@@ -1015,6 +1056,7 @@ export function injectCompactCharacterLocks(
       charEntries.length > 1 &&
       !promptMentionsName &&
       !beatMentionsName &&
+      !promptMentionsUniqueRole &&
       maxMatchedTokens >= 3 &&
       matchedTokens < maxMatchedTokens;
 
@@ -1026,6 +1068,7 @@ export function injectCompactCharacterLocks(
     const bodyGenderMismatch =
       !promptMentionsName &&
       !beatMentionsName &&
+      !promptMentionsUniqueRole &&
       ((isFemaleChar && bodyHasMaleCue && !bodyHasFemaleCue) ||
         (isMaleChar && bodyHasFemaleCue && !bodyHasMaleCue));
 
@@ -1036,8 +1079,8 @@ export function injectCompactCharacterLocks(
       bodyGenderMismatch;
 
     const bodyHasPersonOrSingularPronoun =
-      bodyHasCharacterSubject || /\b(?:he|him|his|she|her|hers)\b/i.test(bodyLower);
-    const pronounOrRoleMatch = /\b(?:he|him|his|she|her|hers|they|them|their|soldier|warrior|knight|hero|man|woman|boy|girl|forearm|chest plate|trigger|rifle|boots)\b/i.test(
+      bodyHasCharacterSubject || /\b(?:he|him|his|she|her|hers|it|its)\b/i.test(bodyLower);
+    const pronounOrRoleMatch = /\b(?:he|him|his|she|her|hers|they|them|their|it|its|soldier|warrior|knight|hero|man|woman|boy|girl|mother|father|spirit|snow-spirit|forearm|chest plate|trigger|rifle|boots)\b/i.test(
       `${textSpan} ${bodyWithoutStyleOrAr}`
     );
 
@@ -1049,7 +1092,6 @@ export function injectCompactCharacterLocks(
         !pronounMismatch
     );
 
-    // Multi-character scene inheritance: require character/entity subject presence + >=2 distinctive non-generic traits
     const matchesViaVisualTraits =
       bodyHasCharacterSubject &&
       distinctiveTokens >= 2 &&
@@ -1063,13 +1105,20 @@ export function injectCompactCharacterLocks(
       !pronounMismatch &&
       !ageMismatch &&
       !isRunnerUpInCloseUp &&
-      ((isFemaleChar && spanHasFemalePronoun && !spanHasPluralPronoun) ||
-        (isMaleChar && spanHasMalePronoun && !spanHasPluralPronoun) ||
+      ((isFemaleChar && (spanHasFemalePronoun || bodyHasFemaleCue) && !spanHasPluralPronoun) ||
+        (isMaleChar && (spanHasMalePronoun || bodyHasMaleCue) && !spanHasPluralPronoun) ||
+        (isNeutralCreatureChar && (spanHasNeutralPronoun || bodyHasNeutralCue)) ||
         (isPluralChar && spanHasPluralPronoun));
+
+    const matchesViaUniqueRole =
+      (promptMentionsUniqueRole || (beatMentionsUniqueRole && narrationMentionsName)) &&
+      !ageMismatch &&
+      !pronounMismatch;
 
     const shouldInject =
       promptMentionsName ||
       beatMentionsName ||
+      matchesViaUniqueRole ||
       matchesViaSingleLead ||
       matchesViaVisualTraits ||
       matchesViaBeatPronounAndNarration;
@@ -1529,11 +1578,16 @@ export function formatFinalBeatPrompt(
     .replace(/\bar\s+[0-9:]+[.,]?/gi, '')
     .trim();
 
-  // Scrub footwear contradictions if character sheet declares barefoot
+  // Scrub footwear & anatomical contradictions (e.g. boots on barefoot lead, or phantom wings on pawed creatures)
   if (options?.characterSheet) {
     const charText = Object.values(options.characterSheet).join(' ').toLowerCase();
     if (/\bbarefoot\b/.test(charText) && !/\bboots?\b/.test(charText)) {
       body = body.replace(/\b(?:both|weight balanced on|planted on)\s+(?:both\s+)?boots\b/gi, 'weight balanced on bare feet');
+    }
+    if (/\b(?:paws?|hooves|claws)\b/.test(charText) && !/\b(?:wing|wings|feathered)\b/.test(charText)) {
+      body = body
+        .replace(/\binjured\s+wings?\s+drooping\b/gi, 'injured side speckled with faint frost')
+        .replace(/\bwith\s+wings?\s+drooping\b/gi, 'head drooping slightly');
     }
   }
 

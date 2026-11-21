@@ -22,7 +22,7 @@ import { stage1GenerateStoryBible } from './stage1StoryBible';
 import { stage2GenerateBeatPlan, PlannedScene } from './stage2BeatPlan';
 import { stage3WriteScenePromptsBatch, WrittenPromptBeat } from './stage3PromptWriter';
 import { stage4VerifyAndRepairScene } from './stage4VerifyRepair';
-import { compileThumbnailPrompt } from './promptCompiler';
+import { compileThumbnailPrompt, buildStoryDerivedHookFallback } from './promptCompiler';
 import {
   buildCheckpointKey,
   clearGroundedCheckpoint,
@@ -68,20 +68,7 @@ export function clearGroundedProgressForRequest(req: GenerateStoryRequest | null
   clearGroundedCheckpoint(key);
 }
 
-function buildStoryDerivedHookFallback(storyText: string, events: string[]): string {
-  const source = (events[events.length - 1] || storyText || '').trim();
-  const stop = new Set('the a an in on at to of and or is was were are that this with for from into over as by'.split(' '));
-  const keywords = source
-    .replace(/[^a-zA-Z0-9\s]/g, ' ')
-    .split(/\s+/)
-    .filter((w) => w.length > 2 && !stop.has(w.toLowerCase()))
-    .slice(0, 3)
-    .map((w) => w.toUpperCase());
-  if (keywords.length >= 2) {
-    return keywords.join(' ');
-  }
-  return 'WHAT HAPPENED NEXT';
-}
+// Story-derived hook fallback is imported from promptCompiler
 
 function assembleGroundedStoryResult(params: {
   req: GenerateStoryRequest;

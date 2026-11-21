@@ -25,6 +25,7 @@ import {
   assembleCleanPrompt,
   sanitizeCharacterIdentitySheet,
   buildPartialStoryResultFromStream,
+  normalizeStoryBibleResponse,
 } from '../services/geminiClient';
 import {
   deduplicateAndProgressSceneBeats,
@@ -54,7 +55,15 @@ import {
   synchronizeBeatMetadataWithPrompt,
   sanitizeSharedVisualStyle,
 } from '../services/beatProgressionEngine';
-import { sanitizeGroqErrorMessage, extractCleanJson, GROQ_API_BASE_URL, sanitizePromptText, tryRepairTruncatedJson } from '../services/groqClient';
+import {
+  sanitizeGroqErrorMessage,
+  extractCleanJson,
+  GROQ_API_BASE_URL,
+  sanitizePromptText,
+  tryRepairTruncatedJson,
+  getGroqReasoningOptions,
+  stripReasoningWrappers,
+} from '../services/groqClient';
 import { robustJsonParse, extractCompletedStoryboardFields } from '../services/unifiedAiService';
 import {
   sanitizeKineticMotionForImage,
@@ -4048,6 +4057,140 @@ function runTestSuite36() {
   );
 }
 
+function runTestSuite37() {
+  const everfrostCast: Record<string, string> = {
+    Sable: 'young healer woman with braided auburn hair, woolen green cloak, fur-lined boots, herb satchel',
+    'Child Sable': 'young girl with braided auburn hair, knitted red scarf, carved wooden animal charm',
+    "Sable's Mother": 'older woman with silver braided hair, simple woolen dress',
+    Frost: 'small snow-spirit creature with translucent blue-white fur, glowing pale eyes, crystalline antlers, frost-dusted paws',
+  };
+
+  // 37.1 Possessive, pronoun, and role-alias beats keep locked visual traits across scenes
+  const otsLocked = injectCompactCharacterLocks(
+    "Vertical 9:16 portrait composition, Over-the-Shoulder eye-level, view over Sable's shoulder as she and Frost stride up snowy ridge toward mountain shrine. Shot on 85mm f/2.0. --ar 9:16",
+    'must reach the mountain',
+    "As an ancient blizzard returns, Sable and Frost must reach the mountain shrine, but saving the spirit may mean letting go of her mother's memory.",
+    everfrostCast
+  );
+  const roleFrostLocked = injectCompactCharacterLocks(
+    'Vertical 9:16 portrait composition, Close-Up eye-level, gloved hand reaching toward a trembling snow-spirit on a snowy path. Shot on 85mm f/2.2. --ar 9:16',
+    'finds an injured',
+    'In the mountain village of Everfrost, young healer Sable finds an injured snow-spirit named Frost.',
+    everfrostCast
+  );
+  const flashbackMotherLocked = injectCompactCharacterLocks(
+    'Vertical 9:16 portrait composition, Over-the-Shoulder eye-level, child Sable wearing knitted red scarf listening as mother points to rustling pine. Shot on 85mm f/2.0. --ar 9:16',
+    'teaching her to',
+    "Flashbacks reveal Sable's late mother teaching her to listen to the forest.",
+    everfrostCast
+  );
+  assert(
+    otsLocked.includes('braided auburn hair') &&
+      otsLocked.includes('woolen green cloak') &&
+      otsLocked.includes('crystalline antlers') &&
+      roleFrostLocked.includes('translucent blue-white fur') &&
+      roleFrostLocked.includes('crystalline antlers') &&
+      flashbackMotherLocked.includes('silver braided hair') &&
+      flashbackMotherLocked.includes('simple woolen dress'),
+    'Suite 37: Character Persistence, Groq Streaming & Thumbnail Fallbacks',
+    '37.1 Possessive, Role-Alias & Flashback Beats Retain Full Character Continuity',
+    `ots=${otsLocked}\nroleFrost=${roleFrostLocked}\nmother=${flashbackMotherLocked}`
+  );
+
+  // 37.2 Anatomical guard strips hallucinated wings from pawed/antlered creature without wings
+  const beatWingFixed = formatFinalBeatPrompt(
+    {
+      beatIndex: 4,
+      textSpan: 'snow-spirit named Frost.',
+      shotType: 'Extreme Close-Up',
+      cameraAngle: 'eye-level',
+      cameraMovement: 'Static Frame',
+      imagePrompt:
+        'Extreme Close-Up eye-level, small snow-spirit Frost with translucent blue-white fur, glowing pale eyes, crystalline antlers, frost-dusted paws, injured wing drooping. Shot on 100mm f/2.8 macro.',
+      estimatedSeconds: 1.5,
+    },
+    false,
+    false,
+    { characterSheet: everfrostCast }
+  );
+  assert(
+    !/\bwing\b/i.test(beatWingFixed.imagePrompt) && /frost/i.test(beatWingFixed.imagePrompt),
+    'Suite 37: Character Persistence, Groq Streaming & Thumbnail Fallbacks',
+    '37.2 Anatomical Guard Prevents Unstated Wings on Pawed Creatures',
+    beatWingFixed.imagePrompt
+  );
+
+  // 37.3 Groq reasoning options & <think> stripping during incremental SSE JSON extraction
+  const qwenOpts = getGroqReasoningOptions('qwen/qwen3.8-27b');
+  const gptOssOpts = getGroqReasoningOptions('openai/gpt-oss-120b');
+  const unclosedThinkPartial = extractCompletedStoryboardFields('<think>planning scenes {"bad": 1}');
+  const closedThinkPartial = extractCompletedStoryboardFields(
+    '<think>reasoning finished</think>\n{"scenes":[{"index":1,"narratorLine":"Test","beats":[{"beatIndex":1,"textSpan":"Hello","imagePrompt":"Wide shot --ar 9:16"},'
+  );
+  assert(
+    qwenOpts.reasoning_effort === 'none' &&
+      gptOssOpts.reasoning_effort === 'low' &&
+      stripReasoningWrappers('<think>ok</think>{"a":1}') === '{"a":1}' &&
+      unclosedThinkPartial.scenes.length === 0 &&
+      closedThinkPartial.scenes.length === 1 &&
+      closedThinkPartial.scenes[0].beats.length === 1,
+    'Suite 37: Character Persistence, Groq Streaming & Thumbnail Fallbacks',
+    '37.3 Groq Reasoning Controls & Incremental Think-Tag Stripping Before JSON Parse',
+    `unclosed=${unclosedThinkPartial.scenes.length} closed=${closedThinkPartial.scenes.length}`
+  );
+
+  // 37.4 Normalize nested / snake_case / array Story Bibles from Groq
+  const normalizedBible = normalizeStoryBibleResponse({
+    storyBible: {
+      style_profile: {
+        art_style: 'Soft watercolor fantasy animation',
+        color_palette: 'Cool glacial blues and warm lantern amber',
+        lighting: 'Golden firelight against twilight winter mist',
+        era_and_setting: 'Snowbound mountain village of Everfrost',
+        lens_and_film_stock: '35mm anamorphic prime feel',
+      },
+      characters: [
+        { name: 'Sable', visualLock: 'Young healer with braided auburn hair and green cloak' },
+        { name: 'Frost', visualLock: 'Small translucent blue-white snow-spirit with antlers' },
+      ],
+    },
+  });
+  assert(
+    normalizedBible.characterSheet.Sable?.includes('auburn hair') &&
+      normalizedBible.characterSheet.Frost?.includes('snow-spirit') &&
+      normalizedBible.styleProfile?.colorPalette === 'Cool glacial blues and warm lantern amber' &&
+      normalizedBible.styleProfile?.eraAndSetting === 'Snowbound mountain village of Everfrost',
+    'Suite 37: Character Persistence, Groq Streaming & Thumbnail Fallbacks',
+    '37.4 Normalizes Nested and Snake-Case Groq Story Bible Shapes',
+    JSON.stringify(normalizedBible)
+  );
+
+  // 37.5 Story-derived thumbnail fallback never reverts to generic SURVIVE
+  const thumbResult = compileThumbnailPrompt({
+    styleProfile: {
+      artStyle: 'Soft watercolor fantasy animation',
+      colorPalette: 'Cool twilight blue and warm amber',
+      lighting: 'Lantern rim glow in winter snow',
+      eraAndSetting: 'Mountain village of Everfrost',
+    },
+    characterSheet: {
+      Sable: 'young healer woman with braided auburn hair and woolen green cloak',
+    },
+    storyPremise:
+      'In the mountain village of Everfrost, young healer Sable finds an injured snow-spirit named Frost. Saving the spirit may mean letting go of her mother memory.',
+    format: 'short',
+    platform: 'TikTok',
+  });
+  assert(
+    thumbResult.hookText !== 'SURVIVE' &&
+      thumbResult.compiledPrompt.includes('Sable') &&
+      !thumbResult.compiledPrompt.includes('The protagonist'),
+    'Suite 37: Character Persistence, Groq Streaming & Thumbnail Fallbacks',
+    '37.5 Story-Derived Thumbnail Fallback Uses Real Cast and Story Hook Instead of SURVIVE',
+    `hook=${thumbResult.hookText}`
+  );
+}
+
 runTestSuite21().then(async () => {
   runTestSuite23();
   runTestSuite24();
@@ -4063,6 +4206,7 @@ runTestSuite21().then(async () => {
   runTestSuite34();
   await runTestSuite35();
   runTestSuite36();
+  runTestSuite37();
   console.log('\n====================================================================');
   console.log('                  FULL-SYSTEM VERIFICATION REPORT                  ');
   console.log('====================================================================');
