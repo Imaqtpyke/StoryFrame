@@ -259,15 +259,15 @@
   - Wired Progressive Scene-by-Scene Results Display via SSE `streamJsonLlmWithSceneProgress` (`unifiedAiService.ts`), wave emissions (`groundedPipeline.ts`), and `ResultsView.tsx` live generation banner (`Stop Generation`, selection preservation, zero unfinished scene placeholders).
   - Created `src/services/aiUsageStorage.ts` (with per-model `byModel` breakdown) and converted the footer widget into a dedicated `AI Usage` button (`Footer.tsx`, `#footer-ai-usage-btn`) navigating to the standalone `AiUsageView.tsx` page (`Session`, `Today`, `All Time`, token mix bar, model breakdown table, and `Reset Usage`).
   - Added Suite 34 automated verification tests (`219 / 219` passing).
-- [x] **Scene 2 Interactive Continue Confirmation Gate (Option B):**
-  - Added `awaitingContinueConfirmation` flag and `OnConfirmContinueCallback` in `src/types.ts` and `continueResolverRef` Promise gate + safe cleanup in `src/App.tsx`.
-  - Updated `#live-generation-banner` in `src/components/ResultsView.tsx` to display `"Would you like to continue?"` alongside **Yes** (`#confirm-continue-yes-btn`) and **No** (`#confirm-continue-no-btn`) buttons using clean square-corner dark editorial styling.
-  - Updated Long-Form (`groundedPipeline.ts`), Enhance Story (`enhanceStoryArchitect.ts`), and Standard (`geminiClient.ts`) pipelines to pause right after Scene 2 when 3+ scenes exist (running a 2-scene pilot wave first in Long Form to save quota), stop cleanly at Scene 2 on **No** without coverage-warning noise, or resume streaming Scene 3+ on **Yes**.
-- [x] **SSE Scene-First Streaming Latency, Hard Scene 2 Gate & Virelia Prompt Quality Fixes (Suite 35, 225/225 passing):**
-  - Removed the `styleProfile || characterSheet` blocking condition inside `emitProgressIfReady()` (`unifiedAiService.ts`), added `minimal -> low -> none` thinking-level step-down retry on HTTP 400 + `'low'` `thinkingLevel` cap on `gemini-3.1-pro-preview`, and moved Long-Form Stage 4 `onPartialResult` emission inside the per-scene loop (`groundedPipeline.ts`) so Scene 1 appears immediately without a 2-minute initial wait.
-  - Enforced `shouldUsePilotCap` unconditionally when `onConfirmContinueAfterScene2` is wired (unless custom beats have `<= 2` scenes), restricted Call 1 to Scene 1 and Scene 2 only, and skipped blocking Phase-2 LLM repair (`skipLlmRepair: true`) during the Scene 2 pause preview (`geminiClient.ts`, `enhanceStoryArchitect.ts`, `beatProgressionEngine.ts`).
+- [x] **Scene 2 Interactive Continue Confirmation Gate (Superseded & Removed 2026-11-20):**
+  - Replaced by continuous streaming with `Stop Generation` cancellation at any time.
+- [x] **SSE Scene-First Streaming & Virelia Prompt Quality Fixes (Suite 35, 225/225 passing):**
+  - Removed the `styleProfile || characterSheet` blocking condition inside `emitProgressIfReady()` (`unifiedAiService.ts`), added `minimal -> low -> none` thinking-level step-down retry on HTTP 400 + `'low'` `thinkingLevel` cap on `gemini-3.1-pro-preview`, and moved Long-Form Stage 4 `onPartialResult` emission inside the per-scene loop (`groundedPipeline.ts`).
   - Pruned back-to-back appositive trait clones right after `Character (anchor)`, stripped `cheeks?`/`freckles?`/`carrying a ...` clauses on tight hand close-ups (`beatProgressionEngine.ts`), scrubbed flashback transition clauses from single-sentence shared `artStyle`, and stripped `Adult `/`Young ` continuity prefixes from CTA intrigue questions (`promptCompiler.ts`).
-  - Added Test Suite 35 verifying all 6 regressions (`225/225` tests passing).
+- [x] **Sequential Story Bible -> Beat-by-Beat Streaming -> Deferred Thumbnail & CTA (Suite 36):**
+  - Completely removed `OnConfirmContinueCallback`, `awaitingContinueConfirmation`, `"Would you like to continue?"` banner, Yes/No buttons, and Scene 2 pilot limits across all pipelines and UI components.
+  - Implemented 3-step sequential flow across Standard (`geminiClient.ts`), Enhance Story (`enhanceStoryArchitect.ts`), and Long Form (`stage1StoryBible.ts`, `stage3PromptWriter.ts`, `groundedPipeline.ts`): Step 1 locks Story Bible (`scenes: []`) and immediately opens `ResultsView` (`#story-bible-lock-card` + `#streaming-first-beat-placeholder`); Step 2 streams `{ "scenes": [...] }` beat-by-beat inside open scenes (`unifiedAiService.ts`) with `skipLlmRepair = true` and sequential 2-scene Long-Form streaming batches; Step 3 compiles Thumbnail and CTA outro only after all scenes complete.
+  - Added Suite 36 automated verification tests covering Beat 1 extraction inside open Scene 1, Stage 3 prompt streaming, Story Bible partial emission, and deferred Thumbnail behavior.
 
 ## Active Testing & Planned Future Roadmap (Post-Testing)
 - [ ] **Genre Stress-Testing Loop (In Progress):**

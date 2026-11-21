@@ -15,13 +15,12 @@ import {
   Beat,
   StyleProfile,
   OnPartialStoryCallback,
-  OnConfirmContinueCallback,
   StoryBible,
 } from '../types';
 import { stage0PrepareNarration } from './stage0Prepare';
 import { stage1GenerateStoryBible } from './stage1StoryBible';
 import { stage2GenerateBeatPlan, PlannedScene } from './stage2BeatPlan';
-import { stage3WriteScenePromptsBatch } from './stage3PromptWriter';
+import { stage3WriteScenePromptsBatch, WrittenPromptBeat } from './stage3PromptWriter';
 import { stage4VerifyAndRepairScene } from './stage4VerifyRepair';
 import { compileThumbnailPrompt } from './promptCompiler';
 import {
@@ -33,8 +32,7 @@ import {
   summarizeGroundedCheckpoint,
 } from './groundedCheckpoint';
 
-const SCENE_BATCH_SIZE = 3;
-const CONCURRENT_BATCHES = 2;
+const SCENE_BATCH_SIZE = 2;
 
 export function getGroundedProgressForRequest(req: GenerateStoryRequest | null | undefined): GroundedCheckpointProgress | null {
   if (!req || !req.story || !req.story.trim()) return null;
@@ -94,7 +92,7 @@ function assembleGroundedStoryResult(params: {
   timingSource?: 'actual' | 'estimated';
   totalPlannedScenes?: number;
   isPartial?: boolean;
-  awaitingContinueConfirmation?: boolean;
+  stageLabel?: string;
 }): StoryGenerationResult {
   const {
     req,
@@ -105,7 +103,7 @@ function assembleGroundedStoryResult(params: {
     timingSource,
     totalPlannedScenes,
     isPartial,
-    awaitingContinueConfirmation,
+    stageLabel,
   } = params;
   const generationMode = req.generationMode || 'image';
   const isVideo = generationMode === 'video';
@@ -135,29 +133,39 @@ function assembleGroundedStoryResult(params: {
   const fallbackHook = buildStoryDerivedHookFallback(cleanNarration, bible.events || []);
   const hookText = (bible.thumbnailHook?.hookText || '').trim() || fallbackHook;
 
-  const thumbnail = compileThumbnailPrompt({
-    rawThumbnail: {
-      heroMoment:
-        (bible.thumbnailHook?.heroMoment || '').trim() ||
-        bible.events[bible.events.length - 1] ||
-        'The decisive turning point of the narrative',
-      expression:
-        (bible.thumbnailHook?.expression || '').trim() ||
-        'intense, emotionally charged, and highly focused',
-      bgDescription: `${styleProfile.eraAndSetting} with deep atmospheric depth`,
-      accentColor: 'golden hour amber',
-      hookText,
-      alternateHooks:
-        Array.isArray(bible.thumbnailHook?.alternateHooks) && bible.thumbnailHook.alternateHooks.length > 0
-          ? bible.thumbnailHook.alternateHooks
-          : [fallbackHook, 'THE FINAL TURNING POINT'],
-    },
-    styleProfile,
-    characterSheet,
-    storyPremise: req.story,
-    format: req.format,
-    platform: req.platform,
-  });
+  const thumbnail = isPartial
+    ? undefined
+    : compileThumbnailPrompt({
+        rawThumbnail: {
+          heroMoment:
+            (bible.thumbnailHook?.heroMoment || '').trim() ||
+            bible.events[bible.events.length - 1] ||
+            'The decisive turning point of the narrative',
+          expression:
+            (bible.thumbnailHook?.expression || '').trim() ||
+            'intense, emotionally charged, and highly focused',
+          bgDescription: `${styleProfile.eraAndSetting} with deep atmospheric depth`,
+          accentColor: 'golden hour amber',
+          hookText,
+          alternateHooks:
+            Array.isArray(bible.thumbnailHook?.alternateHooks) && bible.thumbnailHook.alternateHooks.length > 0
+              ? bible.thumbnailHook.alternateHooks
+              : [fallbackHook, 'THE FINAL TURNING POINT'],
+        },
+        styleProfile,
+        characterSheet,
+        storyPremise: req.story,
+        format: req.format,
+        platform: req.platform,
+      });
+
+  const lastScene = scenes[scenes.length - 1];
+  const defaultStageLabel =
+    scenes.length > 0 && lastScene
+      ? totalPlannedScenes
+        ? `Scene ${lastScene.index || scenes.length} of ${totalPlannedScenes} (${lastScene.beats.length} beats ready)...`
+        : `Scene ${lastScene.index || scenes.length}, Beat ${lastScene.beats.length} ready...`
+      : 'Story Bible locked. Streaming Scene 1, Beat 1...';
 
   return {
     totalDurationSeconds: Math.round(totalDurationSeconds * 10) / 10,
@@ -177,12 +185,7 @@ function assembleGroundedStoryResult(params: {
           completedScenes: scenes.length,
           totalPlannedScenes,
           isPartial: true,
-          awaitingContinueConfirmation: Boolean(awaitingContinueConfirmation),
-          stageLabel: awaitingContinueConfirmation
-            ? 'Would you like to continue?'
-            : totalPlannedScenes
-            ? `Scene ${scenes.length} of ${totalPlannedScenes} ready`
-            : `${scenes.length} scenes ready`,
+          stageLabel: stageLabel || defaultStageLabel,
         }
       : undefined,
   };
@@ -193,8 +196,7 @@ export async function executeGroundedPipeline(
   apiKey: string,
   userSignal?: AbortSignal,
   onStatusMessage?: (msg: string) => void,
-  onPartialResult?: OnPartialStoryCallback,
-  onConfirmContinueAfterScene2?: OnConfirmContinueCallback
+  onPartialResult?: OnPartialStoryCallback
 ): Promise<StoryGenerationResult> {
   const modelQuality = req.modelQuality || 'standard';
   const format = req.format || 'short';
@@ -254,6 +256,27 @@ export async function executeGroundedPipeline(
     checkpoint = getGroundedCheckpoint(checkpointKey);
   }
 
+  // Immediately exit ResultsSkeleton and show locked Story Bible + Cast before Stage 2
+  if (onPartialResult && !userSignal?.aborted) {
+    const resumedScenes = Array.isArray(checkpoint?.completedScenes) ? checkpoint.completedScenes : [];
+    onPartialResult(
+      assembleGroundedStoryResult({
+        req,
+        bible,
+        scenes: resumedScenes,
+        cleanNarration: prepared.cleanNarration,
+        authorNotes: prepared.authorNotes,
+        timingSource: prepared.timingSource,
+        totalPlannedScenes: checkpoint?.plannedScenes?.length,
+        isPartial: true,
+        stageLabel:
+          resumedScenes.length > 0
+            ? `Resumed ${resumedScenes.length} saved scenes. Planning remaining beats...`
+            : 'Story Bible locked. Planning scenes and beats...',
+      })
+    );
+  }
+
   // --------------------------------------------------------------------------
   // Stage 2: Beat Planning (Resumable From Checkpoint)
   // --------------------------------------------------------------------------
@@ -298,15 +321,15 @@ export async function executeGroundedPipeline(
   }
 
   // --------------------------------------------------------------------------
-  // Stages 3 & 4: Concurrent 2-Batch Stage 3 Waves + Stage 4 Verification & Checkpointing
+  // Stages 3 & 4: Sequential 2-Scene Streaming Batches + Live Beat Updates
   // --------------------------------------------------------------------------
   const finalScenes: Scene[] = Array.isArray(checkpoint?.completedScenes)
     ? [...checkpoint.completedScenes]
     : [];
   let previousDepicts: string[] = Array.isArray(checkpoint?.lastDepicts) ? [...checkpoint.lastDepicts] : [];
 
-  // Immediately surface resumed completed scenes if resuming from checkpoint
-  if (onPartialResult && finalScenes.length > 0 && finalScenes.length < plannedScenes.length) {
+  // Emit beat-plan readiness immediately (or resumed checkpoint scenes)
+  if (onPartialResult && !userSignal?.aborted) {
     onPartialResult(
       assembleGroundedStoryResult({
         req,
@@ -317,270 +340,177 @@ export async function executeGroundedPipeline(
         timingSource: prepared.timingSource,
         totalPlannedScenes: plannedScenes.length,
         isPartial: true,
+        stageLabel:
+          finalScenes.length > 0
+            ? `Resumed ${finalScenes.length} of ${plannedScenes.length} scenes. Streaming next beat...`
+            : `Beat plan ready (${plannedScenes.length} scenes). Streaming Scene 1, Beat 1...`,
       })
     );
   }
 
-  const promptContinueAfterScene2 = async (): Promise<boolean> => {
-    if (!onConfirmContinueAfterScene2) return true;
-    if (userSignal?.aborted) {
-      throw new DOMException('Cancelled by user', 'AbortError');
-    }
-    if (onPartialResult) {
-      onPartialResult(
-        assembleGroundedStoryResult({
-          req,
-          bible,
-          scenes: finalScenes.slice(0, 2),
-          cleanNarration: prepared.cleanNarration,
-          authorNotes: prepared.authorNotes,
-          timingSource: prepared.timingSource,
-          totalPlannedScenes: plannedScenes.length,
-          isPartial: true,
-          awaitingContinueConfirmation: true,
-        })
-      );
-    }
-    if (onStatusMessage) {
-      onStatusMessage('Scenes 1-2 finished. Waiting for your decision to continue.');
-    }
-    const shouldContinue = await onConfirmContinueAfterScene2();
-    if (!shouldContinue) {
-      clearGroundedCheckpoint(checkpointKey);
-      return false;
-    }
-    if (onPartialResult) {
-      onPartialResult(
-        assembleGroundedStoryResult({
-          req,
-          bible,
-          scenes: finalScenes,
-          cleanNarration: prepared.cleanNarration,
-          authorNotes: prepared.authorNotes,
-          timingSource: prepared.timingSource,
-          totalPlannedScenes: plannedScenes.length,
-          isPartial: true,
-          awaitingContinueConfirmation: false,
-        })
-      );
-    }
-    return true;
-  };
+  const mapWrittenBeatsToSceneBeats = (writtenList: WrittenPromptBeat[]): Beat[] =>
+    writtenList.map((vb) => ({
+      beatIndex: vb.beatIndex,
+      textSpan: vb.textSpan,
+      imagePrompt: vb.imagePrompt,
+      estimatedSeconds: vb.estimatedSeconds,
+      shotType: vb.shotSize,
+      cameraAngle: vb.angle,
+      cameraMovement: isVideo ? 'Continuous Camera Pan' : 'Static',
+      wordRange: vb.wordRange,
+      depicts: vb.depicts,
+      kind: vb.kind,
+      referentId: vb.referentId,
+      intensity: vb.intensity,
+      subjectIds: vb.subjectIds,
+      newInfo: vb.newInfo,
+      overlayText: vb.overlayText,
+      flaggedIssue: vb.flaggedIssue,
+    }));
 
-  let hasAskedContinueAfterScene2 = finalScenes.length > 2;
-
-  // If resuming right at Scene 2 with remaining scenes, confirm before dispatching Scene 3+
-  if (
-    !hasAskedContinueAfterScene2 &&
-    onConfirmContinueAfterScene2 &&
-    finalScenes.length === 2 &&
-    plannedScenes.length > 2
-  ) {
-    hasAskedContinueAfterScene2 = true;
-    const shouldContinue = await promptContinueAfterScene2();
-    if (!shouldContinue) {
-      return assembleGroundedStoryResult({
-        req,
-        bible,
-        scenes: finalScenes.slice(0, 2),
-        cleanNarration: prepared.cleanNarration,
-        authorNotes: prepared.authorNotes,
-        timingSource: prepared.timingSource,
-        totalPlannedScenes: 2,
-        isPartial: false,
-      });
-    }
-  }
-
-  // Group batches into waves. When Scene 2 confirmation is enabled and more than 2 scenes exist,
-  // run Scenes 1-2 as a solo pilot wave before requesting Scene 3+.
-  const waves: { batchStart: number; batchSlice: PlannedScene[] }[][] = [];
-  let cursor = finalScenes.length;
-
-  if (onConfirmContinueAfterScene2 && plannedScenes.length > 2 && cursor < 2) {
-    waves.push([
-      {
-        batchStart: cursor,
-        batchSlice: plannedScenes.slice(cursor, 2),
-      },
-    ]);
-    cursor = 2;
-  }
-
-  const remainingBatches: { batchStart: number; batchSlice: PlannedScene[] }[] = [];
+  const cursor = finalScenes.length;
   for (let bs = cursor; bs < plannedScenes.length; bs += SCENE_BATCH_SIZE) {
-    remainingBatches.push({
-      batchStart: bs,
-      batchSlice: plannedScenes.slice(bs, bs + SCENE_BATCH_SIZE),
-    });
-  }
-  for (let w = 0; w < remainingBatches.length; w += CONCURRENT_BATCHES) {
-    waves.push(remainingBatches.slice(w, w + CONCURRENT_BATCHES));
-  }
-
-  for (let w = 0; w < waves.length; w++) {
     if (userSignal?.aborted) {
       throw new DOMException('Cancelled by user', 'AbortError');
     }
 
-    const waveBatches = waves[w];
-    const waveFirstScene = waveBatches[0].batchSlice[0].index || waveBatches[0].batchStart + 1;
-    const lastWaveBatch = waveBatches[waveBatches.length - 1];
-    const waveLastScene =
-      lastWaveBatch.batchSlice[lastWaveBatch.batchSlice.length - 1].index ||
-      lastWaveBatch.batchStart + lastWaveBatch.batchSlice.length;
+    const batchSlice = plannedScenes.slice(bs, bs + SCENE_BATCH_SIZE);
+    const firstSceneNum = batchSlice[0].index || bs + 1;
+    const lastSceneNum = batchSlice[batchSlice.length - 1].index || bs + batchSlice.length;
 
     if (onStatusMessage) {
       onStatusMessage(
-        `Stage 3: Writing visual prompts for Scenes ${waveFirstScene}-${waveLastScene} of ${plannedScenes.length}${finalScenes.length > 0 ? ` (${finalScenes.length} ready)` : ''}...`
+        `Stage 3: Streaming visual prompts for Scenes ${firstSceneNum}-${lastSceneNum} of ${plannedScenes.length}...`
       );
     }
 
-    // Dispatch up to 2 Stage 3 batches concurrently, threading planned depicts between Batch A and Batch B
-    const wavePromises = waveBatches.map((wb, waveIdx) => {
-      const batchInput = wb.batchSlice.map((ps, offset) => ({
-        sceneIndex: ps.index || wb.batchStart + offset + 1,
-        beats: ps.beats,
-      }));
-      const contextDepicts =
-        waveIdx === 0
-          ? previousDepicts
-          : (waveBatches[waveIdx - 1].batchSlice[waveBatches[waveIdx - 1].batchSlice.length - 1]?.beats || [])
-              .slice(-2)
-              .map((b) => b.depicts);
+    const batchInput = batchSlice.map((ps, offset) => ({
+      sceneIndex: ps.index || bs + offset + 1,
+      beats: ps.beats,
+    }));
 
-      return stage3WriteScenePromptsBatch(
-        batchInput,
+    const writtenMap = await stage3WriteScenePromptsBatch(
+      batchInput,
+      bible,
+      previousDepicts,
+      format,
+      generationMode,
+      apiKey,
+      modelQuality,
+      userSignal,
+      onStatusMessage,
+      provider,
+      groqModel,
+      onPartialResult
+        ? (partialBeatMap) => {
+            if (userSignal?.aborted) return;
+            const liveStreamingScenes: Scene[] = [...finalScenes];
+            let latestSceneNum = firstSceneNum;
+            let latestBeatNum = 1;
+
+            for (let offset = 0; offset < batchSlice.length; offset++) {
+              const plannedScene = batchSlice[offset];
+              const sceneNum = plannedScene.index || bs + offset + 1;
+              const partialBeats = partialBeatMap.get(sceneNum);
+              if (!partialBeats || partialBeats.length === 0) continue;
+
+              latestSceneNum = sceneNum;
+              latestBeatNum = partialBeats[partialBeats.length - 1]?.beatIndex || partialBeats.length;
+
+              liveStreamingScenes.push({
+                index: sceneNum,
+                narratorLine: plannedScene.narratorLine,
+                estimatedSeconds: plannedScene.estimatedSeconds,
+                beats: mapWrittenBeatsToSceneBeats(partialBeats),
+              });
+            }
+
+            if (liveStreamingScenes.length > finalScenes.length) {
+              onPartialResult(
+                assembleGroundedStoryResult({
+                  req,
+                  bible,
+                  scenes: liveStreamingScenes,
+                  cleanNarration: prepared.cleanNarration,
+                  authorNotes: prepared.authorNotes,
+                  timingSource: prepared.timingSource,
+                  totalPlannedScenes: plannedScenes.length,
+                  isPartial: true,
+                  stageLabel: `Scene ${latestSceneNum}, Beat ${latestBeatNum} ready...`,
+                })
+              );
+            }
+          }
+        : undefined
+    );
+
+    // Run deterministic Stage 4 verification sequentially for each scene in this small batch
+    for (let offset = 0; offset < batchSlice.length; offset++) {
+      const plannedScene = batchSlice[offset];
+      const sceneNum = plannedScene.index || bs + offset + 1;
+      const writtenBeats =
+        writtenMap.get(sceneNum) ||
+        plannedScene.beats.map((b) => ({
+          ...b,
+          imagePrompt: `${b.shotSize} ${format === 'short' ? 'portrait' : 'landscape'} framing, ${b.angle}. ${b.depicts}. ${bible.worldStyle}`,
+        }));
+
+      if (onStatusMessage) {
+        onStatusMessage(`Stage 4: Running quality checks for Scene ${sceneNum} of ${plannedScenes.length}...`);
+      }
+
+      const verifiedBeats = await stage4VerifyAndRepairScene(
+        sceneNum,
+        plannedScene.narratorLine,
+        writtenBeats,
         bible,
-        contextDepicts,
         format,
-        generationMode,
         apiKey,
         modelQuality,
         userSignal,
         onStatusMessage,
         provider,
-        groqModel
+        groqModel,
+        { runLlmCritic: false, generationMode }
       );
-    });
 
-    const waveWrittenMaps = await Promise.all(wavePromises);
+      previousDepicts = verifiedBeats.slice(-2).map((b) => b.depicts);
 
-    // Run deterministic Stage 4 verification sequentially across the wave batches and stream scene progress
-    for (let waveIdx = 0; waveIdx < waveBatches.length; waveIdx++) {
-      const wb = waveBatches[waveIdx];
-      const writtenMap = waveWrittenMaps[waveIdx];
+      finalScenes.push({
+        index: sceneNum,
+        narratorLine: plannedScene.narratorLine,
+        estimatedSeconds: plannedScene.estimatedSeconds,
+        beats: mapWrittenBeatsToSceneBeats(verifiedBeats),
+      });
 
-      for (let offset = 0; offset < wb.batchSlice.length; offset++) {
-        const plannedScene = wb.batchSlice[offset];
-        const sceneNum = plannedScene.index || wb.batchStart + offset + 1;
-        const writtenBeats =
-          writtenMap.get(sceneNum) ||
-          plannedScene.beats.map((b) => ({
-            ...b,
-            imagePrompt: `${b.shotSize} ${format === 'short' ? 'portrait' : 'landscape'} framing, ${b.angle}. ${b.depicts}. ${bible.worldStyle}`,
-          }));
+      // Checkpoint and surface each finished scene progressively right after Stage 4
+      saveGroundedCheckpoint({
+        key: checkpointKey,
+        totalWords: prepared.words.length,
+        updatedAt: Date.now(),
+        bible,
+        plannedScenes,
+        completedScenes: finalScenes,
+        lastDepicts: previousDepicts,
+      });
 
-        if (onStatusMessage) {
-          onStatusMessage(`Stage 4: Running quality checks for Scene ${sceneNum} of ${plannedScenes.length}...`);
-        }
-
-        const verifiedBeats = await stage4VerifyAndRepairScene(
-          sceneNum,
-          plannedScene.narratorLine,
-          writtenBeats,
-          bible,
-          format,
-          apiKey,
-          modelQuality,
-          userSignal,
-          onStatusMessage,
-          provider,
-          groqModel,
-          { runLlmCritic: false, generationMode }
+      if (onPartialResult && !userSignal?.aborted) {
+        const isLastPlanned = finalScenes.length >= plannedScenes.length;
+        onPartialResult(
+          assembleGroundedStoryResult({
+            req,
+            bible,
+            scenes: finalScenes,
+            cleanNarration: prepared.cleanNarration,
+            authorNotes: prepared.authorNotes,
+            timingSource: prepared.timingSource,
+            totalPlannedScenes: plannedScenes.length,
+            isPartial: true,
+            stageLabel: isLastPlanned
+              ? 'All scenes finished. Compiling cover thumbnail & CTA outro...'
+              : `Scene ${sceneNum} of ${plannedScenes.length} ready...`,
+          })
         );
-
-        previousDepicts = verifiedBeats.slice(-2).map((b) => b.depicts);
-
-        const beatsForScene: Beat[] = verifiedBeats.map((vb) => ({
-          beatIndex: vb.beatIndex,
-          textSpan: vb.textSpan,
-          imagePrompt: vb.imagePrompt,
-          estimatedSeconds: vb.estimatedSeconds,
-          shotType: vb.shotSize,
-          cameraAngle: vb.angle,
-          cameraMovement: isVideo ? 'Continuous Camera Pan' : 'Static',
-          wordRange: vb.wordRange,
-          depicts: vb.depicts,
-          kind: vb.kind,
-          referentId: vb.referentId,
-          intensity: vb.intensity,
-          subjectIds: vb.subjectIds,
-          newInfo: vb.newInfo,
-          overlayText: vb.overlayText,
-          flaggedIssue: vb.flaggedIssue,
-        }));
-
-        finalScenes.push({
-          index: sceneNum,
-          narratorLine: plannedScene.narratorLine,
-          estimatedSeconds: plannedScene.estimatedSeconds,
-          beats: beatsForScene,
-        });
-
-        // Checkpoint and surface each finished scene progressively right after Stage 4
-        saveGroundedCheckpoint({
-          key: checkpointKey,
-          totalWords: prepared.words.length,
-          updatedAt: Date.now(),
-          bible,
-          plannedScenes,
-          completedScenes: finalScenes,
-          lastDepicts: previousDepicts,
-        });
-
-        const shouldCapAtPilot = Boolean(
-          onConfirmContinueAfterScene2 && !hasAskedContinueAfterScene2 && plannedScenes.length > 2
-        );
-        const visibleScenes = shouldCapAtPilot ? finalScenes.slice(0, 2) : finalScenes;
-
-        if (onPartialResult && visibleScenes.length > 0 && finalScenes.length < plannedScenes.length) {
-          onPartialResult(
-            assembleGroundedStoryResult({
-              req,
-              bible,
-              scenes: visibleScenes,
-              cleanNarration: prepared.cleanNarration,
-              authorNotes: prepared.authorNotes,
-              timingSource: prepared.timingSource,
-              totalPlannedScenes: plannedScenes.length,
-              isPartial: true,
-            })
-          );
-        }
-      }
-    }
-
-    // Pause right after Scene 2 finishes so user can choose Yes / No before generating Scene 3+
-    if (
-      !hasAskedContinueAfterScene2 &&
-      onConfirmContinueAfterScene2 &&
-      finalScenes.length === 2 &&
-      finalScenes.length < plannedScenes.length
-    ) {
-      hasAskedContinueAfterScene2 = true;
-      const shouldContinue = await promptContinueAfterScene2();
-      if (!shouldContinue) {
-        return assembleGroundedStoryResult({
-          req,
-          bible,
-          scenes: finalScenes.slice(0, 2),
-          cleanNarration: prepared.cleanNarration,
-          authorNotes: prepared.authorNotes,
-          timingSource: prepared.timingSource,
-          totalPlannedScenes: 2,
-          isPartial: false,
-        });
       }
     }
   }

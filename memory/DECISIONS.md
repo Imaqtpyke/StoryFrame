@@ -328,21 +328,26 @@
 - **Status:** Active
 
 ## Scene 2 Interactive Continue Confirmation Gate (Option B)
-- **Fact/Decision:** Implemented an interactive Scene 2 confirmation gate across both Short Form and Long Form pipelines (`groundedPipeline.ts`, `enhanceStoryArchitect.ts`, `geminiClient.ts`, `App.tsx`, `ResultsView.tsx`, and `types.ts`):
-  1. When generating a story with 3 or more scenes, the pipeline pauses cleanly right after Scene 2 finishes and displays `"Would you like to continue?"` with **Yes** (`#confirm-continue-yes-btn`) and **No** (`#confirm-continue-no-btn`) buttons in `#live-generation-banner`.
-  2. Clicking **No** halts remaining generation completely, clears stale checkpoints, suppresses truncated script-coverage warning banners, and leaves Scenes 1 and 2 finalized and fully exportable.
-  3. Clicking **Yes** resumes generation seamlessly from Scene 3 onward, streaming finished scenes into the live storyboard until completion.
-  4. Long-Form Stage 3/4 runs Wave 0 as a 2-scene pilot batch (`Scenes 1-2`) before prompting so zero extra tokens are spent on Scenes 3+ unless the user clicks **Yes**.
-- **Context:** Lets creators inspect quality, style locks, and pacing after the first 2 scenes and abort early without wasting API quota or waiting for unnecessary remaining scenes.
+- **Fact/Decision:** Implemented an interactive Scene 2 confirmation gate across both Short Form and Long Form pipelines (`groundedPipeline.ts`, `enhanceStoryArchitect.ts`, `geminiClient.ts`, `App.tsx`, `ResultsView.tsx`, and `types.ts`).
+- **Context:** Temporarily allowed early inspection after Scene 2, but caused UX friction when combined with streaming; superseded by removal since `Stop Generation` lets creators cancel anytime.
 - **Date:** 2026-11-20
-- **Status:** Active
+- **Status:** Outdated (Superseded by Removal & True Beat-by-Beat Sequential Streaming on 2026-11-20)
 
 ## SSE Scene-First Streaming, Hard Scene 2 Gate & Virelia Prompt Quality Fixes (Suite 35)
 - **Fact/Decision:**
-  1. **True Scene-by-Scene Streaming (`unifiedAiService.ts`, `groundedPipeline.ts`):** Removed the `styleProfile || characterSheet` blocking condition inside `emitProgressIfReady()` so Scene 1 renders immediately when completed in SSE chunks regardless of key ordering; added `thinkingLevel` step-down retry (`minimal -> low -> none`) on HTTP 400 and capped `gemini-3.1-pro-preview` thinking tokens (`'low'` default) to eliminate 2-minute stalls; moved Long-Form Stage 4 `onPartialResult` emission inside the per-scene loop capped at 2 scenes prior to the gate.
-  2. **Hard Scene 2 Pilot Stop (`geminiClient.ts`, `enhanceStoryArchitect.ts`, `beatProgressionEngine.ts`):** Enforced `shouldUsePilotCap` unconditionally whenever `onConfirmContinueAfterScene2` is wired (except custom beats with 2 or fewer scenes), tightened Call 1 pilot schema to at most 2 scenes (`index 1` and `2` only), and added `skipLlmRepair: true` for the Scene 2 pause preview so `"Would you like to continue?"` displays immediately without Scenes 4-5 leaking or blocking on remote repair calls.
-  3. **Virelia Prompt Hygiene (`beatProgressionEngine.ts`, `promptCompiler.ts`):** Pruned back-to-back appositive trait clones right after `Character (anchor)` while preserving action clauses; stripped plural `cheeks?`, `freckles?`, and `carrying a ...` clauses from tight hand close-ups; scrubbed plot/flashback transition clauses even from single-sentence shared `artStyle`; stripped continuity age prefixes (`Adult `, `Young `, `Elder `) from CTA intrigue questions while retaining visual lock keys.
-- **Context:** Resolved the 2-minute initial load stall and Scene 4-5 leak before the Scene 2 confirmation gate surfaced in the TikTok 9:16 Virelia storyboard export audit (`225/225` tests passing).
+  1. **True Scene-by-Scene Streaming (`unifiedAiService.ts`, `groundedPipeline.ts`):** Removed the `styleProfile || characterSheet` blocking condition inside `emitProgressIfReady()` so Scene 1 renders immediately when completed in SSE chunks regardless of key ordering; added `thinkingLevel` step-down retry (`minimal -> low -> none`) on HTTP 400 and capped `gemini-3.1-pro-preview` thinking tokens (`'low'` default) to eliminate 2-minute stalls.
+  2. **Virelia Prompt Hygiene (`beatProgressionEngine.ts`, `promptCompiler.ts`):** Pruned back-to-back appositive trait clones right after `Character (anchor)` while preserving action clauses; stripped plural `cheeks?`, `freckles?`, and `carrying a ...` clauses from tight hand close-ups; scrubbed plot/flashback transition clauses even from single-sentence shared `artStyle`; stripped continuity age prefixes (`Adult `, `Young `, `Elder `) from CTA intrigue questions while retaining visual lock keys.
+- **Context:** Resolved SSE key-ordering blockers, thinking overhead, and Virelia prompt quality defects (`225/225` tests passing). Scene 2 gate portion was later removed on 2026-11-20.
+- **Date:** 2026-11-20
+- **Status:** Active (Prompt Hygiene Active; Scene 2 Gate Removed)
+
+## Sequential Production Workflow: Story Bible First -> Beat-by-Beat Streaming -> Deferred Thumbnail & CTA (Suite 36)
+- **Fact/Decision:**
+  1. **Removed Scene 2 Continue Confirmation Gate:** Deleted `OnConfirmContinueCallback`, `awaitingContinueConfirmation`, Yes/No prompt banner, and Scene 2 pilot caps across `types.ts`, `App.tsx`, `ResultsView.tsx`, `geminiClient.ts`, `enhanceStoryArchitect.ts`, and `groundedPipeline.ts`. Users can cancel anytime via `Stop Generation`.
+  2. **Step 1 Story Bible First (~3-5s):** Both Standard (`geminiClient.ts`), Enhance Story (`enhanceStoryArchitect.ts`), and Long Form (`stage1StoryBible.ts` + `groundedPipeline.ts`) lock `styleProfile`, `characterSheet`, and `locationSheet` (plus `hookAnalysis` and `scriptOutline` in Enhance Mode) first with `thinkingLevel: 'minimal'`, immediately exiting `ResultsSkeleton` to display the locked Story Bible panel while waiting for Beat 1.
+  3. **Step 2 True Beat-by-Beat SSE Streaming:** Upgraded `extractCompletedStoryboardFields` and `streamJsonLlmWithSceneProgress` (`unifiedAiService.ts`) to extract closed beats inside open unclosed scenes and Stage 3 `"prompts"` incrementally; removed 6-scene concurrent blocking waves in `groundedPipeline.ts` (using sequential 2-scene streaming batches via `stage3PromptWriter.ts`) and skipped blocking post-stream LLM repair calls (`skipLlmRepair = true`).
+  4. **Step 3 Deferred Thumbnail & CTA:** Thumbnail generation runs as a lean final step only after all scenes complete, and Thumbnail Cover Card, CTA Outro Card, Jump buttons, Full Script, and bottom Export Bar stay hidden inside `ResultsView.tsx` until `!isGeneratingMore && normalizedScenes.length > 0`.
+- **Context:** Eliminates 2-minute skeleton waits even on 50-word scripts, prevents premature Thumbnail/CTA generation before scenes finish, and ensures `Story Bible -> Scene 1 Beat 1 -> Beat 2 -> ... -> Thumbnail & CTA` renders sequentially in real time.
 - **Date:** 2026-11-20
 - **Status:** Active
 

@@ -20,7 +20,12 @@ import {
 import {
   extractStoryTitle,
 } from '../services/historyStorage';
-import { cleanAndDeduplicatePrompt, assembleCleanPrompt, sanitizeCharacterIdentitySheet } from '../services/geminiClient';
+import {
+  cleanAndDeduplicatePrompt,
+  assembleCleanPrompt,
+  sanitizeCharacterIdentitySheet,
+  buildPartialStoryResultFromStream,
+} from '../services/geminiClient';
 import {
   deduplicateAndProgressSceneBeats,
   verifyAndRepairSceneNarrationCoverage,
@@ -76,7 +81,7 @@ import {
   resetAiUsage,
   formatCompactTokenCount,
 } from '../services/aiUsageStorage';
-import { Scene, Beat, StyleProfile, StoryGenerationResult } from '../types';
+import { Scene, Beat, StyleProfile, StoryGenerationResult, GenerateStoryRequest } from '../types';
 
 interface TestResult {
   suite: string;
@@ -3872,6 +3877,177 @@ async function runTestSuite35() {
   );
 }
 
+// ============================================================================
+// 36. TRUE BEAT-BY-BEAT STREAMING, STORY BIBLE FIRST & DEFERRED THUMBNAIL
+// ============================================================================
+function runTestSuite36() {
+  console.log('\n--- Running Test Suite 36: Beat-by-Beat Streaming, Story Bible First & Deferred Thumbnail ---');
+
+  // 36.1 Unclosed Scene 1 with Beat 1 closed and Beat 2 open emits Beat 1 immediately before Scene 1 closes
+  const unclosedScene1Stream = `{
+  "scenes": [
+    {
+      "index": 1,
+      "narratorLine": "Above the rainy street, Maya paused.",
+      "estimatedSeconds": 3.0,
+      "beats": [
+        {
+          "beatIndex": 1,
+          "textSpan": "Above the rainy street,",
+          "estimatedSeconds": 1.5,
+          "shotType": "Wide Establishing Shot",
+          "cameraAngle": "high-angle",
+          "cameraMovement": "Static Frame",
+          "imagePrompt": "Vertical 9:16 portrait composition, Wide Establishing Shot looking down at wet slate roofs."
+        },
+        {
+          "beatIndex": 2,
+          "textSpan": "Maya paused."`;
+  const beat1Partial = extractCompletedStoryboardFields(unclosedScene1Stream);
+  assert(
+    beat1Partial.scenes.length === 1 &&
+      beat1Partial.scenes[0].index === 1 &&
+      beat1Partial.scenes[0].beats.length === 1 &&
+      beat1Partial.scenes[0].beats[0].beatIndex === 1 &&
+      beat1Partial.scenes[0].beats[0].textSpan === 'Above the rainy street,',
+    'Suite 36: Beat-by-Beat Streaming, Story Bible First & Deferred Thumbnail',
+    '36.1 Emits Closed Beat 1 Immediately Inside Open Unclosed Scene 1 Buffer',
+    `scenes=${beat1Partial.scenes.length} beats=${beat1Partial.scenes[0]?.beats?.length || 0}`
+  );
+
+  // 36.2 Once Beat 2 closes inside still-open Scene 1, Beat 1 and Beat 2 both emit (while open Scene 2 with 0 closed beats stays excluded)
+  const twoBeatsPlusEmptyOpenScene2 = `${unclosedScene1Stream},
+          "estimatedSeconds": 1.5,
+          "shotType": "Close-Up",
+          "cameraAngle": "eye-level",
+          "cameraMovement": "Static Frame",
+          "imagePrompt": "Vertical 9:16 portrait composition, Close-Up of Maya standing under an awning."
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "narratorLine": "She checked her watch.`;
+  const beat2Partial = extractCompletedStoryboardFields(twoBeatsPlusEmptyOpenScene2);
+  assert(
+    beat2Partial.scenes.length === 1 &&
+      beat2Partial.scenes[0].beats.length === 2 &&
+      beat2Partial.scenes[0].beats[1].beatIndex === 2,
+    'Suite 36: Beat-by-Beat Streaming, Story Bible First & Deferred Thumbnail',
+    '36.2 Streams Beat 2 Immediately Inside Open Scene 1 While Excluding Unclosed Scene 2 With Zero Closed Beats',
+    `scenes=${beat2Partial.scenes.length} s1Beats=${beat2Partial.scenes[0]?.beats?.length || 0}`
+  );
+
+  // 36.3 Stage 3 single-scene and multi-scene "prompts" extraction inside open buffers
+  const stage3SingleStream = `{
+  "sceneIndex": 2,
+  "prompts": [
+    {
+      "beatIndex": 1,
+      "imagePrompt": "Wide 16:9 landscape composition, medium eye-level shot of a lantern swaying in cold mist."
+    },
+    {
+      "beatIndex": 2,
+      "imagePrompt": "Wide 16:9 landscape composition, close-up of frost crystals`;
+  const stage3SinglePartial = extractCompletedStoryboardFields(stage3SingleStream);
+  const stage3BatchStream = `{
+  "scenes": [
+    {
+      "sceneIndex": 1,
+      "prompts": [
+        {
+          "beatIndex": 1,
+          "imagePrompt": "Wide 16:9 landscape composition, wide shot of a medieval stone bridge."
+        }
+      ]
+    },
+    {
+      "sceneIndex": 2,
+      "prompts": [
+        {
+          "beatIndex": 1,
+          "imagePrompt": "Wide 16:9 landscape composition, close-up of muddy footprints."
+        },
+        {
+          "beatIndex": 2,
+          "imagePrompt": "Partial unclosed`;
+  const stage3BatchPartial = extractCompletedStoryboardFields(stage3BatchStream);
+  assert(
+    stage3SinglePartial.sceneIndex === 2 &&
+      Array.isArray(stage3SinglePartial.prompts) &&
+      stage3SinglePartial.prompts.length === 1 &&
+      stage3SinglePartial.prompts[0].beatIndex === 1 &&
+      stage3BatchPartial.scenes.length === 2 &&
+      stage3BatchPartial.scenes[1].prompts.length === 1,
+    'Suite 36: Beat-by-Beat Streaming, Story Bible First & Deferred Thumbnail',
+    '36.3 Extracts Completed Stage 3 Prompts Incrementally in Single-Scene and Multi-Scene Buffers',
+    `single=${stage3SinglePartial.prompts?.length || 0} batchS2=${stage3BatchPartial.scenes[1]?.prompts?.length || 0}`
+  );
+
+  // 36.4 Story Bible First partial builder returns valid Bible state (scenes: []) with deferred thumbnail: undefined
+  const sampleReq: GenerateStoryRequest = {
+    story: 'A courier pauses on a rainy bridge and hears a bell.',
+    characterStyle: 'Atmospheric ink-wash animation',
+    format: 'short',
+    platform: 'tiktok',
+    durationMode: 'automatic',
+    generationMode: 'image',
+    modelQuality: 'standard',
+  };
+  const bibleOnlyResult = buildPartialStoryResultFromStream({
+    partial: {
+      styleProfile: {
+        artStyle: 'Atmospheric ink-wash animation',
+        colorPalette: 'Slate gray and warm lantern amber',
+        lighting: 'Low-key nocturnal fog',
+        eraAndSetting: 'Rainy stone harbor bridge',
+      },
+      characterSheet: {
+        Courier: 'Lean young woman in a dark hooded wool cloak and damp boots',
+      },
+      locationSheet: {
+        'Harbor Bridge': 'Mossy arched stone bridgeslick with midnight rain',
+      },
+      scenes: [],
+    },
+    req: sampleReq,
+    isLongForm: false,
+    isVideoMode: false,
+    targetVideoDuration: 5,
+    stageLabel: 'Story Bible locked. Streaming Scene 1, Beat 1...',
+  });
+  const beat1StreamedResult = buildPartialStoryResultFromStream({
+    partial: {
+      styleProfile: {
+        artStyle: 'Atmospheric ink-wash animation',
+        colorPalette: 'Slate gray and warm lantern amber',
+        lighting: 'Low-key nocturnal fog',
+        eraAndSetting: 'Rainy stone harbor bridge',
+      },
+      scenes: beat1Partial.scenes,
+    },
+    req: sampleReq,
+    isLongForm: false,
+    isVideoMode: false,
+    targetVideoDuration: 5,
+  });
+  assert(
+    bibleOnlyResult !== null &&
+      bibleOnlyResult.scenes.length === 0 &&
+      bibleOnlyResult.thumbnail === undefined &&
+      bibleOnlyResult.progress?.isPartial === true &&
+      bibleOnlyResult.progress?.stageLabel?.includes('Story Bible') &&
+      beat1StreamedResult !== null &&
+      beat1StreamedResult.scenes.length === 1 &&
+      beat1StreamedResult.scenes[0].beats.length === 1 &&
+      beat1StreamedResult.thumbnail === undefined &&
+      beat1StreamedResult.progress?.stageLabel?.includes('Scene 1, Beat 1'),
+    'Suite 36: Beat-by-Beat Streaming, Story Bible First & Deferred Thumbnail',
+    '36.4 Builds Story Bible First Partial State & Beat 1 Partial State With Deferred Thumbnail Undefined',
+    `bibleScenes=${bibleOnlyResult?.scenes.length} thumb=${String(bibleOnlyResult?.thumbnail)} label=${beat1StreamedResult?.progress?.stageLabel}`
+  );
+}
+
 runTestSuite21().then(async () => {
   runTestSuite23();
   runTestSuite24();
@@ -3886,6 +4062,7 @@ runTestSuite21().then(async () => {
   runTestSuite33();
   runTestSuite34();
   await runTestSuite35();
+  runTestSuite36();
   console.log('\n====================================================================');
   console.log('                  FULL-SYSTEM VERIFICATION REPORT                  ');
   console.log('====================================================================');

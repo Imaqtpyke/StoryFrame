@@ -6,7 +6,7 @@
 
 import { StoryBible, StoryFormat, GenerationMode, AiProvider } from '../types';
 import { PlannedBeat } from './stage2BeatPlan';
-import { executeGeminiSchemaCall, executeJsonLlmCall } from './unifiedAiService';
+import { executeGeminiSchemaCall, executeJsonLlmCall, streamJsonLlmWithSceneProgress } from './unifiedAiService';
 
 export interface WrittenPromptBeat extends PlannedBeat {
   imagePrompt: string;
@@ -66,7 +66,8 @@ export async function stage3WriteScenePrompts(
   userSignal?: AbortSignal,
   onStatusMessage?: (msg: string) => void,
   provider: AiProvider = 'gemini',
-  groqModel?: string
+  groqModel?: string,
+  onProgress?: (partialBeats: WrittenPromptBeat[]) => void
 ): Promise<WrittenPromptBeat[]> {
   // Formulate prompt context
   const beatsSummary = beats.map((b) => {
@@ -148,11 +149,62 @@ CRITICAL RULES FOR WRITING EACH PROMPT (35 to 60 crisp words per prompt - no pad
 6. WITHHELD PROTECTION:
    - If a beat is marked withheld-effect, show ONLY the environmental consequence (frost spreading across flagstones, bell swinging empty in the belfry, faces turning in horror), NEVER the hidden source.
 
-Output valid JSON matching SCENE_PROMPTS_SCHEMA.`;
+Output ONLY raw JSON matching this exact structure (start directly with "sceneIndex" and "prompts" in exact beatIndex order so Beat 1 streams first):
+{
+  "sceneIndex": ${sceneIndex},
+  "prompts": [
+    {
+      "beatIndex": 1,
+      "imagePrompt": "Crisp self-contained prompt matching all rules above..."
+    }
+  ]
+}`;
+
+  const mapRawPromptsToWritten = (rawPromptList: any[]): WrittenPromptBeat[] => {
+    const promptMap = new Map<number, string>();
+    for (const item of rawPromptList || []) {
+      if (typeof item?.beatIndex === 'number' && typeof item?.imagePrompt === 'string' && item.imagePrompt.trim()) {
+        promptMap.set(item.beatIndex, item.imagePrompt.trim());
+      }
+    }
+    return beats
+      .filter((b) => promptMap.has(b.beatIndex))
+      .map((b) => ({
+        ...b,
+        imagePrompt: promptMap.get(b.beatIndex)!,
+      }));
+  };
 
   let parsed: any;
 
-  if (provider === 'groq') {
+  if (onProgress) {
+    parsed = await streamJsonLlmWithSceneProgress<any>({
+      provider,
+      apiKey,
+      systemPrompt: 'You are a cinematic prompt engineer writing visual prompts. Output valid raw JSON only.',
+      userPrompt: systemInstruction,
+      modelQuality,
+      groqModel,
+      userSignal,
+      onStatusMessage,
+      temperature: 0.2,
+      topP: 0.85,
+      thinkingLevel: 'minimal',
+      onPartialStoryboard: (partial) => {
+        const partialPrompts =
+          Array.isArray(partial.prompts) && partial.prompts.length > 0
+            ? partial.prompts
+            : Array.isArray(partial.scenes?.[0]?.prompts)
+              ? partial.scenes[0].prompts
+              : [];
+        if (partialPrompts.length === 0) return;
+        const writtenPartial = mapRawPromptsToWritten(partialPrompts);
+        if (writtenPartial.length > 0) {
+          onProgress(writtenPartial);
+        }
+      },
+    });
+  } else if (provider === 'groq') {
     parsed = await executeJsonLlmCall<any>({
       provider: 'groq',
       apiKey,
@@ -213,7 +265,8 @@ export async function stage3WriteScenePromptsBatch(
   userSignal?: AbortSignal,
   onStatusMessage?: (msg: string) => void,
   provider: AiProvider = 'gemini',
-  groqModel?: string
+  groqModel?: string,
+  onProgress?: (partialMap: Map<number, WrittenPromptBeat[]>) => void
 ): Promise<Map<number, WrittenPromptBeat[]>> {
   if (sceneBatch.length === 0) return new Map();
   if (sceneBatch.length === 1) {
@@ -230,7 +283,12 @@ export async function stage3WriteScenePromptsBatch(
       userSignal,
       onStatusMessage,
       provider,
-      groqModel
+      groqModel,
+      onProgress
+        ? (partialBeats) => {
+            onProgress(new Map([[single.sceneIndex, partialBeats]]));
+          }
+        : undefined
     );
     return new Map([[single.sceneIndex, written]]);
   }
@@ -309,11 +367,74 @@ CRITICAL RULES FOR WRITING EACH PROMPT (35 to 60 crisp words per prompt - no pad
 5. FIGURATIVE RESOLUTION & WITHHELD PROTECTION:
    - Draw concrete story-world referents for figurative lines and environmental effects only for withheld-effect lines.
 
-Output valid JSON matching the schema with an entry in "scenes" for every sceneIndex (${sceneBatch.map((s) => s.sceneIndex).join(', ')}).`;
+Output ONLY valid raw JSON matching this exact structure (write scenes in exact sequential order [${sceneBatch.map((s) => s.sceneIndex).join(', ')}] and beats in order):
+{
+  "scenes": [
+    {
+      "sceneIndex": ${sceneBatch[0].sceneIndex},
+      "prompts": [
+        {
+          "beatIndex": 1,
+          "imagePrompt": "Crisp self-contained prompt matching all rules above..."
+        }
+      ]
+    }
+  ]
+}`;
+
+  const mapRawScenesToPartialMap = (rawScenesList: any[]): Map<number, WrittenPromptBeat[]> => {
+    const partialMap = new Map<number, WrittenPromptBeat[]>();
+    for (let idx = 0; idx < rawScenesList.length; idx++) {
+      const sc = rawScenesList[idx];
+      const targetBatchScene =
+        (typeof sc?.sceneIndex === 'number'
+          ? sceneBatch.find((b) => b.sceneIndex === sc.sceneIndex)
+          : undefined) || sceneBatch[idx];
+      if (!targetBatchScene) continue;
+
+      const bMap = new Map<number, string>();
+      for (const item of sc?.prompts || []) {
+        if (typeof item?.beatIndex === 'number' && typeof item?.imagePrompt === 'string' && item.imagePrompt.trim()) {
+          bMap.set(item.beatIndex, item.imagePrompt.trim());
+        }
+      }
+      const completedBeats = targetBatchScene.beats
+        .filter((b) => bMap.has(b.beatIndex))
+        .map((b) => ({
+          ...b,
+          imagePrompt: bMap.get(b.beatIndex)!,
+        }));
+      if (completedBeats.length > 0) {
+        partialMap.set(targetBatchScene.sceneIndex, completedBeats);
+      }
+    }
+    return partialMap;
+  };
 
   let parsed: any;
 
-  if (provider === 'groq') {
+  if (onProgress) {
+    parsed = await streamJsonLlmWithSceneProgress<any>({
+      provider,
+      apiKey,
+      systemPrompt: 'You are a cinematic prompt engineer writing batched visual prompts. Output valid raw JSON only.',
+      userPrompt: batchInstruction,
+      modelQuality,
+      groqModel,
+      userSignal,
+      onStatusMessage,
+      temperature: 0.2,
+      topP: 0.85,
+      thinkingLevel: 'minimal',
+      onPartialStoryboard: (partial) => {
+        if (!Array.isArray(partial.scenes) || partial.scenes.length === 0) return;
+        const partialMap = mapRawScenesToPartialMap(partial.scenes);
+        if (partialMap.size > 0) {
+          onProgress(partialMap);
+        }
+      },
+    });
+  } else if (provider === 'groq') {
     parsed = await executeJsonLlmCall<any>({
       provider: 'groq',
       apiKey,

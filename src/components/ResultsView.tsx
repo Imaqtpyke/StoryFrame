@@ -59,8 +59,6 @@ interface ResultsViewProps {
     characterSheet?: Record<string, string>;
   }) => void;
   isGeneratingMore?: boolean;
-  isAwaitingContinue?: boolean;
-  onConfirmContinue?: (shouldContinue: boolean) => void;
   totalPlannedScenes?: number;
   generationStatusMessage?: string | null;
   onCancelGeneration?: () => void;
@@ -105,8 +103,6 @@ export default function ResultsView({
   onReset,
   onStartEpisodeDraft,
   isGeneratingMore = false,
-  isAwaitingContinue = false,
-  onConfirmContinue,
   totalPlannedScenes,
   generationStatusMessage,
   onCancelGeneration,
@@ -322,7 +318,10 @@ export default function ResultsView({
   const [customCtaQuestion, setCustomCtaQuestion] = useState<string>('');
   const [isEditingQuestion, setIsEditingQuestion] = useState<boolean>(false);
 
+  const isStoryboardReadyForOutro = !isGeneratingMore && normalizedScenes.length > 0;
+
   const activeThumbnail = useMemo(() => {
+    if (!isStoryboardReadyForOutro) return null;
     if (result.thumbnail) return result.thumbnail;
     return compileThumbnailPrompt({
       rawThumbnail: undefined,
@@ -332,9 +331,10 @@ export default function ResultsView({
       format,
       platform,
     });
-  }, [result.thumbnail, result.styleProfile, result.characterSheet, fullScript, format, platform]);
+  }, [isStoryboardReadyForOutro, result.thumbnail, result.styleProfile, result.characterSheet, fullScript, format, platform]);
 
   const activeCta = useMemo(() => {
+    if (!isStoryboardReadyForOutro) return null;
     return compileCtaPrompt({
       storyPremise: fullScript || '',
       styleProfile: result.styleProfile,
@@ -345,7 +345,7 @@ export default function ResultsView({
       questionText: customCtaQuestion,
       engagementType: ctaEngagementType,
     });
-  }, [fullScript, result.styleProfile, result.characterSheet, format, ctaPlatform, ctaModality, customCtaQuestion, ctaEngagementType]);
+  }, [isStoryboardReadyForOutro, fullScript, result.styleProfile, result.characterSheet, format, ctaPlatform, ctaModality, customCtaQuestion, ctaEngagementType]);
 
   const effectiveTotalDuration = useMemo(() => {
     const sum = Math.round(normalizedScenes.reduce((acc, s) => acc + (s.estimatedSeconds || 0), 0) * 10) / 10;
@@ -442,8 +442,8 @@ export default function ResultsView({
     const exportPayload = {
       ...result,
       scenes: normalizedScenes,
-      thumbnail: activeThumbnail,
-      ctaPrompt: activeCta,
+      thumbnail: activeThumbnail || undefined,
+      ctaPrompt: activeCta || undefined,
     };
     const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(exportPayload, null, 2));
     const downloadAnchor = document.createElement('a');
@@ -569,20 +569,24 @@ export default function ResultsView({
       md += `\n`;
     });
 
-    md += `## Production Cover & Hero Thumbnail\n\n`;
-    md += `- **Aspect Ratio**: ${activeThumbnail.aspectRatio}\n`;
-    md += `- **Curiosity Hook**: "${activeThumbnail.hookText}"\n`;
-    md += `- **Typography Style**: ${activeThumbnail.fontStyle}\n\n`;
-    md += `### Production Thumbnail Prompt (With Typography)\n\`\`\`text\n${activeThumbnail.compiledPrompt}\n\`\`\`\n\n`;
-    md += `### Clean Plate Prompt (Background Only)\n\`\`\`text\n${activeThumbnail.cleanPlatePrompt}\n\`\`\`\n\n`;
+    if (activeThumbnail) {
+      md += `## Production Cover & Hero Thumbnail\n\n`;
+      md += `- **Aspect Ratio**: ${activeThumbnail.aspectRatio}\n`;
+      md += `- **Curiosity Hook**: "${activeThumbnail.hookText}"\n`;
+      md += `- **Typography Style**: ${activeThumbnail.fontStyle}\n\n`;
+      md += `### Production Thumbnail Prompt (With Typography)\n\`\`\`text\n${activeThumbnail.compiledPrompt}\n\`\`\`\n\n`;
+      md += `### Clean Plate Prompt (Background Only)\n\`\`\`text\n${activeThumbnail.cleanPlatePrompt}\n\`\`\`\n\n`;
+    }
 
-    md += `## Story-Adaptive Call-to-Action Outro Prompt\n\n`;
-    md += `- **Platform**: ${activeCta.platform}\n`;
-    md += `- **Modality**: ${activeCta.modality === 'video' ? 'Text to Video Loop (~3s)' : 'Text to Image Freeze Frame'}\n`;
-    md += `- **Intrigue Question**: "${activeCta.questionText}"\n`;
-    md += `- **Engagement Focus**: ${activeCta.engagementType}\n\n`;
-    md += `### Production CTA Prompt (With Graphic Callout)\n\`\`\`text\n${activeCta.compiledPrompt}\n\`\`\`\n\n`;
-    md += `### Clean Plate CTA Prompt (Background Loop Only)\n\`\`\`text\n${activeCta.cleanPlatePrompt}\n\`\`\`\n\n`;
+    if (activeCta) {
+      md += `## Story-Adaptive Call-to-Action Outro Prompt\n\n`;
+      md += `- **Platform**: ${activeCta.platform}\n`;
+      md += `- **Modality**: ${activeCta.modality === 'video' ? 'Text to Video Loop (~3s)' : 'Text to Image Freeze Frame'}\n`;
+      md += `- **Intrigue Question**: "${activeCta.questionText}"\n`;
+      md += `- **Engagement Focus**: ${activeCta.engagementType}\n\n`;
+      md += `### Production CTA Prompt (With Graphic Callout)\n\`\`\`text\n${activeCta.compiledPrompt}\n\`\`\`\n\n`;
+      md += `### Clean Plate CTA Prompt (Background Loop Only)\n\`\`\`text\n${activeCta.cleanPlatePrompt}\n\`\`\`\n\n`;
+    }
 
     const dataStr = 'data:text/markdown;charset=utf-8,' + encodeURIComponent(md);
     const downloadAnchor = document.createElement('a');
@@ -686,126 +690,92 @@ export default function ResultsView({
         </div>
       </div>
 
-      {/* Live Progressive Scene-by-Scene Status & Continue Confirmation Banner */}
-      {(isGeneratingMore || isAwaitingContinue || result.progress?.awaitingContinueConfirmation) && (() => {
-        const showContinuePrompt = Boolean(isAwaitingContinue || result.progress?.awaitingContinueConfirmation);
-        return (
-          <div
-            id="live-generation-banner"
-            role="status"
-            aria-live="polite"
-            className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 bg-[#161614] border border-amber-500/40 rounded-[3px]"
-          >
-            {showContinuePrompt ? (
-              <>
-                <div className="flex items-start sm:items-center gap-3 min-w-0">
-                  <Clock size={15} className="text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
-                  <div className="min-w-0 space-y-0.5">
-                    <div id="continue-prompt-question" className="text-xs sm:text-sm font-display font-medium text-white">
-                      Would you like to continue?
-                    </div>
-                    <p className="text-xs text-[#A0A09A]">
-                      {normalizedScenes.length}
-                      {totalPlannedScenes ? ` of ${totalPlannedScenes}` : ''} scenes are finished. Choose Yes to continue generating the remaining scenes, or No to stop at Scene 2.
-                    </p>
-                  </div>
-                </div>
-                {onConfirmContinue && (
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      id="confirm-continue-yes-btn"
-                      onClick={() => onConfirmContinue(true)}
-                      className="inline-flex items-center justify-center px-4 py-1.5 bg-white text-black hover:bg-[#EAEAE5] text-xs font-display font-semibold transition-colors rounded-[3px] whitespace-nowrap shrink-0 cursor-pointer"
-                    >
-                      Yes
-                    </button>
-                    <button
-                      type="button"
-                      id="confirm-continue-no-btn"
-                      onClick={() => onConfirmContinue(false)}
-                      className="inline-flex items-center justify-center px-4 py-1.5 bg-[#1E1E1B] hover:bg-red-950/50 text-[#E6E6E0] hover:text-red-200 border border-white/15 hover:border-red-500/40 text-xs font-display font-medium transition-colors rounded-[3px] whitespace-nowrap shrink-0 cursor-pointer"
-                    >
-                      No
-                    </button>
-                  </div>
-                )}
-              </>
-            ) : (
-              <>
-                <div className="flex items-start sm:items-center gap-3 min-w-0">
-                  <span className="w-2 h-2 rounded-[1px] bg-amber-400 animate-pulse shrink-0 mt-1.5 sm:mt-0" />
-                  <div className="min-w-0 space-y-0.5">
-                    <div className="text-xs sm:text-sm font-display font-medium text-white">
-                      Rendering Finished Scenes: {normalizedScenes.length}
-                      {totalPlannedScenes ? ` of ${totalPlannedScenes}` : ''} Scenes Ready
-                    </div>
-                    <p className="text-xs text-[#A0A09A] truncate">
-                      {generationStatusMessage ||
-                        'Only completed scenes and beats are shown below. Remaining scenes appear automatically as they finish.'}
-                    </p>
-                  </div>
-                </div>
-                {onCancelGeneration && (
-                  <button
-                    type="button"
-                    id="stop-live-generation-btn"
-                    onClick={onCancelGeneration}
-                    className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-[#1E1E1B] hover:bg-red-950/50 text-[#E6E6E0] hover:text-red-200 border border-white/15 hover:border-red-500/40 text-xs font-display font-medium transition-colors rounded-[3px] shrink-0 cursor-pointer"
-                  >
-                    <Square size={11} className="shrink-0" />
-                    <span>Stop Generation</span>
-                  </button>
-                )}
-              </>
-            )}
+      {/* Live Progressive Scene-by-Scene & Beat-by-Beat Streaming Banner */}
+      {isGeneratingMore && (
+        <div
+          id="live-generation-banner"
+          role="status"
+          aria-live="polite"
+          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 bg-[#161614] border border-amber-500/40 rounded-[3px]"
+        >
+          <div className="flex items-start sm:items-center gap-3 min-w-0">
+            <span className="w-2 h-2 rounded-[1px] bg-amber-400 animate-pulse shrink-0 mt-1.5 sm:mt-0" />
+            <div className="min-w-0 space-y-0.5">
+              <div className="text-xs sm:text-sm font-display font-medium text-white">
+                {normalizedScenes.length > 0
+                  ? `Streaming Storyboard: ${normalizedScenes.length}${totalPlannedScenes ? ` of ${totalPlannedScenes}` : ''} ${normalizedScenes.length === 1 ? 'Scene' : 'Scenes'} (${totalBeatsCount} ${totalBeatsCount === 1 ? 'Beat' : 'Beats'})`
+                  : 'Story Bible Locked: Preparing Scene 1, Beat 1'}
+              </div>
+              <p className="text-xs text-[#A0A09A] truncate">
+                {result.progress?.stageLabel ||
+                  generationStatusMessage ||
+                  'Completed beats appear below live as they finish. Thumbnail and CTA Outro compile after the final scene.'}
+              </p>
+            </div>
           </div>
-        );
-      })()}
+          {onCancelGeneration && (
+            <button
+              type="button"
+              id="stop-live-generation-btn"
+              onClick={onCancelGeneration}
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-[#1E1E1B] hover:bg-red-950/50 text-[#E6E6E0] hover:text-red-200 border border-white/15 hover:border-red-500/40 text-xs font-display font-medium transition-colors rounded-[3px] shrink-0 cursor-pointer"
+            >
+              <Square size={11} className="shrink-0" />
+              <span>Stop Generation</span>
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Readable Scene & Section Jump Strip */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
-        {sceneTimelineRanges.map((range) => {
-          const roman = toRomanNumeral(range.sceneIndex);
-          return (
+      {(sceneTimelineRanges.length > 0 || isStoryboardReadyForOutro) && (
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
+          {sceneTimelineRanges.map((range) => {
+            const roman = toRomanNumeral(range.sceneIndex);
+            return (
+              <button
+                key={range.sceneIndex}
+                type="button"
+                onClick={() => scrollToScene(range.sceneIndex)}
+                className="px-3 py-1.5 bg-[#121211] hover:bg-[#1E1E1C] border border-white/15 hover:border-white/30 rounded-[3px] transition-colors text-xs font-mono text-[#C4C4BE] hover:text-white whitespace-nowrap shrink-0 tabular-nums cursor-pointer"
+                title={`Jump to Scene ${roman} (${formatTimecode(range.startSec)} - ${formatTimecode(range.endSec)})`}
+              >
+                Scene {roman} (~{range.estimatedSeconds}s)
+              </button>
+            );
+          })}
+          {isStoryboardReadyForOutro && activeThumbnail && (
             <button
-              key={range.sceneIndex}
               type="button"
-              onClick={() => scrollToScene(range.sceneIndex)}
-              className="px-3 py-1.5 bg-[#121211] hover:bg-[#1E1E1C] border border-white/15 hover:border-white/30 rounded-[3px] transition-colors text-xs font-mono text-[#C4C4BE] hover:text-white whitespace-nowrap shrink-0 tabular-nums cursor-pointer"
-              title={`Jump to Scene ${roman} (${formatTimecode(range.startSec)} - ${formatTimecode(range.endSec)})`}
+              id="jump-to-thumbnail-btn"
+              onClick={() => {
+                setIsThumbnailExpanded(true);
+                const el = document.getElementById('thumbnail-cover-panel');
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+              className="px-3 py-1.5 bg-[#121211] hover:bg-[#1E1E1C] border border-white/15 hover:border-amber-400/50 rounded-[3px] transition-colors text-xs font-display text-[#C4C4BE] hover:text-white whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 cursor-pointer"
             >
-              Scene {roman} (~{range.estimatedSeconds}s)
+              <ImageIcon size={12} className="text-amber-400" />
+              <span>Thumbnail</span>
             </button>
-          );
-        })}
-        <button
-          type="button"
-          id="jump-to-thumbnail-btn"
-          onClick={() => {
-            setIsThumbnailExpanded(true);
-            const el = document.getElementById('thumbnail-cover-panel');
-            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }}
-          className="px-3 py-1.5 bg-[#121211] hover:bg-[#1E1E1C] border border-white/15 hover:border-amber-400/50 rounded-[3px] transition-colors text-xs font-display text-[#C4C4BE] hover:text-white whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 cursor-pointer"
-        >
-          <ImageIcon size={12} className="text-amber-400" />
-          <span>Thumbnail</span>
-        </button>
-        <button
-          type="button"
-          id="jump-to-cta-btn"
-          onClick={() => {
-            setIsCtaExpanded(true);
-            const el = document.getElementById('cta-outro-panel');
-            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }}
-          className="px-3 py-1.5 bg-[#121211] hover:bg-[#1E1E1C] border border-white/15 hover:border-amber-400/50 rounded-[3px] transition-colors text-xs font-display text-[#C4C4BE] hover:text-white whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 cursor-pointer"
-        >
-          <Zap size={12} className="text-amber-400" />
-          <span>CTA Outro</span>
-        </button>
-      </div>
+          )}
+          {isStoryboardReadyForOutro && activeCta && (
+            <button
+              type="button"
+              id="jump-to-cta-btn"
+              onClick={() => {
+                setIsCtaExpanded(true);
+                const el = document.getElementById('cta-outro-panel');
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+              className="px-3 py-1.5 bg-[#121211] hover:bg-[#1E1E1C] border border-white/15 hover:border-amber-400/50 rounded-[3px] transition-colors text-xs font-display text-[#C4C4BE] hover:text-white whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              <Zap size={12} className="text-amber-400" />
+              <span>CTA Outro</span>
+            </button>
+          )}
+        </div>
+      )}
 
       {(result.assumptions || []).some((a) => a.startsWith('Script coverage notice:')) && (
         <div
@@ -826,8 +796,78 @@ export default function ResultsView({
 
       {/* Main 2-Column Workspace on Desktop: Left Scenes (7/12) + Right Sticky Beat Inspector (5/12) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* LEFT COLUMN (7/12 on lg, full width below lg): Storyboard Scenes + Thumbnail + CTA + Script */}
+        {/* LEFT COLUMN (7/12 on lg, full width below lg): Story Bible Lock + Storyboard Scenes + Deferred Thumbnail/CTA/Script */}
         <div className="lg:col-span-7 space-y-6">
+          {(isGeneratingMore || normalizedScenes.length === 0) && (result.styleProfile || characterEntries.length > 0) && (
+            <div
+              id="story-bible-lock-card"
+              className="bg-[#121211] border border-white/15 rounded-[3px] p-4 space-y-3"
+            >
+              <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <Layers size={14} className="text-amber-400 shrink-0" />
+                  <span className="font-display text-xs sm:text-sm font-medium text-white">
+                    Story Bible Lock
+                  </span>
+                </div>
+                <span className="stamp-chip bg-emerald-950/60 text-emerald-300 border-emerald-700/60 text-[9px]">
+                  CONTINUITY LOCKED
+                </span>
+              </div>
+
+              {result.styleProfile && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                  <div className="bg-[#0C0C0B] p-2.5 border border-white/10 rounded-[3px]">
+                    <span className="font-editorial-meta text-[9px] text-[#8C8C86] block mb-0.5">
+                      ART STYLE
+                    </span>
+                    <p className="text-[#E6E6E1] line-clamp-2">{result.styleProfile.artStyle}</p>
+                  </div>
+                  <div className="bg-[#0C0C0B] p-2.5 border border-white/10 rounded-[3px]">
+                    <span className="font-editorial-meta text-[9px] text-[#8C8C86] block mb-0.5">
+                      ERA &amp; SETTING
+                    </span>
+                    <p className="text-[#E6E6E1] line-clamp-2">{result.styleProfile.eraAndSetting}</p>
+                  </div>
+                </div>
+              )}
+
+              {characterEntries.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pt-0.5">
+                  {characterEntries.map(([name]) => (
+                    <span
+                      key={name}
+                      className="px-2 py-1 bg-[#161614] border border-white/10 rounded-[3px] text-[11px] font-mono text-[#D4D4D0]"
+                    >
+                      {name}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {normalizedScenes.length === 0 && isGeneratingMore && (
+            <div
+              id="streaming-first-beat-placeholder"
+              className="bg-[#121211] border border-white/15 rounded-[3px] p-5 space-y-3"
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="w-2 h-2 rounded-[1px] bg-amber-400 animate-pulse shrink-0" />
+                <span className="font-display text-sm font-medium text-white">
+                  Streaming Scene 1, Beat 1...
+                </span>
+              </div>
+              <p className="text-xs text-[#9C9C96] leading-relaxed">
+                Your Story Bible is locked above. Visual beats will appear here one by one as they stream in.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div className="h-24 bg-[#161614] border border-white/10 rounded-[3px] animate-pulse" />
+                <div className="h-24 bg-[#161614] border border-white/10 rounded-[3px] animate-pulse" />
+              </div>
+            </div>
+          )}
+
           <div className="space-y-5" id="scene-cards-container">
             {normalizedScenes.map((scene) => {
               const isCopiedNarration = copiedIndex === `narration-${scene.index}`;
@@ -1013,7 +1053,8 @@ export default function ResultsView({
             })}
           </div>
 
-          {/* Production Cover & Thumbnail Blueprint */}
+          {/* Production Cover & Thumbnail Blueprint (Deferred until storyboard scenes finish) */}
+          {isStoryboardReadyForOutro && activeThumbnail && (
           <div
             id="thumbnail-cover-panel"
             className="bg-[#121211] border border-white/15 rounded-[3px] overflow-hidden"
@@ -1175,8 +1216,10 @@ export default function ResultsView({
               </div>
             )}
           </div>
+          )}
 
-          {/* Story-Adaptive Call-to-Action Outro */}
+          {/* Story-Adaptive Call-to-Action Outro (Deferred until storyboard scenes finish) */}
+          {isStoryboardReadyForOutro && activeCta && (
           <div
             id="cta-outro-panel"
             className="bg-[#121211] border border-white/15 rounded-[3px] overflow-hidden"
@@ -1488,8 +1531,10 @@ export default function ResultsView({
               </div>
             )}
           </div>
+          )}
 
-          {/* Complete Narrator Script Panel */}
+          {/* Complete Narrator Script Panel (Deferred until storyboard scenes finish) */}
+          {isStoryboardReadyForOutro && (
           <div
             id="full-script-panel"
             className="bg-[#121211] border border-white/15 rounded-[3px] p-4 sm:p-5 space-y-3.5"
@@ -1534,8 +1579,10 @@ export default function ResultsView({
               <span>Estimated Pacing: ~{formatSecondsToMinutes(result.totalDurationSeconds)}</span>
             </div>
           </div>
+          )}
 
           {/* Bottom Export Strip */}
+          {isStoryboardReadyForOutro && (
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 sm:p-5 bg-[#121211] border border-white/15 rounded-[3px]">
             <div className="text-center sm:text-left">
               <span className="text-sm font-medium font-display text-white block">
@@ -1629,6 +1676,7 @@ export default function ResultsView({
               )}
             </div>
           </div>
+          )}
         </div>
 
         {/* RIGHT COLUMN (5/12 on lg+): Sticky Beat Inspector Panel */}
@@ -1847,7 +1895,9 @@ export default function ResultsView({
             })()
           ) : (
             <div className="bg-[#121211] border border-white/15 rounded-[3px] p-6 text-center text-sm text-[#8C8C86]">
-              Select any beat card on the left to inspect its camera direction and visual prompt.
+              {isGeneratingMore && normalizedScenes.length === 0
+                ? 'Story Bible locked. Waiting for Scene 1, Beat 1 to finish streaming...'
+                : 'Select any beat card on the left to inspect its camera direction and visual prompt.'}
             </div>
           )}
         </aside>

@@ -368,6 +368,8 @@ export interface PartialStoryboardStreamState {
   locationSheet?: Record<string, string>;
   hookAnalysis?: Record<string, any>;
   thumbnail?: Record<string, any>;
+  sceneIndex?: number;
+  prompts?: Array<Record<string, any>>;
   scenes: Array<Record<string, any>>;
 }
 
@@ -448,11 +450,168 @@ export function extractCompletedStoryboardFields(buffer: string): PartialStorybo
     return null;
   };
 
-  const skipScalarOrNull = (): boolean => {
-    while (i < len && !/[,}\]]/.test(buffer[i])) {
-      i++;
+  const readScalarValue = (buf: string, startPos: number): { value: any; nextPos: number } | null => {
+    let pos = startPos;
+    const n = buf.length;
+    while (pos < n && !/[,}\]]/.test(buf[pos])) pos++;
+    if (pos >= n) return null;
+    const raw = buf.slice(startPos, pos).trim();
+    if (!raw) return { value: undefined, nextPos: pos };
+    try {
+      return { value: JSON.parse(raw), nextPos: pos };
+    } catch {
+      return { value: undefined, nextPos: pos };
     }
-    return i < len;
+  };
+
+  /**
+   * Scans an unclosed Scene object slice (`{ ...`) and returns a partial scene
+   * object ONLY if it already contains at least one completed beat or prompt item.
+   */
+  const extractPartialOpenScene = (openSlice: string): Record<string, any> | null => {
+    const oLen = openSlice.length;
+    if (oLen < 2 || openSlice[0] !== '{') return null;
+    let j = 1;
+
+    const skipO = () => {
+      while (j < oLen && /[\s,]/.test(openSlice[j])) j++;
+    };
+
+    const readStrO = (): string | null => {
+      if (openSlice[j] !== '"') return null;
+      const st = j;
+      j++;
+      let esc = false;
+      while (j < oLen) {
+        const c = openSlice[j];
+        if (esc) esc = false;
+        else if (c === '\\') esc = true;
+        else if (c === '"') {
+          const slice = openSlice.slice(st, j + 1);
+          j++;
+          try {
+            return JSON.parse(slice);
+          } catch {
+            return null;
+          }
+        }
+        j++;
+      }
+      return null;
+    };
+
+    const readCompO = (openC: '{' | '[', closeC: '}' | ']'): string | null => {
+      if (openSlice[j] !== openC) return null;
+      const st = j;
+      let d = 0;
+      let inStr = false;
+      let esc = false;
+      while (j < oLen) {
+        const c = openSlice[j];
+        if (inStr) {
+          if (esc) esc = false;
+          else if (c === '\\') esc = true;
+          else if (c === '"') inStr = false;
+        } else {
+          if (c === '"') inStr = true;
+          else if (c === openC) d++;
+          else if (c === closeC) {
+            d--;
+            if (d === 0) {
+              j++;
+              return openSlice.slice(st, j);
+            }
+          }
+        }
+        j++;
+      }
+      return null;
+    };
+
+    let sceneIndex: number | undefined;
+    let narratorLine: string | undefined;
+    let estimatedSeconds: number | undefined;
+    const completedBeats: Array<Record<string, any>> = [];
+    const completedPrompts: Array<Record<string, any>> = [];
+
+    while (j < oLen) {
+      skipO();
+      if (j >= oLen || openSlice[j] === '}') break;
+      if (openSlice[j] !== '"') break;
+      const k = readStrO();
+      if (k === null) break;
+      skipO();
+      if (j >= oLen || openSlice[j] !== ':') break;
+      j++;
+      skipO();
+      if (j >= oLen) break;
+
+      const chO = openSlice[j];
+      if ((k === 'beats' || k === 'prompts') && chO === '[') {
+        j++; // enter array
+        while (j < oLen) {
+          skipO();
+          if (j >= oLen || openSlice[j] === ']') {
+            if (j < oLen) j++;
+            break;
+          }
+          if (openSlice[j] === '{') {
+            const itemSlice = readCompO('{', '}');
+            if (!itemSlice) {
+              break;
+            }
+            try {
+              const parsedItem = JSON.parse(itemSlice);
+              if (parsedItem && typeof parsedItem === 'object') {
+                if (k === 'beats') completedBeats.push(parsedItem);
+                else completedPrompts.push(parsedItem);
+              }
+            } catch {
+              break;
+            }
+          } else {
+            break;
+          }
+        }
+        continue;
+      }
+
+      if (chO === '{') {
+        const s = readCompO('{', '}');
+        if (!s) break;
+      } else if (chO === '[') {
+        const s = readCompO('[', ']');
+        if (!s) break;
+      } else if (chO === '"') {
+        const val = readStrO();
+        if (val === null) break;
+        if (k === 'narratorLine') narratorLine = val;
+      } else {
+        const sc = readScalarValue(openSlice, j);
+        if (!sc) break;
+        j = sc.nextPos;
+        if ((k === 'index' || k === 'sceneIndex') && typeof sc.value === 'number') {
+          sceneIndex = sc.value;
+        } else if (k === 'estimatedSeconds' && typeof sc.value === 'number') {
+          estimatedSeconds = sc.value;
+        }
+      }
+    }
+
+    if (completedBeats.length === 0 && completedPrompts.length === 0) {
+      return null;
+    }
+
+    const partialScene: Record<string, any> = {};
+    if (typeof sceneIndex === 'number') {
+      partialScene.index = sceneIndex;
+      partialScene.sceneIndex = sceneIndex;
+    }
+    if (typeof narratorLine === 'string') partialScene.narratorLine = narratorLine;
+    if (typeof estimatedSeconds === 'number') partialScene.estimatedSeconds = estimatedSeconds;
+    if (completedBeats.length > 0) partialScene.beats = completedBeats;
+    if (completedPrompts.length > 0) partialScene.prompts = completedPrompts;
+    return partialScene;
   };
 
   const result: PartialStoryboardStreamState = { scenes: [] };
@@ -479,13 +638,18 @@ export function extractCompletedStoryboardFields(buffer: string): PartialStorybo
       while (i < len) {
         skipWsAndCommas();
         if (i >= len || buffer[i] === ']') {
-          i++;
+          if (i < len) i++;
           break;
         }
         if (buffer[i] === '{') {
+          const openSceneStart = i;
           const sceneSlice = skipComposite('{', '}');
           if (!sceneSlice) {
-            // Scene still streaming
+            // Scene still streaming: surface any already-completed beats or prompts inside it
+            const partialOpen = extractPartialOpenScene(buffer.slice(openSceneStart));
+            if (partialOpen) {
+              result.scenes.push(partialOpen);
+            }
             return result;
           }
           try {
@@ -500,6 +664,38 @@ export function extractCompletedStoryboardFields(buffer: string): PartialStorybo
           break;
         }
       }
+      continue;
+    }
+
+    if (key === 'prompts' && ch === '[') {
+      i++; // enter top-level Stage 3 prompts array
+      const completedPrompts: Array<Record<string, any>> = [];
+      while (i < len) {
+        skipWsAndCommas();
+        if (i >= len || buffer[i] === ']') {
+          if (i < len) i++;
+          break;
+        }
+        if (buffer[i] === '{') {
+          const promptSlice = skipComposite('{', '}');
+          if (!promptSlice) {
+            if (completedPrompts.length > 0) result.prompts = completedPrompts;
+            return result;
+          }
+          try {
+            const parsedPrompt = JSON.parse(promptSlice);
+            if (parsedPrompt && typeof parsedPrompt === 'object') {
+              completedPrompts.push(parsedPrompt);
+            }
+          } catch {
+            if (completedPrompts.length > 0) result.prompts = completedPrompts;
+            return result;
+          }
+        } else {
+          break;
+        }
+      }
+      if (completedPrompts.length > 0) result.prompts = completedPrompts;
       continue;
     }
 
@@ -523,7 +719,12 @@ export function extractCompletedStoryboardFields(buffer: string): PartialStorybo
       const strRes = readJsonString();
       if (!strRes) break;
     } else {
-      if (!skipScalarOrNull()) break;
+      const sc = readScalarValue(buffer, i);
+      if (!sc) break;
+      i = sc.nextPos;
+      if (key === 'sceneIndex' && typeof sc.value === 'number') {
+        result.sceneIndex = sc.value;
+      }
     }
   }
 
@@ -536,7 +737,7 @@ export interface StreamJsonStoryboardParams extends UnifiedJsonRequest {
 
 /**
  * Streams storyboard JSON incrementally via Gemini SSE (`:streamGenerateContent?alt=sse`) or
- * Groq SSE, invoking `onPartialStoryboard` whenever new completed scenes arrive.
+ * Groq SSE, invoking `onPartialStoryboard` whenever new completed beats, prompts, or scenes arrive.
  * Automatically falls back to `executeJsonLlmCall` if streaming is unavailable.
  */
 export async function streamJsonLlmWithSceneProgress<T = any>(
@@ -576,13 +777,34 @@ export async function streamJsonLlmWithSceneProgress<T = any>(
   }
 
   let accumulatedText = '';
-  let lastEmittedSceneCount = 0;
+  let lastEmittedSignature = '';
   let lastUsageChunk: any = null;
 
   const emitProgressIfReady = () => {
     const partial = extractCompletedStoryboardFields(accumulatedText);
-    if (partial.scenes.length > lastEmittedSceneCount) {
-      lastEmittedSceneCount = partial.scenes.length;
+    const hasData =
+      partial.scenes.length > 0 ||
+      (Array.isArray(partial.prompts) && partial.prompts.length > 0) ||
+      Boolean(partial.styleProfile || partial.characterSheet || partial.hookAnalysis);
+    if (!hasData) return;
+
+    const sceneSig = partial.scenes
+      .map((s: any, idx: number) => {
+        const beatCount = Array.isArray(s?.beats) ? s.beats.length : 0;
+        const promptCount = Array.isArray(s?.prompts) ? s.prompts.length : 0;
+        return `${s?.index ?? s?.sceneIndex ?? idx + 1}:${beatCount}:${promptCount}`;
+      })
+      .join('|');
+    const metaSig = [
+      partial.styleProfile ? 1 : 0,
+      partial.characterSheet ? Object.keys(partial.characterSheet).length : 0,
+      partial.locationSheet ? Object.keys(partial.locationSheet).length : 0,
+      partial.hookAnalysis ? 1 : 0,
+      Array.isArray(partial.prompts) ? partial.prompts.length : 0,
+    ].join(':');
+    const signature = `${metaSig}::${sceneSig}`;
+    if (signature !== lastEmittedSignature) {
+      lastEmittedSignature = signature;
       onPartialStoryboard(partial);
     }
   };
@@ -638,7 +860,7 @@ export async function streamJsonLlmWithSceneProgress<T = any>(
         const { done, value } = await reader.read();
         if (done) break;
         sseBuffer += decoder.decode(value, { stream: true });
-        const lines = sseBuffer.split('\n');
+        const lines = sseBuffer.split(/\r?\n/);
         sseBuffer = lines.pop() || '';
         for (const rawLine of lines) {
           const line = rawLine.trim();
@@ -760,7 +982,7 @@ export async function streamJsonLlmWithSceneProgress<T = any>(
       const { done, value } = await reader.read();
       if (done) break;
       sseBuffer += decoder.decode(value, { stream: true });
-      const lines = sseBuffer.split('\n');
+      const lines = sseBuffer.split(/\r?\n/);
       sseBuffer = lines.pop() || '';
       for (const rawLine of lines) {
         const line = rawLine.trim();

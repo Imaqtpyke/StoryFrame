@@ -187,7 +187,7 @@ Output valid JSON matching the schema.`;
       modelQuality,
       responseSchema: STORY_BIBLE_SCHEMA,
       temperature: 0.2,
-      thinkingLevel: 'low',
+      thinkingLevel: 'minimal',
       errorContext: 'Story Bible generation',
       userSignal,
       onRetryMessage: (attempt, _max, delayMs) => {

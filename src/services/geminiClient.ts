@@ -4,7 +4,6 @@
 
 import {
   GenerateStoryRequest,
-  OnConfirmContinueCallback,
   OnPartialStoryCallback,
   StoryGenerationResult,
   StyleProfile,
@@ -327,9 +326,12 @@ export function buildPartialStoryResultFromStream(params: {
   isVideoMode: boolean;
   targetVideoDuration: number;
   autoArchitectMode?: boolean;
+  stageLabel?: string;
 }): StoryGenerationResult | null {
-  const { partial, req, isLongForm, isVideoMode, targetVideoDuration, autoArchitectMode } = params;
-  if (!Array.isArray(partial.scenes) || partial.scenes.length === 0) {
+  const { partial, req, isLongForm, isVideoMode, targetVideoDuration, autoArchitectMode, stageLabel } = params;
+  const hasRawScenes = Array.isArray(partial.scenes) && partial.scenes.length > 0;
+  const hasBible = Boolean(partial.styleProfile || partial.characterSheet || partial.locationSheet || partial.hookAnalysis);
+  if (!hasRawScenes && !hasBible) {
     return null;
   }
 
@@ -375,7 +377,7 @@ export function buildPartialStoryResultFromStream(params: {
   const normalizedCharSheet = normalizeContinuitySheetKeys(sanitizedCharacterSheet);
   const normalizedLocSheet = normalizeContinuitySheetKeys(sanitizedLocationSheet);
 
-  const partialScenes = partial.scenes
+  const partialScenes = (Array.isArray(partial.scenes) ? partial.scenes : [])
     .filter((sc) => sc && Array.isArray(sc.beats) && sc.beats.length > 0)
     .map((sc: any, sIdx: number) => {
       const sceneIndex = typeof sc.index === 'number' ? sc.index : sIdx + 1;
@@ -431,10 +433,17 @@ export function buildPartialStoryResultFromStream(params: {
       };
     });
 
-  if (partialScenes.length === 0) return null;
+  if (partialScenes.length === 0 && !hasBible) return null;
 
   const totalDurationSeconds =
     Math.round(partialScenes.reduce((sum, s) => sum + (s.estimatedSeconds || 0), 0) * 10) / 10;
+
+  const lastPartialScene = partialScenes[partialScenes.length - 1];
+  const computedStageLabel =
+    stageLabel ||
+    (partialScenes.length === 0
+      ? 'Story Bible locked. Streaming Scene 1, Beat 1...'
+      : `Scene ${lastPartialScene.index}, Beat ${lastPartialScene.beats.length} ready...`);
 
   return {
     styleProfile: sanitizedStyleProfile,
@@ -453,20 +462,12 @@ export function buildPartialStoryResultFromStream(params: {
             hookRationale: partial.hookAnalysis.hookRationale,
           }
         : undefined,
-    thumbnail: partial.thumbnail
-      ? compileThumbnailPrompt({
-          rawThumbnail: partial.thumbnail,
-          styleProfile: sanitizedStyleProfile,
-          characterSheet: normalizedCharSheet,
-          storyPremise: req.story,
-          format: req.format,
-          platform: req.platform,
-        })
-      : undefined,
+    // Defer Thumbnail until all scenes complete
+    thumbnail: undefined,
     progress: {
       completedScenes: partialScenes.length,
       isPartial: true,
-      stageLabel: `${partialScenes.length} ${partialScenes.length === 1 ? 'scene' : 'scenes'} ready`,
+      stageLabel: computedStageLabel,
     },
   };
 }
@@ -481,8 +482,7 @@ export async function generateOriginalStory(
   apiKey: string,
   userSignal?: AbortSignal,
   onStatusMessage?: (msg: string) => void,
-  onPartialResult?: OnPartialStoryCallback,
-  onConfirmContinueAfterScene2?: OnConfirmContinueCallback
+  onPartialResult?: OnPartialStoryCallback
 ): Promise<StoryGenerationResult> {
   const {
     story,
@@ -512,8 +512,7 @@ export async function generateOriginalStory(
       apiKey,
       userSignal,
       onStatusMessage,
-      onPartialResult,
-      onConfirmContinueAfterScene2
+      onPartialResult
     );
   }
 
@@ -655,31 +654,8 @@ STRICT CONSTRAINTS:
 2. Platform and Framing: Target platform is "${platform || (isLongForm ? 'YouTube' : 'TikTok')}". Format is ${isLongForm ? '16:9 widescreen' : '9:16 vertical'}.
 3. NO REAL OR IDENTIFIABLE PERSON NAMES IN VISUAL PROMPTS.
 4. CRITICAL COMPLETENESS: Include EVERY SINGLE WORD of the user's input script from first word to last word across "scenes[]". NEVER stop early.
-5. You MUST respond with ONLY a valid JSON object matching this schema:
+5. You MUST respond with ONLY a valid JSON object matching this schema (start directly with "scenes" so Beat 1 streams immediately using the locked Story Bible):
 {
-  "styleProfile": {
-    "artStyle": "...",
-    "colorPalette": "...",
-    "lighting": "...",
-    "eraAndSetting": "...",
-    "lensAndFilmStock": "Shot on 35mm anamorphic lens, fine film grain..."
-  },
-  "characterSheet": {
-    "Lead Software Engineer": "Detailed visual description with all physical attributes resolved (use spaced human names or roles, never smashed CamelCase)..."
-  },
-  "locationSheet": {
-    "NASA Instrumentation Office": "Detailed visual description of the specific recurring location (use spaced readable names)..."
-  },
-  "thumbnail": {
-    "heroMoment": "one line describing peak conflict/turning point of THIS story",
-    "expression": "intense, emotionally charged facial expression",
-    "bgDescription": "dark, simplified high-contrast background with deep separation matching THIS story",
-    "accentColor": "dramatic rim lighting color matching Story Palette",
-    "hookText": "bold 2 to 4 word curiosity headline in ALL CAPS specific to THIS story",
-    "fontStyle": "story-adapted typography style fitting the medium and genre",
-    "alternateHooks": ["ALT HOOK 1", "ALT HOOK 2"]
-  },
-  "totalDurationSeconds": number,
   "scenes": [
     {
       "index": number,
@@ -702,7 +678,7 @@ STRICT CONSTRAINTS:
     }
   ]
 }
-Do not include markdown code fences or backticks, just raw JSON.`
+Do not include markdown code fences or backticks, just the raw JSON object.`
     : `You are an expert film director, cinematographer, and storyboard production supervisor.
 Your task is to convert the user's EXACT script into a production-ready, nested scene-and-beat visual breakdown with exact cinematic image prompts, shot taxonomy tags, a style profile, and visual continuity sheets.
 
@@ -841,30 +817,8 @@ STRICT CONSTRAINTS:
 2. Platform and Framing: Target platform is "${platform || (isLongForm ? 'YouTube' : 'TikTok')}". Format is ${isLongForm ? '16:9 widescreen' : '9:16 vertical'}.
    CRITICAL ASPECT RATIO ENFORCEMENT: Every beat's imagePrompt MUST explicitly declare orientation ("${isLongForm ? 'Cinematic 16:9 widescreen composition' : 'Vertical 9:16 portrait composition'}") and end with the exact parameter flag "--ar ${isLongForm ? '16:9' : '9:16'}". Never generate landscape prompts for vertical formats!
 3. NO REAL OR IDENTIFIABLE PERSON NAMES IN VISUAL PROMPTS.
-4. You MUST respond with ONLY a valid JSON object matching this schema:
+4. You MUST respond with ONLY a valid JSON object matching this schema (start directly with "scenes" so Beat 1 streams immediately using the locked Story Bible):
 {
-  "styleProfile": {
-    "artStyle": "Specific art medium or style...",
-    "colorPalette": "Specific palette...",
-    "lighting": "Atmospheric lighting...",
-    "eraAndSetting": "Era and setting..."
-  },
-  "characterSheet": {
-    "Lead Software Engineer": "Fixed visual description with all physical attributes resolved (use spaced human names or roles, never smashed CamelCase)..."
-  },
-  "locationSheet": {
-    "NASA Instrumentation Office": "Fixed visual description of the specific recurring location (use spaced readable names)..."
-  },
-  "thumbnail": {
-    "heroMoment": "one line describing peak conflict/turning point",
-    "expression": "intense, emotionally charged facial expression",
-    "bgDescription": "dark, simplified high-contrast background with deep separation",
-    "accentColor": "dramatic rim lighting color (e.g. amber, cold cyan, crimson - OR stark high-contrast white for black-and-white/monochrome styles)",
-    "hookText": "bold 2 to 4 word headline in ALL CAPS (e.g. DAY 60: SURVIVED)",
-    "fontStyle": "story-adapted font description (e.g. distressed weathered stencil sans-serif, chiseled gothic serif)",
-    "alternateHooks": ["ALT HOOK 1", "ALT HOOK 2"]
-  },
-  "totalDurationSeconds": number,
   "scenes": [
     {
       "index": number,
@@ -887,26 +841,89 @@ STRICT CONSTRAINTS:
 }
 Do not include markdown code fences or backticks, just the raw JSON object.`;
 
-  const shouldUsePilotCap = Boolean(
-    onConfirmContinueAfterScene2 && (!isCustomBeats || (customScenes?.length || 0) > 2)
-  );
+  // ============================================================================
+  // STEP 1: STORY BIBLE FIRST (Style Profile, Cast & Locations)
+  // ============================================================================
+  if (onStatusMessage) {
+    onStatusMessage('Step 1: Building Story Bible (visual style, cast, locations)...');
+  }
+
+  const bibleSystemPrompt = `You are an expert film director and master continuity architect.
+Analyze the script and produce ONLY a crisp Story Bible JSON object so every visual beat stays 100% locked.
+Rules:
+- "styleProfile.artStyle": medium, textures, and rendering style adapting to "${characterStyle || (isVideoMode ? 'cinematic hyperrealism' : 'cinematic realism')}" (NEVER embed character pronoun/wardrobe sentences inside artStyle).
+- "characterSheet": EVERY recurring human character, secondary role/antagonist, and recurring entity mapped to readable spaced keys (e.g. "Lead Engineer", never CamelCase) with permanent biometric features, hair, eyewear, and wardrobe (ZERO transient expressions like "neutral facial features" or "smiling", ZERO frozen poses).
+- "locationSheet": recurring settings mapped to readable spaced keys with concrete physical surfaces and props.
+- Do not use em dashes. Output raw JSON only:
+{
+  "styleProfile": {
+    "artStyle": "string",
+    "colorPalette": "string",
+    "lighting": "string",
+    "eraAndSetting": "string",
+    "lensAndFilmStock": "string"
+  },
+  "characterSheet": {
+    "Role or Name": "Fixed expression-free visual lock"
+  },
+  "locationSheet": {
+    "Place Name": "Fixed architectural and prop visual lock"
+  }
+}`;
+
+  const bibleData = await executeJsonLlmCall<any>({
+    provider: req.aiProvider || 'gemini',
+    apiKey,
+    systemPrompt: bibleSystemPrompt,
+    userPrompt: `Script:\n${story}\n\nRequested Style:\n${characterStyle || 'Consistent cinematic visual style matching the script.'}\nFormat: ${isLongForm ? '16:9 widescreen' : '9:16 vertical'}\nPlatform: ${platform}`,
+    modelQuality,
+    groqModel: req.groqModel,
+    userSignal,
+    onStatusMessage,
+    temperature: 0.2,
+    topP: 0.85,
+    thinkingLevel: 'minimal',
+  });
+
+  if (onPartialResult && !userSignal?.aborted) {
+    const biblePartial = buildPartialStoryResultFromStream({
+      partial: {
+        styleProfile: bibleData?.styleProfile,
+        characterSheet: bibleData?.characterSheet,
+        locationSheet: bibleData?.locationSheet,
+        scenes: [],
+      },
+      req,
+      isLongForm,
+      isVideoMode,
+      targetVideoDuration,
+      autoArchitectMode: false,
+      stageLabel: 'Story Bible locked. Streaming Scene 1, Beat 1...',
+    });
+    if (biblePartial) onPartialResult(biblePartial);
+  }
+
+  if (onStatusMessage) {
+    onStatusMessage('Step 2: Streaming storyboard beats live (Scene 1, Beat 1)...');
+  }
 
   let customBeatsPrompt = '';
   if (isCustomBeats && customScenes) {
-    const pilotCustomScenes = shouldUsePilotCap ? customScenes.slice(0, 2) : customScenes;
     customBeatsPrompt = `\n\nCRITICAL USER-SPECIFIED SCENE AND BEAT SEGMENTATION:
 The user has explicitly segmented the story into exact scenes and custom visual beats. You MUST follow this exact scene breakdown and phrase assignment. For each beat, follow the user's specific visual guidance and shot suggestions:
-${pilotCustomScenes.map((cs, sIdx) => `Scene ${sIdx + 1} narration: "${cs.narratorLine}"
+${customScenes.map((cs, sIdx) => `Scene ${sIdx + 1} narration: "${cs.narratorLine}"
 Beats:
 ${cs.beats.map((b, bIdx) => `  - Beat ${bIdx + 1} phrase: "${b.textSpan}"${b.userGuidance ? ` | Director's Visual Note: "${b.userGuidance}"` : ''}${b.shotType ? ` | Preferred Shot: "${b.shotType}"` : ''}`).join('\n')}`).join('\n\n')}`;
   }
 
-  const automaticPilotPrompt =
-    shouldUsePilotCap && !isCustomBeats
-      ? `\n\nCHECKPOINT PILOT RULE (CRITICAL HARD LIMIT): Output AT MOST 2 scene objects inside "scenes" (index 1 and index 2 ONLY). NEVER output Scene 3, Scene 4, or Scene 5 in this response. Cover ONLY the opening 1 to 2 sentences/clips cleanly along with complete "styleProfile", "characterSheet", "locationSheet", and "thumbnail". Do NOT summarize or cram later sentences into Scene 1 or Scene 2. If the full story script truly completes within 1 or 2 scenes, finish it cleanly inside those 1-2 scenes.`
-      : '';
+  const lockedBiblePromptBlock = `LOCKED STORY BIBLE (MUST FOLLOW 100% — DO NOT REPEAT THIS OBJECT IN YOUR OUTPUT):
+Style Profile: ${JSON.stringify(bibleData?.styleProfile || {})}
+Character Sheet: ${JSON.stringify(bibleData?.characterSheet || {})}
+Location Sheet: ${JSON.stringify(bibleData?.locationSheet || {})}`;
 
-  const userPrompt = `Exact Story / Voiceover Script (preserve every word verbatim, DO NOT expand):
+  const userPrompt = `${lockedBiblePromptBlock}
+
+Exact Story / Voiceover Script (preserve every word verbatim, DO NOT expand):
 ${story}
 
 Character Style Instruction:
@@ -914,9 +931,11 @@ ${characterStyle || 'Consistent style specified by scene context.'}
 
 Format: ${isLongForm ? 'Long form (16:9)' : 'Short form (9:16)'}
 Platform: ${platform}
-${durationInstruction}${customBeatsPrompt}${automaticPilotPrompt}`;
+${durationInstruction}${customBeatsPrompt}
 
-  const parsedData = await streamJsonLlmWithSceneProgress<any>({
+Output ONLY { "scenes": [ ... ] } starting immediately with Scene 1 Beat 1.`;
+
+  const streamedScenesData = await streamJsonLlmWithSceneProgress<any>({
     provider: req.aiProvider || 'gemini',
     apiKey,
     systemPrompt,
@@ -930,12 +949,19 @@ ${durationInstruction}${customBeatsPrompt}${automaticPilotPrompt}`;
     thinkingLevel: 'minimal',
     onPartialStoryboard: onPartialResult
       ? (partial) => {
-          const cappedPartial =
-            shouldUsePilotCap && Array.isArray(partial.scenes) && partial.scenes.length > 2
-              ? { ...partial, scenes: partial.scenes.slice(0, 2) }
-              : partial;
           const built = buildPartialStoryResultFromStream({
-            partial: cappedPartial,
+            partial: {
+              ...partial,
+              styleProfile: partial.styleProfile || bibleData?.styleProfile,
+              characterSheet: {
+                ...(bibleData?.characterSheet || {}),
+                ...(partial.characterSheet || {}),
+              },
+              locationSheet: {
+                ...(bibleData?.locationSheet || {}),
+                ...(partial.locationSheet || {}),
+              },
+            },
             req,
             isLongForm,
             isVideoMode,
@@ -946,6 +972,20 @@ ${durationInstruction}${customBeatsPrompt}${automaticPilotPrompt}`;
         }
       : undefined,
   });
+
+  const parsedData: any = {
+    styleProfile: bibleData?.styleProfile || streamedScenesData?.styleProfile || {},
+    characterSheet: {
+      ...(bibleData?.characterSheet || {}),
+      ...(streamedScenesData?.characterSheet || {}),
+    },
+    locationSheet: {
+      ...(bibleData?.locationSheet || {}),
+      ...(streamedScenesData?.locationSheet || {}),
+    },
+    scenes: Array.isArray(streamedScenesData?.scenes) ? streamedScenesData.scenes : [],
+    totalDurationSeconds: streamedScenesData?.totalDurationSeconds,
+  };
 
   const finalizeStandardStoryboard = async (
     dataObj: any,
@@ -1304,152 +1344,8 @@ ${durationInstruction}${customBeatsPrompt}${automaticPilotPrompt}`;
     };
   };
 
-  // Interactive Scene 2 checkpoint gate: pause when 2+ scenes completed and more scenes remain
-  const rawInitialScenes = Array.isArray(parsedData.scenes) ? parsedData.scenes : [];
-  const pilotCoverage = isCustomBeats
-    ? null
-    : findUncoveredTrailingScript(story, rawInitialScenes.slice(0, 2));
-  const hasMoreAfterScene2 = isCustomBeats
-    ? (customScenes?.length || 0) > 2
-    : Boolean(pilotCoverage && pilotCoverage.missingWords >= 3);
-
-  if (
-    onConfirmContinueAfterScene2 &&
-    !userSignal?.aborted &&
-    (rawInitialScenes.length > 2 || (rawInitialScenes.length >= 2 && hasMoreAfterScene2))
-  ) {
-    const pilotScenesSlice = rawInitialScenes.slice(0, 2);
-    const pilotFinalized = await finalizeStandardStoryboard(
-      { ...parsedData, scenes: pilotScenesSlice },
-      false,
-      true
-    );
-
-    if (onPartialResult) {
-      onPartialResult({
-        ...pilotFinalized,
-        progress: {
-          completedScenes: pilotFinalized.scenes.length,
-          totalPlannedScenes: isCustomBeats ? customScenes!.length : undefined,
-          isPartial: true,
-          awaitingContinueConfirmation: true,
-          stageLabel: 'Would you like to continue?',
-        },
-      });
-    }
-    if (onStatusMessage) {
-      onStatusMessage('Scenes 1-2 finished. Waiting for your decision to continue.');
-    }
-
-    const shouldContinue = await onConfirmContinueAfterScene2();
-    if (!shouldContinue) {
-      return pilotFinalized;
-    }
-
-    if (onPartialResult) {
-      onPartialResult({
-        ...pilotFinalized,
-        progress: {
-          completedScenes: pilotFinalized.scenes.length,
-          totalPlannedScenes: isCustomBeats ? customScenes!.length : undefined,
-          isPartial: true,
-          awaitingContinueConfirmation: false,
-          stageLabel: 'Continuing breakdown from Scene 3...',
-        },
-      });
-    }
-
-    if (rawInitialScenes.length <= 2) {
-      if (onStatusMessage) {
-        onStatusMessage('Continuing story breakdown from Scene 3...');
-      }
-
-      const contPromptBody = isCustomBeats && customScenes
-        ? `REMAINING USER-SPECIFIED SCENES TO COMPLETE (starting cleanly at Scene 3):
-${customScenes.slice(2).map((cs, sIdx) => `Scene ${sIdx + 3} narration: "${cs.narratorLine}"
-Beats:
-${cs.beats.map((b, bIdx) => `  - Beat ${bIdx + 1} phrase: "${b.textSpan}"${b.userGuidance ? ` | Director's Visual Note: "${b.userGuidance}"` : ''}${b.shotType ? ` | Preferred Shot: "${b.shotType}"` : ''}`).join('\n')}`).join('\n\n')}`
-        : `REMAINING UNCOVERED SCRIPT TO COMPLETE VERBATIM (starting cleanly at Scene 3, covering EVERY remaining word to the very end):
-${pilotCoverage?.uncoveredText || ''}`;
-
-      const contStreamData = await streamJsonLlmWithSceneProgress<any>({
-        provider: req.aiProvider || 'gemini',
-        apiKey,
-        systemPrompt,
-        userPrompt: `CONTINUATION BATCH (DO NOT REPEAT ALREADY COVERED SCENES 1-2):
-Already covered ending snippet: "...${pilotScenesSlice[pilotScenesSlice.length - 1]?.narratorLine || ''}"
-
-LOCKED PRODUCTION BIBLE (MUST MAINTAIN 100% IDENTICAL VISUAL STYLE, CHARACTERS & LOCATIONS):
-Style Profile: ${JSON.stringify(parsedData.styleProfile || {})}
-Character Sheet: ${JSON.stringify(parsedData.characterSheet || {})}
-Location Sheet: ${JSON.stringify(parsedData.locationSheet || {})}
-
-${contPromptBody}
-
-Character Style Instruction: ${characterStyle || 'Consistent style specified by scene context.'}
-Format: ${isLongForm ? 'Long form (16:9)' : 'Short form (9:16)'}
-Platform: ${platform}
-${durationInstruction}
-
-Return ONLY valid JSON containing:
-- "characterSheet": {} (include any newly appearing recurring figures not yet listed above)
-- "locationSheet": {} (include any newly appearing recurring places)
-${!parsedData.thumbnail || !parsedData.thumbnail.hookText ? '- "thumbnail": { "heroMoment": "...", "expression": "...", "bgDescription": "...", "accentColor": "...", "hookText": "...", "fontStyle": "...", "alternateHooks": ["..."] },\n' : ''}- "scenes": [ ...starting at index 3... ]`,
-        modelQuality,
-        groqModel: req.groqModel,
-        userSignal,
-        onStatusMessage,
-        temperature: 0.3,
-        topP: 0.85,
-        thinkingLevel: 'minimal',
-        onPartialStoryboard: onPartialResult
-          ? (partial) => {
-              const streamedCont = Array.isArray(partial.scenes) ? partial.scenes : [];
-              if (streamedCont.length === 0) return;
-              const reindexed = streamedCont.map((cs: any, idx: number) => ({
-                ...cs,
-                index: pilotScenesSlice.length + idx + 1,
-              }));
-              const built = buildPartialStoryResultFromStream({
-                partial: {
-                  ...parsedData,
-                  scenes: [...pilotScenesSlice, ...reindexed],
-                },
-                req,
-                isLongForm,
-                isVideoMode,
-                targetVideoDuration,
-                autoArchitectMode: false,
-              });
-              if (built) onPartialResult(built);
-            }
-          : undefined,
-      });
-
-      const contScenes = Array.isArray(contStreamData?.scenes) ? contStreamData.scenes : [];
-      if (contScenes.length > 0) {
-        parsedData.scenes = [...pilotScenesSlice];
-        for (const cs of contScenes) {
-          parsedData.scenes.push({
-            ...cs,
-            index: parsedData.scenes.length + 1,
-          });
-        }
-        if (contStreamData.characterSheet && typeof contStreamData.characterSheet === 'object') {
-          parsedData.characterSheet = { ...(parsedData.characterSheet || {}), ...contStreamData.characterSheet };
-        }
-        if (contStreamData.locationSheet && typeof contStreamData.locationSheet === 'object') {
-          parsedData.locationSheet = { ...(parsedData.locationSheet || {}), ...contStreamData.locationSheet };
-        }
-        if ((!parsedData.thumbnail || !parsedData.thumbnail.hookText) && contStreamData.thumbnail && typeof contStreamData.thumbnail === 'object') {
-          parsedData.thumbnail = contStreamData.thumbnail;
-        }
-      }
-    }
-  }
-
-  // Auto-continuation safeguard: if a long script still truncated mid-JSON,
-  // seamlessly generate the remaining uncovered script scenes reusing locked styleProfile & characterSheet.
+  // Auto-continuation safeguard: if a long script truncated mid-JSON,
+  // seamlessly stream the remaining uncovered script scenes reusing locked Story Bible.
   const canContinue =
     !isCustomBeats &&
     !userSignal?.aborted &&
@@ -1478,12 +1374,11 @@ ${!parsedData.thumbnail || !parsedData.thumbnail.hookText ? '- "thumbnail": { "h
       const nextSceneIndex = existingScenes.length + 1;
       const lockedCastJson = JSON.stringify(parsedData.characterSheet || {});
       const lockedLocJson = JSON.stringify(parsedData.locationSheet || {});
-      const needThumb = !parsedData.thumbnail || !parsedData.thumbnail.hookText;
 
       const contUserPrompt = `CONTINUATION BATCH (DO NOT REPEAT ALREADY COVERED SCENES 1-${existingScenes.length}):
 Already covered ending snippet: "...${existingScenes[existingScenes.length - 1]?.narratorLine || ''}"
 
-LOCKED PRODUCTION BIBLE (MUST MAINTAIN 100% IDENTICAL VISUAL STYLE, CHARACTERS & LOCATIONS):
+LOCKED STORY BIBLE (MUST MAINTAIN 100% IDENTICAL VISUAL STYLE, CHARACTERS & LOCATIONS):
 Style Profile: ${JSON.stringify(parsedData.styleProfile || {})}
 Character Sheet: ${lockedCastJson}
 Location Sheet: ${lockedLocJson}
@@ -1497,11 +1392,9 @@ Platform: ${platform}
 ${durationInstruction}
 
 Return ONLY valid JSON containing:
-- "characterSheet": {} (include any newly appearing recurring figures not yet listed above)
-- "locationSheet": {} (include any newly appearing recurring places)
-${needThumb ? '- "thumbnail": { "heroMoment": "...", "expression": "...", "bgDescription": "...", "accentColor": "...", "hookText": "...", "fontStyle": "...", "alternateHooks": ["..."] },\n' : ''}- "scenes": [ ...starting at index ${nextSceneIndex}... ]`;
+- "scenes": [ ...starting at index ${nextSceneIndex}... ]`;
 
-      const contData = await executeJsonLlmCall<any>({
+      const contData = await streamJsonLlmWithSceneProgress<any>({
         provider: req.aiProvider || 'gemini',
         apiKey,
         systemPrompt,
@@ -1513,6 +1406,28 @@ ${needThumb ? '- "thumbnail": { "heroMoment": "...", "expression": "...", "bgDes
         temperature: 0.25,
         topP: 0.85,
         thinkingLevel: 'minimal',
+        onPartialStoryboard: onPartialResult
+          ? (partial) => {
+              const streamedCont = Array.isArray(partial.scenes) ? partial.scenes : [];
+              if (streamedCont.length === 0) return;
+              const reindexed = streamedCont.map((cs: any, idx: number) => ({
+                ...cs,
+                index: existingScenes.length + idx + 1,
+              }));
+              const built = buildPartialStoryResultFromStream({
+                partial: {
+                  ...parsedData,
+                  scenes: [...existingScenes, ...reindexed],
+                },
+                req,
+                isLongForm,
+                isVideoMode,
+                targetVideoDuration,
+                autoArchitectMode: false,
+              });
+              if (built) onPartialResult(built);
+            }
+          : undefined,
       });
 
       const contScenes = Array.isArray(contData?.scenes) ? contData.scenes : [];
@@ -1531,9 +1446,6 @@ ${needThumb ? '- "thumbnail": { "heroMoment": "...", "expression": "...", "bgDes
       if (contData.locationSheet && typeof contData.locationSheet === 'object') {
         parsedData.locationSheet = { ...(parsedData.locationSheet || {}), ...contData.locationSheet };
       }
-      if (needThumb && contData.thumbnail && typeof contData.thumbnail === 'object') {
-        parsedData.thumbnail = contData.thumbnail;
-      }
 
       const nextCoverage = findUncoveredTrailingScript(story, parsedData.scenes);
       if (nextCoverage.coveredWords <= scriptCoverage.coveredWords) {
@@ -1545,7 +1457,74 @@ ${needThumb ? '- "thumbnail": { "heroMoment": "...", "expression": "...", "bgDes
     }
   }
 
-  return finalizeStandardStoryboard(parsedData, true);
+  // Finalize scenes deterministically without stalling behind a blocking post-stream LLM repair call
+  const finalizedBeforeThumbnail = await finalizeStandardStoryboard(parsedData, true, true);
+
+  // ============================================================================
+  // STEP 3: COMPILE THUMBNAIL & CTA ONLY AFTER SCENES FINISH
+  // ============================================================================
+  if (onPartialResult && !userSignal?.aborted) {
+    onPartialResult({
+      ...finalizedBeforeThumbnail,
+      thumbnail: undefined,
+      progress: {
+        completedScenes: finalizedBeforeThumbnail.scenes.length,
+        isPartial: true,
+        stageLabel: 'All scenes finished. Generating cover thumbnail & CTA outro...',
+      },
+    });
+  }
+
+  if (canContinue) {
+    if (onStatusMessage) {
+      onStatusMessage('Step 3: Generating cover thumbnail blueprint...');
+    }
+    try {
+      const thumbRaw = await executeJsonLlmCall<any>({
+        provider: req.aiProvider || 'gemini',
+        apiKey,
+        systemPrompt: `You are a high-CTR storyboard cover designer. Generate ONLY a JSON object for the story thumbnail using the locked cast and story scenes. No em dashes.
+Schema:
+{
+  "heroMoment": "one crisp sentence describing the central conflict or turning point",
+  "expression": "intense, emotionally charged facial expression",
+  "bgDescription": "dark, simplified high-contrast background with deep separation",
+  "accentColor": "dramatic rim lighting color fitting the story palette",
+  "hookText": "bold 2 to 4 word curiosity headline in ALL CAPS",
+  "fontStyle": "story-adapted typography style",
+  "alternateHooks": ["ALT HOOK 1", "ALT HOOK 2"]
+}`,
+        userPrompt: `Story Script: ${story}
+Style Profile: ${JSON.stringify(finalizedBeforeThumbnail.styleProfile)}
+Character Sheet: ${JSON.stringify(finalizedBeforeThumbnail.characterSheet)}
+Platform: ${platform} (${isLongForm ? '16:9 widescreen' : '9:16 vertical'})`,
+        modelQuality,
+        groqModel: req.groqModel,
+        userSignal,
+        onStatusMessage,
+        temperature: 0.3,
+        topP: 0.85,
+        thinkingLevel: 'minimal',
+      });
+      if (thumbRaw && typeof thumbRaw === 'object') {
+        return {
+          ...finalizedBeforeThumbnail,
+          thumbnail: compileThumbnailPrompt({
+            rawThumbnail: thumbRaw,
+            styleProfile: finalizedBeforeThumbnail.styleProfile,
+            characterSheet: finalizedBeforeThumbnail.characterSheet,
+            storyPremise: story,
+            format,
+            platform,
+          }),
+        };
+      }
+    } catch {
+      // Deterministic thumbnail fallback from finalizeStandardStoryboard remains intact
+    }
+  }
+
+  return finalizedBeforeThumbnail;
 }
 
 // ============================================================================
@@ -1558,8 +1537,7 @@ export async function generateStoryDirectly(
   apiKey: string,
   userSignal?: AbortSignal,
   onStatusMessage?: (msg: string) => void,
-  onPartialResult?: OnPartialStoryCallback,
-  onConfirmContinueAfterScene2?: OnConfirmContinueCallback
+  onPartialResult?: OnPartialStoryCallback
 ): Promise<StoryGenerationResult> {
   if (req.autoArchitectMode) {
     return generateEnhancedStory(
@@ -1567,8 +1545,7 @@ export async function generateStoryDirectly(
       apiKey,
       userSignal,
       onStatusMessage,
-      onPartialResult,
-      onConfirmContinueAfterScene2
+      onPartialResult
     );
   }
   return generateOriginalStory(
@@ -1576,7 +1553,6 @@ export async function generateStoryDirectly(
     apiKey,
     userSignal,
     onStatusMessage,
-    onPartialResult,
-    onConfirmContinueAfterScene2
+    onPartialResult
   );
 }
