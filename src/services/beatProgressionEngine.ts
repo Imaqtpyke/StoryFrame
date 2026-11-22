@@ -1,4 +1,4 @@
-import { AiProvider, Beat, Scene, StyleProfile } from '../types';
+import { AiProvider, Beat, GeminiModelQuality, Scene, StyleProfile } from '../types';
 import {
   extractGeographicAnchor,
   extractTemporalAnchor,
@@ -2500,7 +2500,7 @@ export interface TwoPhaseProgressionParams {
   targetVideoDuration?: number;
   apiKey?: string;
   aiProvider?: AiProvider;
-  modelQuality?: 'standard' | 'high';
+  modelQuality?: GeminiModelQuality;
   groqModel?: string;
   userSignal?: AbortSignal;
   onStatusMessage?: (msg: string) => void;

@@ -38,7 +38,9 @@ import { fetchWithExponentialBackoff } from '../utils/retryFetch';
 import { executeGroundedPipeline } from './groundedPipeline';
 import {
   executeJsonLlmCall,
+  paceGeminiStep,
   PartialStoryboardStreamState,
+  sanitizeGenericErrorMessage,
   streamJsonLlmWithSceneProgress,
 } from './unifiedAiService';
 import { compileThumbnailPrompt } from './promptCompiler';
@@ -48,25 +50,7 @@ function removeEmDashes(text: string): string {
 }
 
 function sanitizeErrorMessage(errorText: string, apiKey: string): string {
-  if (!errorText) return 'An unexpected error occurred.';
-  let cleaned = errorText;
-  if (apiKey && apiKey.length > 6) {
-    cleaned = cleaned.replaceAll(apiKey, '[REDACTED]');
-  }
-  if (cleaned.toLowerCase().includes('caller does not have permission') || cleaned.toLowerCase().includes('permission_denied')) {
-    return `The caller does not have permission. Please verify that:
-1. Your API key has the "Generative Language API" enabled in Google Cloud / Google AI Studio.
-2. If your key has HTTP referrer restrictions, ensure this application domain is permitted or remove the referrer restriction.
-3. If using an AI Studio key, ensure it is active at https://aistudio.google.com/app/apikey.`;
-  }
-  if (cleaned.toLowerCase().includes('503') || cleaned.toLowerCase().includes('overloaded') || cleaned.toLowerCase().includes('service unavailable')) {
-    return 'Google Gemini servers are temporarily busy. Please wait a moment and click Retry Breakdown.';
-  }
-  if (cleaned.toLowerCase().includes('429') || cleaned.toLowerCase().includes('quota') || cleaned.toLowerCase().includes('resource has been exhausted')) {
-    return `Gemini API rate limit or quota exceeded (429).
-Please wait a moment before trying again, or check your quotas at https://aistudio.google.com/.`;
-  }
-  return cleaned;
+  return sanitizeGenericErrorMessage(errorText, apiKey, 'gemini');
 }
 
 const DEFAULT_SHOT_TYPES = [
@@ -1020,6 +1004,15 @@ Rules:
     if (biblePartial) onPartialResult(biblePartial);
   }
 
+  await paceGeminiStep({
+    provider: req.aiProvider || 'gemini',
+    apiKey,
+    delayMs: 1500,
+    userSignal,
+    onStatusMessage,
+    nextStepLabel: 'Step 2: Streaming storyboard beats live (Scene 1, Beat 1)...',
+  });
+
   if (onStatusMessage) {
     onStatusMessage('Step 2: Streaming storyboard beats live (Scene 1, Beat 1)...');
   }
@@ -1511,6 +1504,13 @@ ${durationInstruction}
 Return ONLY valid JSON containing:
 - "scenes": [ ...starting at index ${nextSceneIndex}... ]`;
 
+      await paceGeminiStep({
+        provider: req.aiProvider || 'gemini',
+        apiKey,
+        delayMs: 1500,
+        userSignal,
+      });
+
       const contData = await streamJsonLlmWithSceneProgress<any>({
         provider: req.aiProvider || 'gemini',
         apiKey,
@@ -1569,7 +1569,10 @@ Return ONLY valid JSON containing:
         break;
       }
       scriptCoverage = nextCoverage;
-    } catch {
+    } catch (contErr: any) {
+      if (userSignal?.aborted || contErr?.name === 'AbortError') {
+        throw contErr;
+      }
       break;
     }
   }
@@ -1612,6 +1615,13 @@ Style Profile: ${JSON.stringify(finalizedBeforeThumbnail.styleProfile)}
 Character Sheet: ${JSON.stringify(finalizedBeforeThumbnail.characterSheet)}
 Platform: ${platform} (${isLongForm ? '16:9 widescreen' : '9:16 vertical'})`;
 
+    await paceGeminiStep({
+      provider: req.aiProvider || 'gemini',
+      apiKey,
+      delayMs: 1500,
+      userSignal,
+    });
+
     let thumbRaw: any = null;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
@@ -1635,8 +1645,14 @@ Platform: ${platform} (${isLongForm ? '16:9 widescreen' : '9:16 vertical'})`;
           thumbRaw = candidate;
           break;
         }
-      } catch {
-        // Retry once on transient validation/parsing error before deterministic fallback
+      } catch (thumbErr: any) {
+        if (userSignal?.aborted || thumbErr?.name === 'AbortError') {
+          throw thumbErr;
+        }
+        // Do not retry Step 3 on 429 rate-limit / quota / auth errors; fall back deterministically
+        if (/\b(?:429|401|403|404)\b|quota|rate limit/i.test(String(thumbErr?.message || ''))) {
+          break;
+        }
       }
     }
 

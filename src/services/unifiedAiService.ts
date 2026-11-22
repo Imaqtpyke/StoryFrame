@@ -1,5 +1,5 @@
-import { AiProvider } from '../types';
-import { fetchWithExponentialBackoff } from '../utils/retryFetch';
+import { AiProvider, GeminiModelQuality } from '../types';
+import { abortableSleep, fetchWithExponentialBackoff, parseRetryAfterMs } from '../utils/retryFetch';
 import {
   callGroqChatCompletion,
   extractCleanJson,
@@ -16,7 +16,7 @@ export interface UnifiedJsonRequest {
   apiKey: string;
   systemPrompt: string;
   userPrompt: string;
-  modelQuality?: 'standard' | 'high';
+  modelQuality?: GeminiModelQuality;
   groqModel?: string;
   userSignal?: AbortSignal;
   onStatusMessage?: (msg: string) => void;
@@ -26,10 +26,116 @@ export interface UnifiedJsonRequest {
   thinkingLevel?: 'minimal' | 'low' | 'medium' | 'high';
 }
 
+export function resolveGeminiModelId(modelQuality?: GeminiModelQuality): string {
+  if (modelQuality === 'high') return 'gemini-3.1-pro-preview';
+  if (modelQuality === 'lite') return 'gemini-3.1-flash-lite';
+  return 'gemini-4-hydrogen';
+}
+
+export function getGeminiModelDisplayName(modelId?: string): string {
+  if (!modelId) return 'the selected Gemini model';
+  if (modelId === 'gemini-3.1-flash-lite') return 'Gemini 3.1 Flash Lite (gemini-3.1-flash-lite)';
+  if (modelId === 'gemini-3.1-pro-preview') return 'Gemini 3.1 Pro Preview (gemini-3.1-pro-preview)';
+  if (modelId === 'gemini-4-hydrogen') return 'Gemini 4 Hydrogen (gemini-4-hydrogen)';
+  return modelId;
+}
+
+/**
+ * Adds a short cooldown gap between back-to-back Gemini API calls in the same generation
+ * to reduce burst RPM/TPM triggers on Free Tier keys. Skipped automatically for Groq or test keys.
+ */
+export async function paceGeminiStep(params: {
+  provider?: AiProvider;
+  apiKey: string;
+  delayMs?: number;
+  userSignal?: AbortSignal;
+  onStatusMessage?: (msg: string) => void;
+  nextStepLabel?: string;
+}): Promise<void> {
+  const { provider = 'gemini', apiKey, delayMs = 1500, userSignal, onStatusMessage, nextStepLabel } = params;
+  if (provider !== 'gemini') return;
+  const trimmed = (apiKey || '').trim();
+  if (!trimmed || /^(?:mock|test|dummy|fake)/i.test(trimmed) || /^AIzaSy(?:Mock|Test|Dummy|Fake)/i.test(trimmed)) {
+    return;
+  }
+  if (onStatusMessage && nextStepLabel) {
+    onStatusMessage(nextStepLabel);
+  }
+  await abortableSleep(delayMs, userSignal);
+}
+
+/**
+ * Extracts specific Google 429 QuotaFailure / RetryInfo diagnostics from raw error payloads
+ * so users know whether they hit a limit: 0 billing block, daily RPD exhaustion, or a timed RPM/TPM limit.
+ */
+export function formatGemini429Error(cleanedText: string, modelId?: string): string {
+  const modelLabel = getGeminiModelDisplayName(modelId);
+  let extractedJson: any = null;
+  const jsonStart = cleanedText.indexOf('{');
+  if (jsonStart !== -1) {
+    try {
+      extractedJson = JSON.parse(cleanedText.slice(jsonStart));
+    } catch {
+      extractedJson = null;
+    }
+  }
+
+  const rawMessage: string = String(extractedJson?.error?.message || cleanedText || '');
+  const details: any[] = Array.isArray(extractedJson?.error?.details) ? extractedJson.error.details : [];
+
+  let quotaId = '';
+  let quotaMetric = '';
+  let quotaValue = '';
+  let retryDelayText = '';
+
+  for (const d of details) {
+    if (d && Array.isArray(d.violations)) {
+      for (const v of d.violations) {
+        if (v?.quotaId && !quotaId) quotaId = String(v.quotaId);
+        if (v?.quotaMetric && !quotaMetric) quotaMetric = String(v.quotaMetric);
+        if (v?.quotaValue !== undefined && !quotaValue) quotaValue = String(v.quotaValue);
+      }
+    }
+    if (d && typeof d.retryDelay === 'string' && !retryDelayText) {
+      retryDelayText = d.retryDelay;
+    }
+  }
+
+  const parsedRetryMs = parseRetryAfterMs(undefined, cleanedText);
+  const waitSec = parsedRetryMs ? Math.ceil(parsedRetryMs / 1000) : null;
+  const waitSentence = waitSec ? ` Google asks to wait ${waitSec}s before retrying.` : '';
+
+  const combinedQuotaMeta = `${quotaId} ${quotaMetric} ${rawMessage}`;
+  const isZeroLimit = quotaValue === '0' || /\blimit:\s*0\b/i.test(rawMessage);
+  const isDailyLimit = /(?:PerDay|RequestsPerDay|TokensPerDay|GenerateRequestsPerDay|daily quota|per[- ]day limit|PerMonth)/i.test(
+    combinedQuotaMeta
+  );
+  const isTokenLimit = /(?:TokensPerMinute|TPM|input_token|token_count)/i.test(combinedQuotaMeta);
+
+  if (isZeroLimit) {
+    return `Gemini quota is 0 for ${modelLabel} (429). This model does not have active Free Tier quota on your Google Cloud project (often requires Cloud Billing / Tier 1). Switch Gemini Model to Gemini 3.1 Flash Lite or Gemini 4 Hydrogen in Model & API Settings, or verify billing and limits at https://aistudio.google.com/usage.`;
+  }
+
+  if (isDailyLimit) {
+    return `Gemini daily free-tier limit exhausted for ${modelLabel} (429). Google shares daily quotas across all API keys in the same project and resets them at midnight Pacific Time. Switch to Gemini 3.1 Flash Lite, use Groq Cloud, or inspect usage at https://aistudio.google.com/usage.`;
+  }
+
+  if (isTokenLimit) {
+    return `Gemini tokens-per-minute (TPM) limit reached for ${modelLabel} (429).${waitSentence} Switch to Gemini 3.1 Flash Lite or Groq Cloud in Model & API Settings for lighter token overhead.`;
+  }
+
+  return `Gemini rate limit or quota exceeded (429) on ${modelLabel}.${waitSentence} Wait for the cooldown or switch to Gemini 3.1 Flash Lite (or Groq Cloud) in Model & API Settings, and verify your quotas at https://aistudio.google.com/usage.`;
+}
+
 /**
  * Redacts sensitive API keys and formats user-friendly error messages.
  */
-export function sanitizeGenericErrorMessage(errorText: string, apiKey: string, provider: AiProvider = 'gemini'): string {
+export function sanitizeGenericErrorMessage(
+  errorText: string,
+  apiKey: string,
+  provider: AiProvider = 'gemini',
+  modelId?: string
+): string {
   if (!errorText) return 'An unexpected error occurred.';
   let cleaned = errorText;
   if (apiKey && apiKey.length > 6) {
@@ -48,17 +154,16 @@ export function sanitizeGenericErrorMessage(errorText: string, apiKey: string, p
 3. If using an AI Studio key, ensure it is active at https://aistudio.google.com/app/apikey.`;
   }
   if (lower.includes('404') || lower.includes('not_found') || lower.includes('is not found')) {
-    return 'The requested Gemini model is unavailable or unsupported (404). Please verify your selected Gemini model.';
+    return `The requested Gemini model (${getGeminiModelDisplayName(modelId)}) is unavailable or unsupported (404). Please select another model in Model & API Settings.`;
   }
-  if (lower.includes('api_key_invalid') || lower.includes('api key not valid')) {
-    return 'Your Gemini API key appears invalid (400). Please check your key in Model & API Settings.';
+  if (lower.includes('api_key_invalid') || lower.includes('api key not valid') || lower.includes('(401)')) {
+    return 'Your Gemini API key appears invalid or unauthorized. Please check your key in Model & API Settings.';
   }
   if (lower.includes('503') || lower.includes('overloaded') || lower.includes('service unavailable')) {
-    return 'Google Gemini servers are temporarily busy. Please wait a moment and click Retry Breakdown.';
+    return 'Google Gemini servers are temporarily busy (503). Please wait a moment and click Retry Breakdown.';
   }
-  if (lower.includes('429') || lower.includes('quota') || lower.includes('resource has been exhausted')) {
-    return `Gemini API rate limit or quota exceeded (429).
-Please wait a moment before trying again, or check your quotas at https://aistudio.google.com/.`;
+  if (lower.includes('429') || lower.includes('quota') || lower.includes('resource_exhausted') || lower.includes('resource has been exhausted')) {
+    return formatGemini429Error(cleaned, modelId);
   }
   return cleaned;
 }
@@ -151,10 +256,13 @@ export async function executeJsonLlmCall<T = any>(params: UnifiedJsonRequest): P
   }
 
   // Provider: GEMINI (Google Generative Language API)
-  const targetModel = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-4-hydrogen';
+  const targetModel = resolveGeminiModelId(modelQuality);
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${trimmedKey}`;
 
-  const isThinkingModel = targetModel === 'gemini-4-hydrogen' || targetModel === 'gemini-3.1-pro-preview';
+  const isThinkingModel =
+    targetModel === 'gemini-4-hydrogen' ||
+    targetModel === 'gemini-3.1-pro-preview' ||
+    targetModel === 'gemini-3.1-flash-lite';
   const defaultThinking: 'minimal' | 'low' = targetModel === 'gemini-3.1-pro-preview' ? 'low' : 'minimal';
 
   const buildGeminiPayload = (level: 'minimal' | 'low' | 'medium' | 'high' | 'none'): Record<string, any> => {
@@ -162,8 +270,7 @@ export async function executeJsonLlmCall<T = any>(params: UnifiedJsonRequest): P
       responseMimeType: 'application/json',
     };
 
-    // Gemini 3 & 4 models reject legacy temperature/topP and use thinkingLevel;
-    // cap thinkingLevel to avoid multi-minute reasoning stalls on structured JSON breakdowns
+    // Gemini 3 & 4 thinking models configure thinkingConfig instead of legacy temperature/topP
     if (isThinkingModel) {
       if (level !== 'none') {
         generationConfig.thinkingConfig = {
@@ -201,10 +308,12 @@ export async function executeJsonLlmCall<T = any>(params: UnifiedJsonRequest): P
           signal: userSignal,
         }),
       {
-        onRetry: (attempt, maxAttempts, delayMs) => {
+        signal: userSignal,
+        onRetry: (attempt, maxAttempts, delayMs, err) => {
           if (onStatusMessage) {
             const sec = Math.ceil(delayMs / 1000);
-            onStatusMessage(`Server busy (503/429). Retrying in ${sec}s (Attempt ${attempt} of ${maxAttempts})...`);
+            const reasonLabel = String(err?.message || '').includes('429') ? 'Gemini rate limit (429)' : 'Gemini busy (503)';
+            onStatusMessage(`${reasonLabel}. Retrying in ${sec}s (Attempt ${attempt} of ${maxAttempts})...`);
           }
         },
       }
@@ -250,14 +359,14 @@ export async function executeJsonLlmCall<T = any>(params: UnifiedJsonRequest): P
     if (userSignal?.aborted || err?.name === 'AbortError') {
       throw new DOMException('Generation request was cancelled by user.', 'AbortError');
     }
-    throw new Error(sanitizeGenericErrorMessage(err?.message || 'Failed to generate content with Gemini.', trimmedKey, 'gemini'));
+    throw new Error(sanitizeGenericErrorMessage(err?.message || 'Failed to generate content with Gemini.', trimmedKey, 'gemini', targetModel));
   }
 }
 
 export async function executeGeminiSchemaCall<T = any>(params: {
   apiKey: string;
   prompt: string;
-  modelQuality?: 'standard' | 'high';
+  modelQuality?: GeminiModelQuality;
   responseSchema?: Record<string, any>;
   responseMimeType?: string;
   temperature?: number;
@@ -279,10 +388,13 @@ export async function executeGeminiSchemaCall<T = any>(params: {
     onRetryMessage,
   } = params;
 
-  const modelName = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-4-hydrogen';
+  const modelName = resolveGeminiModelId(modelQuality);
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
-  const isThinkingModel = modelName === 'gemini-4-hydrogen' || modelName === 'gemini-3.1-pro-preview';
+  const isThinkingModel =
+    modelName === 'gemini-4-hydrogen' ||
+    modelName === 'gemini-3.1-pro-preview' ||
+    modelName === 'gemini-3.1-flash-lite';
   const requestedLevel = modelName === 'gemini-3.1-pro-preview' && thinkingLevel === 'minimal' ? 'low' : thinkingLevel;
 
   const buildPayload = (level: 'minimal' | 'low' | 'medium' | 'high' | 'none'): Record<string, any> => {
@@ -317,6 +429,7 @@ export async function executeGeminiSchemaCall<T = any>(params: {
     {
       initialDelayMs: 2000,
       maxAttempts: 4,
+      signal: userSignal,
       onRetry: (attempt, maxAttempts, delayMs) => {
         if (onRetryMessage) onRetryMessage(attempt, maxAttempts, delayMs);
       },
@@ -342,13 +455,13 @@ export async function executeGeminiSchemaCall<T = any>(params: {
         });
       }
     } else {
-      throw new Error(sanitizeGenericErrorMessage(`${errorContext} (${response.status}): ${firstErrText}`, apiKey, 'gemini'));
+      throw new Error(sanitizeGenericErrorMessage(`${errorContext} (${response.status}): ${firstErrText}`, apiKey, 'gemini', modelName));
     }
   }
 
   if (!response.ok) {
     const errText = await response.text().catch(() => '');
-    throw new Error(sanitizeGenericErrorMessage(`${errorContext} (${response.status}): ${errText}`, apiKey, 'gemini'));
+    throw new Error(sanitizeGenericErrorMessage(`${errorContext} (${response.status}): ${errText}`, apiKey, 'gemini', modelName));
   }
 
   const json = await response.json();
@@ -861,6 +974,7 @@ export async function streamJsonLlmWithSceneProgress<T = any>(
         {
           initialDelayMs: 2000,
           maxAttempts: 4,
+          signal: userSignal,
           onRetry: (attempt, maxAttempts, delayMs) => {
             if (onStatusMessage) {
               onStatusMessage(
@@ -884,7 +998,15 @@ export async function streamJsonLlmWithSceneProgress<T = any>(
         resp = await runGroqStreamAttempt(false);
       }
 
-      if (!resp.ok || !resp.body || typeof resp.body.getReader !== 'function') {
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => '');
+        if (resp.status === 429 || resp.status === 401 || resp.status === 403 || resp.status === 404 || resp.status === 400) {
+          throw new Error(sanitizeGenericErrorMessage(`API error (${resp.status}): ${errText}`, trimmedKey, 'groq', targetModel));
+        }
+        return executeJsonLlmCall<T>(params);
+      }
+
+      if (!resp.body || typeof resp.body.getReader !== 'function') {
         return executeJsonLlmCall<T>(params);
       }
 
@@ -951,15 +1073,21 @@ export async function streamJsonLlmWithSceneProgress<T = any>(
       if (userSignal?.aborted || err?.name === 'AbortError') {
         throw new DOMException('Generation request was cancelled by user.', 'AbortError');
       }
+      if (/429|rate limit|quota|unauthorized|401|403|404/i.test(String(err?.message || ''))) {
+        throw new Error(sanitizeGenericErrorMessage(err.message, trimmedKey, 'groq', targetModel));
+      }
       return executeJsonLlmCall<T>(params);
     }
   }
 
   // Provider: GEMINI SSE STREAMING
-  const targetModel = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-4-hydrogen';
+  const targetModel = resolveGeminiModelId(modelQuality);
   const streamEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:streamGenerateContent?alt=sse&key=${trimmedKey}`;
 
-  const isThinkingModel = targetModel === 'gemini-4-hydrogen' || targetModel === 'gemini-3.1-pro-preview';
+  const isThinkingModel =
+    targetModel === 'gemini-4-hydrogen' ||
+    targetModel === 'gemini-3.1-pro-preview' ||
+    targetModel === 'gemini-3.1-flash-lite';
   const requestedLevel =
     targetModel === 'gemini-3.1-pro-preview' && (thinkingLevel === 'minimal' || !thinkingLevel)
       ? 'low'
@@ -998,9 +1126,12 @@ export async function streamJsonLlmWithSceneProgress<T = any>(
           signal: userSignal,
         }),
       {
-        onRetry: (attempt, maxAttempts, delayMs) => {
+        signal: userSignal,
+        onRetry: (attempt, maxAttempts, delayMs, err) => {
           if (onStatusMessage) {
-            onStatusMessage(`Server busy (503/429). Retrying in ${Math.ceil(delayMs / 1000)}s (Attempt ${attempt} of ${maxAttempts})...`);
+            const sec = Math.ceil(delayMs / 1000);
+            const reasonLabel = String(err?.message || '').includes('429') ? 'Gemini rate limit (429)' : 'Gemini busy (503)';
+            onStatusMessage(`${reasonLabel}. Retrying in ${sec}s (Attempt ${attempt} of ${maxAttempts})...`);
           }
         },
       }
@@ -1024,10 +1155,22 @@ export async function streamJsonLlmWithSceneProgress<T = any>(
             signal: userSignal,
           });
         }
+      } else {
+        throw new Error(`API error (${resp.status}): ${errText}`);
       }
     }
 
-    if (!resp.ok || !resp.body || typeof resp.body.getReader !== 'function') {
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => '');
+      // Critical: NEVER fall back to non-streaming executeJsonLlmCall on 429 or auth/model errors;
+      // doing so triggers a second 4-attempt retry storm against the same exhausted quota bucket.
+      if (resp.status === 429 || resp.status === 400 || resp.status === 401 || resp.status === 403 || resp.status === 404) {
+        throw new Error(`API error (${resp.status}): ${errText}`);
+      }
+      return executeJsonLlmCall<T>(params);
+    }
+
+    if (!resp.body || typeof resp.body.getReader !== 'function') {
       return executeJsonLlmCall<T>(params);
     }
 
@@ -1079,6 +1222,6 @@ export async function streamJsonLlmWithSceneProgress<T = any>(
     if (userSignal?.aborted || err?.name === 'AbortError') {
       throw new DOMException('Generation request was cancelled by user.', 'AbortError');
     }
-    throw new Error(sanitizeGenericErrorMessage(err?.message || 'Failed to generate content with Gemini.', trimmedKey, 'gemini'));
+    throw new Error(sanitizeGenericErrorMessage(err?.message || 'Failed to generate content with Gemini.', trimmedKey, 'gemini', targetModel));
   }
 }

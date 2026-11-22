@@ -23,6 +23,7 @@ import { stage2GenerateBeatPlan, PlannedScene } from './stage2BeatPlan';
 import { stage3WriteScenePromptsBatch, WrittenPromptBeat } from './stage3PromptWriter';
 import { stage4VerifyAndRepairScene } from './stage4VerifyRepair';
 import { compileThumbnailPrompt, buildStoryDerivedHookFallback } from './promptCompiler';
+import { paceGeminiStep } from './unifiedAiService';
 import {
   buildCheckpointKey,
   clearGroundedCheckpoint,
@@ -280,6 +281,14 @@ export async function executeGroundedPipeline(
       );
     }
   } else {
+    await paceGeminiStep({
+      provider,
+      apiKey,
+      delayMs: 1500,
+      userSignal,
+      onStatusMessage,
+      nextStepLabel: `Stage 2: Segmenting phrase-level beats (${format === 'short' ? '9:16 portrait' : '16:9 widescreen'})...`,
+    });
     if (onStatusMessage) {
       onStatusMessage(`Stage 2: Segmenting phrase-level beats (${format === 'short' ? '9:16 portrait' : '16:9 widescreen'})...`);
     }
@@ -364,6 +373,15 @@ export async function executeGroundedPipeline(
     const batchSlice = plannedScenes.slice(bs, bs + SCENE_BATCH_SIZE);
     const firstSceneNum = batchSlice[0].index || bs + 1;
     const lastSceneNum = batchSlice[batchSlice.length - 1].index || bs + batchSlice.length;
+
+    await paceGeminiStep({
+      provider,
+      apiKey,
+      delayMs: 1500,
+      userSignal,
+      onStatusMessage,
+      nextStepLabel: `Stage 3: Streaming visual prompts for Scenes ${firstSceneNum}-${lastSceneNum} of ${plannedScenes.length}...`,
+    });
 
     if (onStatusMessage) {
       onStatusMessage(

@@ -4,7 +4,7 @@
  * Formatted strictly for stateless diffusion models in 16:9 widescreen landscape.
  */
 
-import { StoryBible, StoryFormat, GenerationMode, AiProvider } from '../types';
+import { StoryBible, StoryFormat, GenerationMode, AiProvider, GeminiModelQuality } from '../types';
 import { PlannedBeat } from './stage2BeatPlan';
 import { executeGeminiSchemaCall, executeJsonLlmCall, streamJsonLlmWithSceneProgress } from './unifiedAiService';
 
@@ -62,7 +62,7 @@ export async function stage3WriteScenePrompts(
   format: StoryFormat = 'long',
   generationMode: GenerationMode = 'image',
   apiKey: string,
-  modelQuality: 'standard' | 'high' = 'standard',
+  modelQuality: GeminiModelQuality = 'standard',
   userSignal?: AbortSignal,
   onStatusMessage?: (msg: string) => void,
   provider: AiProvider = 'gemini',
@@ -261,7 +261,7 @@ export async function stage3WriteScenePromptsBatch(
   format: StoryFormat = 'long',
   generationMode: GenerationMode = 'image',
   apiKey: string,
-  modelQuality: 'standard' | 'high' = 'standard',
+  modelQuality: GeminiModelQuality = 'standard',
   userSignal?: AbortSignal,
   onStatusMessage?: (msg: string) => void,
   provider: AiProvider = 'gemini',

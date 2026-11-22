@@ -64,7 +64,15 @@ import {
   getGroqReasoningOptions,
   stripReasoningWrappers,
 } from '../services/groqClient';
-import { robustJsonParse, extractCompletedStoryboardFields } from '../services/unifiedAiService';
+import {
+  robustJsonParse,
+  extractCompletedStoryboardFields,
+  resolveGeminiModelId,
+  formatGemini429Error,
+  sanitizeGenericErrorMessage,
+  streamJsonLlmWithSceneProgress,
+} from '../services/unifiedAiService';
+import { isNonRetryableQuotaExhaustion, parseRetryAfterMs } from '../utils/retryFetch';
 import {
   sanitizeKineticMotionForImage,
   resolveStyleAndCastingCompatibility,
@@ -4191,6 +4199,158 @@ function runTestSuite37() {
   );
 }
 
+async function runTestSuite38() {
+  console.log('\n--- Running Test Suite 38: Gemini 429 Quota Diagnostics & Retry Storm Prevention ---');
+
+  // 38.1 Model tier mapping includes Free Tier lite, standard hydrogen, and high pro-preview
+  assert(
+    resolveGeminiModelId('lite') === 'gemini-3.1-flash-lite' &&
+      resolveGeminiModelId('standard') === 'gemini-4-hydrogen' &&
+      resolveGeminiModelId('high') === 'gemini-3.1-pro-preview' &&
+      resolveGeminiModelId(undefined) === 'gemini-4-hydrogen',
+    'Suite 38: Gemini 429 Quota Diagnostics & Retry Storm Prevention',
+    '38.1 Maps Model Quality Tiers Including Gemini 3.1 Flash Lite',
+    `${resolveGeminiModelId('lite')} | ${resolveGeminiModelId('standard')} | ${resolveGeminiModelId('high')}`
+  );
+
+  // 38.2 Non-retryable limit: 0 billing block detection and diagnostic wording
+  const zeroQuotaPayload = JSON.stringify({
+    error: {
+      code: 429,
+      message: 'Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0',
+      status: 'RESOURCE_EXHAUSTED',
+      details: [
+        {
+          '@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+          violations: [
+            {
+              quotaMetric: 'generativelanguage.googleapis.com/generate_content_free_tier_requests',
+              quotaId: 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier',
+              quotaValue: '0',
+            },
+          ],
+        },
+      ],
+    },
+  });
+  const zeroDiag = sanitizeGenericErrorMessage(
+    `API error (429): ${zeroQuotaPayload}`,
+    'AIzaSySecretTestKey123',
+    'gemini',
+    'gemini-3.1-pro-preview'
+  );
+  assert(
+    isNonRetryableQuotaExhaustion(429, zeroQuotaPayload) === true &&
+      zeroDiag.includes('quota is 0') &&
+      zeroDiag.includes('Gemini 3.1 Flash Lite') &&
+      !zeroDiag.includes('AIzaSySecretTestKey123'),
+    'Suite 38: Gemini 429 Quota Diagnostics & Retry Storm Prevention',
+    '38.2 Detects limit: 0 Free Tier Block Without Retrying and Surfaces Actionable Guidance',
+    zeroDiag
+  );
+
+  // 38.3 Daily RPD exhaustion detection and midnight PT reset explanation
+  const dailyRpdPayload = JSON.stringify({
+    error: {
+      code: 429,
+      message: 'Resource has been exhausted (check daily quota)',
+      status: 'RESOURCE_EXHAUSTED',
+      details: [
+        {
+          '@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+          violations: [
+            {
+              quotaMetric: 'generativelanguage.googleapis.com/generate_requests_per_day',
+              quotaId: 'GenerateRequestsPerDayPerProjectPerModel-FreeTier',
+              quotaValue: '20',
+            },
+          ],
+        },
+      ],
+    },
+  });
+  const dailyDiag = formatGemini429Error(`API error (429): ${dailyRpdPayload}`, 'gemini-4-hydrogen');
+  assert(
+    isNonRetryableQuotaExhaustion(429, dailyRpdPayload) === true &&
+      dailyDiag.includes('daily free-tier limit') &&
+      dailyDiag.includes('midnight Pacific Time'),
+    'Suite 38: Gemini 429 Quota Diagnostics & Retry Storm Prevention',
+    '38.3 Detects Daily RPD Quota Exhaustion and Explains Shared Project Midnight PT Reset',
+    dailyDiag
+  );
+
+  // 38.4 Transient RPM RetryInfo parsing extracts exact seconds and surfaces wait hint
+  const transientRpmPayload = JSON.stringify({
+    error: {
+      code: 429,
+      message: 'Quota exceeded for quota metric RequestsPerMinute, please retry in 42s.',
+      status: 'RESOURCE_EXHAUSTED',
+      details: [
+        {
+          '@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+          violations: [
+            {
+              quotaMetric: 'generativelanguage.googleapis.com/generate_content_requests',
+              quotaId: 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier',
+              quotaValue: '15',
+            },
+          ],
+        },
+        {
+          '@type': 'type.googleapis.com/google.rpc.RetryInfo',
+          retryDelay: '42s',
+        },
+      ],
+    },
+  });
+  const parsedMs = parseRetryAfterMs(undefined, transientRpmPayload);
+  const rpmDiag = formatGemini429Error(`API error (429): ${transientRpmPayload}`, 'gemini-4-hydrogen');
+  assert(
+    isNonRetryableQuotaExhaustion(429, transientRpmPayload) === false &&
+      parsedMs === 42000 &&
+      rpmDiag.includes('wait 42s'),
+    'Suite 38: Gemini 429 Quota Diagnostics & Retry Storm Prevention',
+    '38.4 Parses Google RetryInfo.retryDelay Accurately and Surfaces Exact Wait Time',
+    `parsedMs=${parsedMs} diag=${rpmDiag}`
+  );
+
+  // 38.5 Streaming 429 stops cleanly after 1 call instead of falling back to executeJsonLlmCall (8x retry storm)
+  const originalFetch = globalThis.fetch;
+  let fetchCount = 0;
+  let caughtStreamError = '';
+  try {
+    globalThis.fetch = (async () => {
+      fetchCount++;
+      return new Response(zeroQuotaPayload, {
+        status: 429,
+        statusText: 'Too Many Requests',
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    await streamJsonLlmWithSceneProgress({
+      provider: 'gemini',
+      apiKey: 'AIzaSyFakeStreamStormTestKey999',
+      systemPrompt: 'Return JSON',
+      userPrompt: 'Hello',
+      modelQuality: 'high',
+      onPartialStoryboard: () => {},
+    });
+  } catch (err: any) {
+    caughtStreamError = String(err?.message || '');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  assert(
+    fetchCount === 1 &&
+      caughtStreamError.includes('quota is 0') &&
+      !caughtStreamError.includes('AIzaSyFakeStreamStormTestKey999'),
+    'Suite 38: Gemini 429 Quota Diagnostics & Retry Storm Prevention',
+    '38.5 Halts Streaming 429 Immediately With Single Call (No Fallback Retry Storm)',
+    `fetchCount=${fetchCount} err=${caughtStreamError}`
+  );
+}
+
 runTestSuite21().then(async () => {
   runTestSuite23();
   runTestSuite24();
@@ -4207,6 +4367,7 @@ runTestSuite21().then(async () => {
   await runTestSuite35();
   runTestSuite36();
   runTestSuite37();
+  await runTestSuite38();
   console.log('\n====================================================================');
   console.log('                  FULL-SYSTEM VERIFICATION REPORT                  ');
   console.log('====================================================================');

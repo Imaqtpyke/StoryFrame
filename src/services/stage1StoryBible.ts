@@ -6,7 +6,7 @@
  * world style, and explicit assumptions.
  */
 
-import { StoryBible, AiProvider } from '../types';
+import { StoryBible, AiProvider, GeminiModelQuality } from '../types';
 import { getCachedStoryBible, setCachedStoryBible } from './bibleCache';
 import { executeGeminiSchemaCall, executeJsonLlmCall } from './unifiedAiService';
 
@@ -127,7 +127,7 @@ export async function stage1GenerateStoryBible(
   narration: string,
   authorNotes: string | undefined,
   apiKey: string,
-  modelQuality: 'standard' | 'high' = 'standard',
+  modelQuality: GeminiModelQuality = 'standard',
   userSignal?: AbortSignal,
   onStatusMessage?: (msg: string) => void,
   provider: AiProvider = 'gemini',

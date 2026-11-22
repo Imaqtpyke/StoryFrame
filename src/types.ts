@@ -166,6 +166,7 @@ export interface CustomSceneDefinition {
 }
 
 export type AiProvider = 'gemini' | 'groq';
+export type GeminiModelQuality = 'lite' | 'standard' | 'high';
 
 export interface GenerateStoryRequest {
   story: string;
@@ -175,7 +176,7 @@ export interface GenerateStoryRequest {
   durationMode: 'preset' | 'custom' | 'automatic';
   durationSeconds?: number;
   aiProvider?: AiProvider;
-  modelQuality?: 'standard' | 'high';
+  modelQuality?: GeminiModelQuality;
   groqModel?: string;
   generationMode: GenerationMode;
   targetVideoDuration?: number;

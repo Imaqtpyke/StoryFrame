@@ -274,6 +274,11 @@
   - Upgraded `beatProgressionEngine.ts` to maintain trait locks across possessive subjects, creature pronouns (`it`/`its`), unique role aliases, and childhood/family flashbacks while shielding infant/child shots from adult wardrobe bleed, and scrubbed hallucinated wings (`"injured wing drooping"`) on pawed creatures when wings are absent from `characterSheet`.
   - Replaced hardcoded `"SURVIVE"` and generic Thumbnail fallbacks in `promptCompiler.ts` (`buildStoryDerivedHookFallback` shared with `groundedPipeline.ts`), added 2-attempt Step 3 thumbnail retries, and updated Step 1 / Step 2 / Step 3 banner and checkpoint labels in `ResultsView.tsx` and `ResultsErrorView.tsx`.
   - Left `Character & Visual Style` input handling and `sanitizeSharedVisualStyle` unchanged per explicit user exclusion; verified with `234 / 234` passing tests in `src/tests/systemTestSuite.ts`, `compile_applet`, and `lint_applet`.
+- [x] **Gemini 429 Quota Diagnostics, Streaming Storm Fix, Pacing & Flash Lite Tier (Suite 38, 239/239 passing):**
+  - Updated `src/utils/retryFetch.ts` (`parseRetryAfterMs`, `isNonRetryableQuotaExhaustion`, `abortableSleep`) to stop retrying `limit: 0` and daily RPD quota exhaustion, honor Google's `retryDelay` / `Retry-After`, cap transient 429 attempts at 3, and abort backoff delays immediately on user cancel.
+  - Stopped `streamJsonLlmWithSceneProgress` (`src/services/unifiedAiService.ts`) from falling back to `executeJsonLlmCall` on HTTP 429/400/401/403/404, added `formatGemini429Error` distinguishing `limit: 0`, daily RPD, TPM, and timed RPM errors across all pipelines (`geminiClient.ts`, `enhanceStoryArchitect.ts`, `assistantChatService.ts`, `GeneratorForm.tsx`).
+  - Added `Gemini 3.1 Flash Lite` (`gemini-3.1-flash-lite` via `GeminiModelQuality = 'lite' | 'standard' | 'high'`) in `types.ts`, `ApiKeyContext.tsx`, `GeneratorForm.tsx`, and `unifiedAiService.ts`, plus `paceGeminiStep` 1.5s inter-step cooldowns in `geminiClient.ts`, `enhanceStoryArchitect.ts`, and `groundedPipeline.ts`.
+  - Added Suite 38 tests verifying Flash Lite routing, `limit: 0` / daily RPD / `RetryInfo` diagnostics, and single-call stop on streaming 429s; verified `239 / 239` tests passing, clean build, and clean `tsc --noEmit`.
 
 ## Active Testing & Planned Future Roadmap (Post-Testing)
 - [ ] **Genre Stress-Testing Loop (In Progress):**

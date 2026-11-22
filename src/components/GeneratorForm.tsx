@@ -8,6 +8,7 @@ import {
   CustomSceneDefinition,
   ActivePage,
   AiProvider,
+  GeminiModelQuality,
   StoryGenerationResult,
 } from '../types';
 import {
@@ -126,6 +127,13 @@ const AI_PROVIDER_OPTIONS: DropdownOption[] = [
 
 const GEMINI_MODEL_OPTIONS: DropdownOption[] = [
   {
+    value: 'lite',
+    label: 'Gemini 3.1 Flash Lite',
+    badge: 'Free Tier Safe',
+    badgeColor: 'emerald',
+    description: 'Lightweight model with lower token and rate usage to avoid 429 throttling on Free Tier keys.',
+  },
+  {
     value: 'standard',
     label: 'Gemini 4 Hydrogen',
     badge: 'Standard: Fast',
@@ -135,9 +143,9 @@ const GEMINI_MODEL_OPTIONS: DropdownOption[] = [
   {
     value: 'high',
     label: 'Gemini 3.1 Pro Preview',
-    badge: 'Pro Quality',
+    badge: 'Pro Tier / Billed',
     badgeColor: 'amber',
-    description: 'Deep cinematic reasoning for complex narratives and intricate character style sheets.',
+    description: 'Deep cinematic reasoning for complex narratives (often requires Cloud Billing / Tier 1).',
   },
 ];
 
@@ -597,7 +605,9 @@ export default function GeneratorForm({
       ? `Groq: ${groqModel}`
       : modelQuality === 'high'
         ? 'Gemini 3.1 Pro Preview'
-        : 'Gemini 4 Hydrogen';
+        : modelQuality === 'lite'
+          ? 'Gemini 3.1 Flash Lite'
+          : 'Gemini 4 Hydrogen';
 
   return (
     <div className="w-full space-y-6 lg:space-y-8">
@@ -682,7 +692,7 @@ export default function GeneratorForm({
           <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
           <div className="text-sm leading-relaxed">
             <p className="font-semibold mb-0.5 text-white font-display">Generation Error</p>
-            <p className="text-red-200/90 font-narrative">{errorMessage}</p>
+            <p className="text-red-200/90 font-narrative whitespace-pre-line">{errorMessage}</p>
           </div>
         </div>
       )}
@@ -1159,8 +1169,14 @@ export default function GeneratorForm({
                     label="Gemini Model"
                     options={GEMINI_MODEL_OPTIONS}
                     selectedValue={modelQuality}
-                    onSelect={(val) => setModelQuality(val as 'standard' | 'high')}
-                    headerBadge={modelQuality === 'high' ? 'PRO REASONING' : 'HIGH SPEED'}
+                    onSelect={(val) => setModelQuality(val as GeminiModelQuality)}
+                    headerBadge={
+                      modelQuality === 'high'
+                        ? 'PRO REASONING'
+                        : modelQuality === 'lite'
+                          ? 'FREE TIER LITE'
+                          : 'HIGH SPEED'
+                    }
                   />
                 ) : (
                   <div className="space-y-2">

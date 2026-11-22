@@ -360,3 +360,12 @@
 - **Date:** 2026-11-21
 - **Status:** Active
 
+## Gemini 429 Quota Diagnostics, Non-Retryable Short-Circuit, Pacing & Flash Lite Tier (Suite 38)
+- **Fact/Decision:**
+  1. **Stopped Streaming 429 Retry Storms & Fixed Retry Backoff (`retryFetch.ts`, `unifiedAiService.ts`):** Updated `fetchWithExponentialBackoff` to inspect HTTP 429 payloads via `isNonRetryableQuotaExhaustion` and `parseRetryAfterMs`, immediately returning on `limit: 0` or daily `PerDay`/`RequestsPerDay` exhaustion, honoring `Retry-After` / `RetryInfo.retryDelay`, capping transient 429 retries at 3 attempts, and supporting immediate `AbortSignal` cancellation during waits via `abortableSleep`. Blocked `streamJsonLlmWithSceneProgress` from falling back to `executeJsonLlmCall` on HTTP 429, 400, 401, 403, or 404.
+  2. **Detailed Gemini 429 Quota Diagnostics (`unifiedAiService.ts`, `geminiClient.ts`, `enhanceStoryArchitect.ts`, `assistantChatService.ts`, `GeneratorForm.tsx`):** Added `formatGemini429Error` so users see the exact cause (`quota is 0` billing/tier block, daily Free Tier exhaustion at midnight PT across the project, TPM token limit, or exact timed RPM wait duration) with `whitespace-pre-line` rendering in `GeneratorForm.tsx`.
+  3. **Added Gemini 3.1 Flash Lite & Inter-Step Cooldown Pacing (`types.ts`, `ApiKeyContext.tsx`, `GeneratorForm.tsx`, `unifiedAiService.ts`, `geminiClient.ts`, `enhanceStoryArchitect.ts`, `groundedPipeline.ts`):** Extended `GeminiModelQuality` to `'lite' | 'standard' | 'high'` mapping `'lite'` to `'gemini-3.1-flash-lite'` for lightweight Free Tier usage, added `paceGeminiStep` (1.5s inter-step cooldown between live Gemini calls), and halted Step 3 thumbnail retries immediately on 429/auth errors.
+- **Context:** Eliminated the 8-request `429` retry loop and generic error masking that hid `limit: 0` vs daily RPD vs RPM throttling whenever users ran Gemini models (`239 / 239` tests passing).
+- **Date:** 2026-11-21
+- **Status:** Active
+

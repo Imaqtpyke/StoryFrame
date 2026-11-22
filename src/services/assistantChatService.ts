@@ -1,4 +1,4 @@
-import { AssistantChatMessage } from '../types';
+import { AssistantChatMessage, GeminiModelQuality } from '../types';
 import { fetchWithExponentialBackoff } from '../utils/retryFetch';
 import { extractAndRecordGeminiUsage } from './aiUsageStorage';
 
@@ -133,13 +133,17 @@ When the user asks to modify, rewrite, or replace a visual prompt for a specific
 
 import { AiProvider } from '../types';
 import { callGroqChatCompletion } from './groqClient';
-import { extractGeminiResponseText } from './unifiedAiService';
+import {
+  extractGeminiResponseText,
+  resolveGeminiModelId,
+  sanitizeGenericErrorMessage,
+} from './unifiedAiService';
 
 export async function sendChatMessage(
   history: AssistantChatMessage[],
   newMessage: string,
   apiKey: string,
-  modelQuality: 'standard' | 'high' = 'standard',
+  modelQuality: GeminiModelQuality = 'standard',
   provider: AiProvider = 'gemini',
   groqModel?: string,
   storyContext?: string
@@ -209,7 +213,7 @@ export async function sendChatMessage(
   });
 
   // Use the exact model chosen by the user in Model Options (no fallback switching)
-  const targetModel = modelQuality === 'high' ? 'gemini-3.1-pro-preview' : 'gemini-4-hydrogen';
+  const targetModel = resolveGeminiModelId(modelQuality);
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${trimmedKey}`;
 
   const generationConfig: Record<string, any> = {
@@ -238,12 +242,8 @@ export async function sendChatMessage(
     );
 
     if (!resp.ok) {
-      if (resp.status === 503 || resp.status === 429) {
-        throw new Error(
-          'Google Gemini servers are temporarily busy (503/429). We used an exponential backoff retry strategy before surfacing this notice. Please try again shortly.'
-        );
-      }
-      throw new Error(`Server status ${resp.status}: Service temporarily unavailable. Please try again shortly.`);
+      const errText = await resp.text().catch(() => '');
+      throw new Error(sanitizeGenericErrorMessage(`API error (${resp.status}): ${errText}`, trimmedKey, 'gemini', targetModel));
     }
 
     const resJson = await resp.json();
@@ -256,11 +256,6 @@ export async function sendChatMessage(
     return cleanAssistantText(content);
   } catch (err: any) {
     const msg = err?.message || '';
-    if (msg.includes('503') || msg.includes('overloaded') || msg.includes('unavailable')) {
-      throw new Error(
-        'Google Gemini servers are temporarily busy (503/429). We used an exponential backoff retry strategy before surfacing this notice. Please try again shortly.'
-      );
-    }
-    throw new Error(msg || 'An error occurred, please try again.');
+    throw new Error(sanitizeGenericErrorMessage(msg || 'An error occurred, please try again.', trimmedKey, 'gemini', targetModel));
   }
 }

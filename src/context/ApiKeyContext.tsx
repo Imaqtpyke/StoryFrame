@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { AiProvider } from '../types';
+import { AiProvider, GeminiModelQuality } from '../types';
 
 const GEMINI_STORAGE_KEY = 'byok_gemini_key';
 const GROQ_STORAGE_KEY = 'byok_groq_key';
@@ -22,9 +22,9 @@ interface ApiKeyContextType {
   groqApiKey: string;
 
   // Model selection
-  modelQuality: 'standard' | 'high'; // Gemini: standard (4 Hydrogen), high (3.1 Pro)
+  modelQuality: GeminiModelQuality; // Gemini: lite (3.1 Flash Lite), standard (4 Hydrogen), high (3.1 Pro Preview)
   groqModel: string; // Groq: openai/gpt-oss-120b (Recommended), qwen/qwen3.8-27b, openai/gpt-oss-20b
-  setModelQuality: (quality: 'standard' | 'high') => void;
+  setModelQuality: (quality: GeminiModelQuality) => void;
   setGroqModel: (model: string) => void;
 
   // Key operations
@@ -63,7 +63,7 @@ export const ApiKeyProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [geminiApiKey, setGeminiApiKey] = useState<string>(envGeminiKey);
   const [groqApiKey, setGroqApiKey] = useState<string>(envGroqKey);
   const [rememberInSession, setRememberInSession] = useState<boolean>(true);
-  const [modelQuality, setModelQualityState] = useState<'standard' | 'high'>('standard');
+  const [modelQuality, setModelQualityState] = useState<GeminiModelQuality>('standard');
   const [groqModel, setGroqModelState] = useState<string>('openai/gpt-oss-120b');
 
   useEffect(() => {
@@ -92,7 +92,7 @@ export const ApiKeyProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
       // 4. Restore Model Tiers
       const storedQuality = sessionStorage.getItem(MODEL_QUALITY_STORAGE_KEY);
-      if (storedQuality === 'high' || storedQuality === 'standard') {
+      if (storedQuality === 'lite' || storedQuality === 'high' || storedQuality === 'standard') {
         setModelQualityState(storedQuality);
       }
 
@@ -114,7 +114,7 @@ export const ApiKeyProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
-  const setModelQuality = (quality: 'standard' | 'high') => {
+  const setModelQuality = (quality: GeminiModelQuality) => {
     setModelQualityState(quality);
     try {
       sessionStorage.setItem(MODEL_QUALITY_STORAGE_KEY, quality);

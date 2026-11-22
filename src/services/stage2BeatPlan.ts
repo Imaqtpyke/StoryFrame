@@ -4,7 +4,7 @@
  * governed by strict pacing constants (short-form vs long-form) and clip mapping for video.
  */
 
-import { StoryBible, StoryFormat, GenerationMode, AiProvider } from '../types';
+import { StoryBible, StoryFormat, GenerationMode, AiProvider, GeminiModelQuality } from '../types';
 import { NumberedWord } from './stage0Prepare';
 import { executeGeminiSchemaCall, executeJsonLlmCall } from './unifiedAiService';
 
@@ -295,7 +295,7 @@ export async function stage2GenerateBeatPlan(
   format: StoryFormat = 'long',
   generationMode: GenerationMode = 'image',
   apiKey: string,
-  modelQuality: 'standard' | 'high' = 'standard',
+  modelQuality: GeminiModelQuality = 'standard',
   userSignal?: AbortSignal,
   onStatusMessage?: (msg: string) => void,
   provider: AiProvider = 'gemini',

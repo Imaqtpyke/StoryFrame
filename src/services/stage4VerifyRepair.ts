@@ -5,7 +5,7 @@
  * and performs an independent critic call per scene.
  */
 
-import { StoryBible, AiProvider, GenerationMode } from '../types';
+import { StoryBible, AiProvider, GenerationMode, GeminiModelQuality } from '../types';
 import { WrittenPromptBeat } from './stage3PromptWriter';
 import { callGroqChatCompletion } from './groqClient';
 import { executeGeminiSchemaCall } from './unifiedAiService';
@@ -368,7 +368,7 @@ export async function repairFailingBeat(
   issues: string[],
   bible: StoryBible,
   apiKey: string,
-  modelQuality: 'standard' | 'high' = 'standard',
+  modelQuality: GeminiModelQuality = 'standard',
   provider: AiProvider = 'gemini',
   groqModel?: string,
   userSignal?: AbortSignal
@@ -452,7 +452,7 @@ export async function runSceneCritic(
   beats: WrittenPromptBeat[],
   bible: StoryBible,
   apiKey: string,
-  modelQuality: 'standard' | 'high' = 'standard',
+  modelQuality: GeminiModelQuality = 'standard',
   provider: AiProvider = 'gemini',
   groqModel?: string
 ): Promise<Map<number, string[]>> {
@@ -538,7 +538,7 @@ export async function stage4VerifyAndRepairScene(
   bible: StoryBible,
   format: 'short' | 'long' = 'long',
   apiKey: string,
-  modelQuality: 'standard' | 'high' = 'standard',
+  modelQuality: GeminiModelQuality = 'standard',
   userSignal?: AbortSignal,
   onStatusMessage?: (msg: string) => void,
   provider: AiProvider = 'gemini',
