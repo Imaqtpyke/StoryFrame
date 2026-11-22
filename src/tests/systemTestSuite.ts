@@ -4525,6 +4525,178 @@ function runTestSuite39() {
   );
 }
 
+// ============================================================================
+// TEST SUITE 40: Mariana Trench Stickman Audit (Optics, Shared Tokens, Noun-Adjuncts, Still Motion, Deep-Sea CTA)
+// ============================================================================
+function runTestSuite40() {
+  // 40.1 Recognizes 1-digit focal lengths (8mm) & descriptive fisheye lenses, collapses double-lens statements, and derives shot scale from opening
+  const wideNoDouble = sanitizeStillImageMotionAndOptics(
+    'Vertical 9:16 portrait composition, Wide Establishing Shot, eye-level of a research Submersible drifting. 8mm digital grain texture. Wide-angle fisheye lens. Visual Style: stickman vector art.',
+    'Wide Establishing Shot',
+    false
+  );
+  const beat5Fixed = sanitizeStillImageMotionAndOptics(
+    'Vertical 9:16 portrait composition, Wide Establishing Shot, eye-level of the Submersible viewport. 8mm digital grain texture. 8mm wide-angle fisheye lens. Shot on 85mm f/1.4 portrait prime lens, shallow depth of field. Visual Style: stickman vector art.',
+    'Close-Up',
+    false
+  );
+  const stillGotDefaultWhenMissing = sanitizeStillImageMotionAndOptics(
+    'Vertical 9:16 portrait composition, Wide Establishing Shot, eye-level of the deep ocean trench. Visual Style: stickman vector art.',
+    'Close-Up',
+    false
+  );
+  assert(
+    !wideNoDouble.includes('Shot on 24mm') &&
+      wideNoDouble.includes('Wide-angle fisheye lens.') &&
+      beat5Fixed.includes('8mm wide-angle fisheye lens.') &&
+      !beat5Fixed.includes('85mm f/1.4') &&
+      stillGotDefaultWhenMissing.includes('Shot on 24mm f/4 wide lens') &&
+      !stillGotDefaultWhenMissing.includes('85mm'),
+    'Suite 40: Mariana Trench Stickman Optics, Spatial Fallback & Deep-Sea CTA',
+    '40.1 Prevents Double-Lens Stacking, Recognizes 8mm/Fisheye, & Derives Opening Shot Scale Before Default Lens',
+    `b1=${wideNoDouble} | b5=${beat5Fixed} | def=${stillGotDefaultWhenMissing}`
+  );
+
+  // 40.2 Freezes wave/pulse motion verbs and excludes shared lensAndFilmStock/camera boilerplate from false duplicate triggers
+  const frozenWaves = sanitizeStillImageMotionAndOptics(
+    'Wide Establishing Shot, eye-level of the Illuminated Metropolis vibrating with pulsating concentric waves and outward-expanding neon rings. 8mm wide-angle fisheye lens.',
+    'Wide Establishing Shot',
+    false
+  );
+  const trenchStyle: StyleProfile = {
+    artStyle: 'minimalist stickman vector art with thick black outlines, flat digital shading',
+    colorPalette: 'deep abyss black, bioluminescent cyan, radioactive neon green',
+    lighting: 'sharp high-contrast directional bioluminescence',
+    eraAndSetting: '11,000 meters deep within the Mariana Trench',
+    lensAndFilmStock: 'wide-angle distorted fisheye lens simulation, 8mm digital grain texture',
+  };
+  const sharedIgnore = buildSharedContextIgnoreTokens(trenchStyle, {
+    'Mariana Trench Abyssal Plain': 'featureless dark void with scattered jagged geometric stick-figure rock formations.',
+  });
+  const beat3Metropolis =
+    'Vertical 9:16 portrait composition, Wide Establishing Shot, eye-level of the Illuminated Metropolis glowing grid lines in the Mariana Trench Abyssal Plain. 8mm digital grain texture. Wide-angle fisheye lens. Visual Style: minimalist stickman vector art.';
+  const beat4Trench =
+    'Vertical 9:16 portrait composition, Wide Establishing Shot, eye-level inside cockpit peering down toward dark trench chasm walls. 8mm digital grain texture. Wide-angle fisheye lens. Visual Style: minimalist stickman vector art.';
+  const sim34 = computeVisualPromptSimilarity(beat3Metropolis, beat4Trench, sharedIgnore);
+  assert(
+    !frozenWaves.includes('vibrating') &&
+      !frozenWaves.includes('pulsating') &&
+      !frozenWaves.includes('outward-expanding') &&
+      frozenWaves.includes('etched with glowing') &&
+      frozenWaves.includes('frozen outward concentric') &&
+      sharedIgnore.has('fisheye') &&
+      sharedIgnore.has('grain') &&
+      sim34 < 0.48,
+    'Suite 40: Mariana Trench Stickman Optics, Spatial Fallback & Deep-Sea CTA',
+    '40.2 Freezes Wave/Pulse Motion Verbs & Excludes Shared Lens/Camera Boilerplate From Duplicate Scoring',
+    `frozen=${frozenWaves} | sim34=${sim34}`
+  );
+
+  // 40.3 Protects lowercase noun-adjuncts ("submersible searchlights") and improves Beat 4 fallback location & stickman/helmet framing
+  const trenchCast = {
+    'Biologist A': 'stickman figure, circle head, thin straight torso and limbs, wearing a simple round white helmet bubble',
+    Submersible: 'minimalist rounded rectangular capsule with a large circular viewport and two stick-thin mechanical arm probes',
+  };
+  const lockedSearchlights = injectCompactCharacterLocks(
+    'Close-Up, eye-level framing Biologist A illuminated by submersible searchlights.',
+    'buried inside the Mariana Trench',
+    'Two deep-sea marine biologists in a research submersible encounter an illuminated city.',
+    trenchCast
+  );
+  const progressedFallback = deduplicateAndProgressSceneBeats(
+    [
+      {
+        beatIndex: 1,
+        textSpan: 'Two marine biologists encounter a city',
+        shotType: 'Wide Establishing Shot',
+        cameraAngle: 'eye-level',
+        cameraMovement: 'Static Frame',
+        imagePrompt:
+          'Wide Establishing Shot, eye-level of Biologist A inside a cockpit peering out at bioluminescent grid towers. Wide-angle fisheye lens.',
+        estimatedSeconds: 2.0,
+      },
+      {
+        beatIndex: 2,
+        textSpan: 'buried inside the trench',
+        shotType: 'Wide Establishing Shot',
+        cameraAngle: 'eye-level',
+        cameraMovement: 'Static Frame',
+        imagePrompt:
+          'Wide Establishing Shot, eye-level of Biologist A inside a cockpit peering out at bioluminescent grid towers. Wide-angle fisheye lens.',
+        estimatedSeconds: 2.0,
+      },
+    ],
+    {
+      scene: {
+        index: 1,
+        narratorLine: 'Two deep-sea marine biologists in a research submersible encounter a city buried inside the trench.',
+        estimatedSeconds: 4.0,
+        beats: [],
+      },
+      isLongForm: false,
+      isVideoMode: false,
+      styleProfile: trenchStyle,
+      characterSheet: trenchCast,
+      locationSheet: {
+        'Mariana Trench Abyssal Plain': 'featureless dark void with scattered jagged geometric stick-figure rock formations.',
+      },
+    }
+  );
+  const beat2Fallback = progressedFallback[1]?.imagePrompt || '';
+  assert(
+    lockedSearchlights.includes('Biologist A (stickman figure') &&
+      lockedSearchlights.includes('submersible searchlights') &&
+      !lockedSearchlights.includes('submersible (minimalist rounded rectangular') &&
+      beat2Fallback.includes('submersible interior') &&
+      !beat2Fallback.includes('eyes fixed intently forward'),
+    'Suite 40: Mariana Trench Stickman Optics, Spatial Fallback & Deep-Sea CTA',
+    '40.3 Skips Lowercase Compound Modifiers ("submersible searchlights") & Keeps Stickman/Vessel Continuity in Fallbacks',
+    `search=${lockedSearchlights} | fb=${beat2Fallback}`
+  );
+
+  // 40.4 Deep-sea/sonar discovery CTA avoids generic position prompt, adapts helmeted stickman framing, and cleans Thumbnail helmet/comma
+  const trenchPremise =
+    'Two deep-sea marine biologists in a research submersible encounter an illuminated underwater metropolis buried inside the Mariana Trench that responds to sonar pulses with musical harmonics.';
+  const trenchThumb = compileThumbnailPrompt({
+    rawThumbnail: {
+      heroMoment: 'Biologist A pilots Submersible toward the city as it emits musical harmonic pulses',
+      expression: 'wide eyed shock behind glass helmets',
+      bgDescription: 'pitch black abyssal void with glowing cyan grid towers',
+      accentColor: 'bioluminescent cyan',
+      hookText: 'THE OCEAN SINGS',
+      fontStyle: 'bold sans serif geometric type',
+    },
+    styleProfile: trenchStyle,
+    characterSheet: trenchCast,
+    storyPremise: trenchPremise,
+    format: 'short',
+    platform: 'TikTok',
+  });
+  const trenchCta = compileCtaPrompt({
+    storyPremise: trenchPremise,
+    styleProfile: trenchStyle,
+    characterSheet: trenchCast,
+    format: 'short',
+    platform: 'tiktok',
+    modality: 'image',
+  });
+  assert(
+    trenchThumb.cleanPlatePrompt.includes('above the hero shoulders, left completely empty') &&
+      trenchThumb.compiledPrompt.includes('behind the helmet visor') &&
+      !trenchThumb.compiledPrompt.includes('glass helmets') &&
+      !trenchThumb.compiledPrompt.includes('as it emits musical harmonic pulses') &&
+      trenchThumb.compiledPrompt.includes('radiating crisp luminous concentric rings') &&
+      !trenchCta.questionText.includes("Biologist A's position") &&
+      /ocean|trench|signal|sonar|harmonic/i.test(trenchCta.questionText) &&
+      trenchCta.compiledPrompt.includes('helmeted silhouette') &&
+      !trenchCta.compiledPrompt.includes('sharp cinematic focus on facial expression') &&
+      trenchCta.compiledPrompt.includes(', separating the subject from atmospheric background shadows'),
+    'Suite 40: Mariana Trench Stickman Optics, Spatial Fallback & Deep-Sea CTA',
+    '40.4 Routes Deep-Sea Sonar Premise to Discovery CTA, Uses Helmeted Stickman Framing, & Cleans Thumbnail Helmet/Comma',
+    `thumbClean=${trenchThumb.cleanPlatePrompt} | ctaQ=${trenchCta.questionText} | cta=${trenchCta.compiledPrompt}`
+  );
+}
+
 runTestSuite21().then(async () => {
   runTestSuite23();
   runTestSuite24();
@@ -4543,6 +4715,7 @@ runTestSuite21().then(async () => {
   runTestSuite37();
   await runTestSuite38();
   runTestSuite39();
+  runTestSuite40();
   console.log('\n====================================================================');
   console.log('                  FULL-SYSTEM VERIFICATION REPORT                  ');
   console.log('====================================================================');

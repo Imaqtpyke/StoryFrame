@@ -31,6 +31,7 @@ import {
   stripLeadingOrientationPrefixes,
   stripTransientExpressionsAndPoses,
   STYLE_ANCHOR_MAX_WORDS,
+  synchronizeBeatMetadataWithPrompt,
   synchronizeCharacterSheetWithFirstAppearances,
 } from './beatProgressionEngine';
 import { generateEnhancedStory } from './enhanceStoryArchitect';
@@ -440,9 +441,19 @@ export function buildPartialStoryResultFromStream(params: {
           let prompt = removeEmDashes(b.imagePrompt || '');
           prompt = expandEntityKeysInPrompt(prompt, normalizedCharSheet, normalizedLocSheet);
           prompt = sanitizeMonochromeLighting(prompt, sanitizedStyleProfile);
-          const shotType = removeEmDashes(b.shotType || inferShotType(prompt, beatIndex));
-          const cameraAngle = removeEmDashes(b.cameraAngle || inferCameraAngle(prompt, beatIndex));
-          const cameraMovement = removeEmDashes(b.cameraMovement || inferCameraMovement(prompt, beatIndex));
+          const preSynced = synchronizeBeatMetadataWithPrompt({
+            beatIndex,
+            textSpan,
+            shotType: removeEmDashes(b.shotType || inferShotType(prompt, beatIndex)),
+            cameraAngle: removeEmDashes(b.cameraAngle || inferCameraAngle(prompt, beatIndex)),
+            cameraMovement: removeEmDashes(b.cameraMovement || inferCameraMovement(prompt, beatIndex)),
+            imagePrompt: prompt,
+            estimatedSeconds:
+              typeof b.estimatedSeconds === 'number' && b.estimatedSeconds > 0 ? b.estimatedSeconds : 1.5,
+          });
+          const shotType = preSynced.shotType;
+          const cameraAngle = preSynced.cameraAngle;
+          const cameraMovement = preSynced.cameraMovement;
           prompt = sanitizeStillImageMotionAndOptics(prompt, shotType, isVideoMode);
           prompt = cleanAndDeduplicatePrompt(prompt, isVideoMode);
           prompt = assembleCleanPrompt(prompt, isLongForm);
@@ -811,7 +822,7 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
      * STRICT MONOCHROME / BLACK-AND-WHITE RULE: Whenever the story's artStyle or colorPalette specifies pure black-and-white, monochrome, noir ink, or manga ("no gray gradients", "Junji Ito ink", "black and white"), you are STRICTLY FORBIDDEN from outputting chromatic Kelvin values ("3200K warm", "cold 5400K") or colors ("cold cyan", "amber", "golden"). Describe lighting strictly via stark high-contrast chiaroscuro, harsh directional shadows, and white-edge highlights!
 
 5. Cinematic Optics & Lens Prescriptions (IMAGE MODE = ZERO MOTION LANGUAGE):
-   Specify ONE focal length and aperture appropriate to shot scale in every beat prompt: use wide focal lengths (24mm) ONLY for Wide Establishing / Medium shots, and portrait/macro framing (85mm, 100mm macro, or shallow foreground focus for 2D vector/chibi styles) for Close-Up and Extreme Close-Up beats. NEVER repeat the focal length ("35mm 35mm"). Also keep prop materials 100% consistent across beats (if a broth is poured into a ceramic bowl, never change it to a wooden bowl in the next shot) and avoid generic "swirling vortex" magic clichés. In Text-to-Image mode, NEVER write video camera movement prose ("tracking left to reveal", "tracking upward", "panning across") or active fluid-motion clichés ("particles rising", "swirling"); represent blinks/breaths/steam/light as crisp frozen static instants.
+   Specify ONE focal length or lens descriptor appropriate to shot scale in every beat prompt: use wide/fisheye focal lengths (8mm, 24mm) ONLY for Wide Establishing shots, Medium shots for interior crew/cockpit framing (50mm), and portrait/macro framing (85mm, 100mm macro, or shallow foreground focus for 2D vector/chibi styles) for Close-Up and Extreme Close-Up beats. NEVER combine two conflicting lenses in the same beat (e.g., never write both "Wide-angle fisheye lens" and "Shot on 50mm/85mm") and NEVER repeat Wide Establishing Shot on 4-5 consecutive beats when interior cockpits or detail inserts belong in Medium Shot / Medium Close-Up / Close-Up. Also keep prop materials 100% consistent across beats (if a broth is poured into a ceramic bowl, never change it to a wooden bowl in the next shot) and avoid generic "swirling vortex" magic clichés. In Text-to-Image mode, NEVER write video camera movement prose ("tracking left to reveal", "tracking upward", "panning across") or active fluid/wave motion verbs ("particles rising", "swirling", "vibrating with pulsating", "outward-expanding"); represent blinks/breaths/steam/light/sonar rings as crisp frozen static instants.
 
 6. STRICT BAN ON AUDIO / SOUND CUES & PHANTOM TEXT IN IMAGE PROMPTS:
    Diffusion image models generate static visuals and CANNOT render sound. DO NOT write audio cues or sound phrases like "listening to an unseen whisper", "hearing a sound", or ambient foley. Also NEVER invent unstated etched date timelines or floating text on mirrors/walls unless explicitly spoken in narration.
@@ -1304,7 +1315,16 @@ Output ONLY { "scenes": [ ... ] } starting immediately with Scene 1 Beat 1.`;
 
         finalImagePrompt = expandEntityKeysInPrompt(finalImagePrompt, sanitizedCharacterSheet, sanitizedLocationSheet);
         finalImagePrompt = sanitizeMonochromeLighting(finalImagePrompt, sanitizedStyleProfile);
-        finalImagePrompt = sanitizeStillImageMotionAndOptics(finalImagePrompt, shotType, isVideoMode);
+        const syncedOpticsMeta = synchronizeBeatMetadataWithPrompt({
+          beatIndex,
+          textSpan,
+          shotType,
+          cameraAngle,
+          cameraMovement,
+          imagePrompt: finalImagePrompt,
+          estimatedSeconds: 1.5,
+        });
+        finalImagePrompt = sanitizeStillImageMotionAndOptics(finalImagePrompt, syncedOpticsMeta.shotType, isVideoMode);
         finalImagePrompt = cleanAndDeduplicatePrompt(finalImagePrompt, isVideoMode);
         finalImagePrompt = assembleCleanPrompt(finalImagePrompt, isLongForm);
 
@@ -1601,13 +1621,14 @@ Return ONLY valid JSON containing:
     }
     const thumbSystemPrompt = `You are a high-CTR storyboard cover designer. Generate ONLY a JSON object for the story thumbnail using the locked cast and story scenes. No em dashes.
 Rules:
-- "heroMoment" MUST refer to characters ONLY using their exact Character Sheet names (never invent ungrounded labels like "a spectral traveler" when the sheet defines "Spirit Patron" or "Wandering Ghost").
+- "heroMoment" MUST refer to characters ONLY using their exact Character Sheet names (never invent ungrounded labels like "a spectral traveler" when the sheet defines "Spirit Patron" or "Wandering Ghost"), and MUST use frozen static visuals (never audio/motion phrases like "as it emits musical harmonic pulses").
+- "expression" MUST fit the literal hero anatomy and headgear in Character Sheet (singular helmet/visor for a single helmeted hero, stickman posture for circle-head stickmen).
 - "fontStyle" must NOT end with punctuation.
 - "accentColor" must match a concrete color from Color Palette without stray words.
 Schema:
 {
-  "heroMoment": "one crisp sentence describing the central conflict or turning point using exact Character Sheet names",
-  "expression": "emotionally fitting facial expression matching the story tone",
+  "heroMoment": "one crisp frozen visual sentence describing the central conflict or turning point using exact Character Sheet names",
+  "expression": "emotionally fitting expression or posture matching the hero's literal Character Sheet anatomy",
   "bgDescription": "dark, simplified high-contrast background with deep separation",
   "accentColor": "dramatic rim lighting color fitting the story palette",
   "hookText": "bold 2 to 4 word curiosity headline in ALL CAPS specific to this story (never generic like SURVIVE)",

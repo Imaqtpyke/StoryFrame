@@ -190,6 +190,16 @@ export function buildSharedContextIgnoreTokens(
     addFromText(styleProfile.colorPalette);
     addFromText(styleProfile.lighting);
     addFromText(styleProfile.eraAndSetting);
+    addFromText(styleProfile.lensAndFilmStock);
+  }
+  const cameraBoilerplate = [
+    'vertical', 'portrait', 'composition', 'cinematic', 'widescreen', 'establishing',
+    'wide', 'medium', 'close', 'level', 'angle', 'lens', 'prime', 'fisheye', 'macro',
+    'focus', 'depth', 'field', 'balanced', 'shallow', 'deep', 'shot', 'grain', 'texture',
+    'digital', 'visual', 'style', 'frame', 'static',
+  ];
+  for (const word of cameraBoilerplate) {
+    ignore.add(word);
   }
   if (locationSheet) {
     for (const [k, v] of Object.entries(locationSheet)) {
@@ -512,8 +522,22 @@ export function sanitizeStillImageMotionAndOptics(
 ): string {
   let cleaned = sanitizePromptGrammarAndTypos(prompt || '');
 
-  // Deduplicate repeated focal lengths (e.g. "35mm 35mm f/2.8" -> "35mm f/2.8")
-  cleaned = cleaned.replace(/\b(\d{2,3}mm)\s+\1\b/gi, '$1');
+  // Deduplicate repeated focal lengths (e.g. "35mm 35mm f/2.8" or "8mm 8mm" -> "35mm f/2.8")
+  cleaned = cleaned.replace(/\b(\d{1,3}mm)\s+\1\b/gi, '$1');
+
+  // Derive effective shot framing from the actual prompt opening first so stale caller shotType never stamps 85mm onto a Wide shot
+  const bodyNoOrient = stripLeadingOrientationPrefixes(cleaned).toLowerCase();
+  const inferredOpeningShot = /\bextreme\s+close[-\s]*up\b/.test(bodyNoOrient.slice(0, 60))
+    ? 'extreme close-up'
+    : /\bmedium\s+close[-\s]*up\b/.test(bodyNoOrient.slice(0, 60))
+      ? 'medium close-up'
+      : /\bclose[-\s]*up\b/.test(bodyNoOrient.slice(0, 60))
+        ? 'close-up'
+        : /\b(?:extreme\s+wide|wide(?:\s+establishing)?)\b/.test(bodyNoOrient.slice(0, 60))
+          ? 'wide'
+          : /\bmedium\b/.test(bodyNoOrient.slice(0, 60))
+            ? 'medium'
+            : (shotType || '').toLowerCase();
 
   if (!isVideoMode) {
     // Strip kinetic camera tracking directives and freeze active continuous motion into still-frame states
@@ -531,6 +555,12 @@ export function sanitizeStillImageMotionAndOptics(
       .replace(/\b(?:eye-level|low-angle|high-angle)\s+static\s+frame\s+showing\b/gi, '$1 showing')
       .replace(/\bpanning\s+(?:left|right|across)\s+(?:to|over)\b/gi, 'across')
       .replace(/\blistening\s+to\s+an\s+unseen\s+whisper,?\s*/gi, 'standing tense in silence, ')
+      .replace(/\bvibrating\s+with\s+pulsating\b/gi, 'etched with glowing')
+      .replace(/\boutward-expanding\b/gi, 'frozen outward concentric')
+      .replace(/\bpulsating\b/gi, 'glowing')
+      .replace(/\bvibrating\b/gi, 'charged')
+      .replace(/\bas\s+it\s+emits\s+musical\s+harmonic\s+pulses\b/gi, 'radiating crisp luminous concentric rings')
+      .replace(/\bmusical\s+harmonic\s+pulses\b/gi, 'luminous concentric ring patterns')
       .replace(/\bswirling\s+vortex\s+of\b/gi, 'radiant spiral pattern of')
       .replace(/\b(?:clouds?\s+)?swirls?\s+above\b/gi, 'dense curved storm-cloud formations hang frozen above')
       .replace(/\bswirling\b/gi, 'frozen in curved spiral patterns')
@@ -545,11 +575,22 @@ export function sanitizeStillImageMotionAndOptics(
       .replace(/\bliquid\s+motion\b/gi, 'frozen liquid details');
 
     // Correct mismatched wide-angle 24mm lens descriptors accidentally copied onto tight Close-Up / Extreme Close-Up shots
-    const lowerShot = (shotType || '').toLowerCase();
-    if (lowerShot.includes('extreme close') || /\bextreme\s+close[-\s]*up\b/i.test(cleaned.slice(0, 90))) {
+    if (inferredOpeningShot.includes('extreme close') || /\bextreme\s+close[-\s]*up\b/i.test(cleaned.slice(0, 90))) {
       cleaned = cleaned.replace(/\bShot\s+on\s+24mm\s+(?:wide(?:-angle)?\s+)?prime\s+lens/gi, 'Shot on 100mm macro prime lens');
-    } else if (lowerShot.includes('close-up') || /\bclose[-\s]*up\b/i.test(cleaned.slice(0, 80))) {
+    } else if (inferredOpeningShot.includes('close-up') || /\bclose[-\s]*up\b/i.test(cleaned.slice(0, 80))) {
       cleaned = cleaned.replace(/\bShot\s+on\s+24mm\s+(?:wide(?:-angle)?\s+)?prime\s+lens/gi, 'Shot on 85mm portrait prime lens');
+    }
+
+    // Collapse conflicting double lens statements when a bare fisheye/wide-angle lens clause precedes a "Shot on ..." lens clause
+    const hasShotOnClause = /\bShot\s+on\s+\d{1,3}mm\b/i.test(cleaned);
+    if (hasShotOnClause) {
+      if (inferredOpeningShot.includes('wide') && /\b(?:\d{1,3}mm\s+)?(?:wide-angle\s+)?fisheye\s+lens\b/i.test(cleaned)) {
+        cleaned = cleaned.replace(/,\s*Shot\s+on\s+(?:50|85|100)mm[^.]*\./gi, '.').replace(/\.\s*Shot\s+on\s+(?:50|85|100)mm[^.]*\./gi, '.');
+      }
+      cleaned = cleaned
+        .replace(/^\s*(?:\d{1,3}mm\s+)?(?:wide-angle\s+)?(?:distorted\s+)?fisheye\s+lens(?:\s+simulation)?\.(?=\s*Shot\s+on\b)/gi, '')
+        .replace(/\.\s+(?:\d{1,3}mm\s+)?(?:wide-angle\s+)?(?:distorted\s+)?fisheye\s+lens(?:\s+simulation)?\.(?=\s*Shot\s+on\b)/gi, '.')
+        .trim();
     }
   }
 
@@ -562,14 +603,17 @@ export function sanitizeStillImageMotionAndOptics(
     .replace(/\s{2,}/g, ' ')
     .trim();
 
-  // Ensure lens/optics prescription in Image Mode when missing
-  if (!isVideoMode && !/\b\d{2,3}mm\b/i.test(cleaned) && !/\bmacro\s+lens\b/i.test(cleaned)) {
-    const lowerShot = (shotType || '').toLowerCase();
-    const defaultLens = lowerShot.includes('extreme close') || lowerShot.includes('close-up')
-      ? 'Shot on 85mm f/1.4 portrait prime lens, shallow depth of field'
-      : lowerShot.includes('wide')
-        ? 'Shot on 24mm f/4 wide lens, deep focus'
-        : 'Shot on 50mm f/2.0 prime lens, balanced depth of field';
+  // Ensure lens/optics prescription in Image Mode when missing (recognize 1-digit mm like 8mm and descriptive fisheye/wide/macro lens phrases)
+  const hasExplicitOptics =
+    /\b\d{1,3}mm\b/i.test(cleaned) ||
+    /\b(?:fisheye|macro|wide-angle|telephoto|anamorphic|portrait|prime)\s+lens\b/i.test(cleaned);
+  if (!isVideoMode && !hasExplicitOptics) {
+    const defaultLens =
+      inferredOpeningShot.includes('extreme close') || inferredOpeningShot.includes('close-up')
+        ? 'Shot on 85mm f/1.4 portrait prime lens, shallow depth of field'
+        : inferredOpeningShot.includes('wide')
+          ? 'Shot on 24mm f/4 wide lens, deep focus'
+          : 'Shot on 50mm f/2.0 prime lens, balanced depth of field';
 
     const styleIdx = cleaned.search(/\bVisual Style:/i);
     if (styleIdx > 0) {
@@ -1358,14 +1402,24 @@ export function injectCompactCharacterLocks(
     }
 
     if (promptMentionsName) {
-      // Attach compact visual anchor right after the first non-possessive mention, or wrap cleanly as Featuring when only possessive ('s) appears
+      // Attach compact visual anchor right after the first non-possessive mention, skipping lowercase noun modifiers like "submersible searchlights"
+      const modifierNextWords =
+        'searchlights?|headlights?|floodlights?|lights?|beams?|doors?|hatch|hull|viewport|viewports|window|windows|panels?|propellers?|engines?|sonar|crew';
       const nonPossessiveRegex = new RegExp(`\\b(${escapedName})\\b(?!'s|\\s*\\()`, nameFlags);
-      if (nonPossessiveRegex.test(updated)) {
+      const modifierLookahead = new RegExp(`^\\s+(?:${modifierNextWords})\\b`, 'i');
+      const matchedCandidate = updated.match(nonPossessiveRegex);
+      const isLowercaseCompoundModifier =
+        matchedCandidate &&
+        typeof matchedCandidate.index === 'number' &&
+        /^[a-z]/.test(matchedCandidate[1]) &&
+        modifierLookahead.test(updated.slice(matchedCandidate.index + matchedCandidate[0].length));
+
+      if (nonPossessiveRegex.test(updated) && !isLowercaseCompoundModifier) {
         updated = updated.replace(nonPossessiveRegex, (_fullMatch, matchedName) => {
           return `${matchedName} (${scopedAnchor})`;
         });
         updated = pruneAppositiveTraitsAfterLock(updated);
-      } else {
+      } else if (!isLowercaseCompoundModifier) {
         updated = pruneAppositiveTraitsAfterLock(updated);
         if (!new RegExp(`\\b${escapedName}\\s*\\(`, nameFlags).test(updated)) {
           updated = insertClauseBeforeStyleOrAr(updated, `Featuring ${charName} (${scopedAnchor})`);
@@ -2181,10 +2235,22 @@ function buildContextPreservingProgressionBeat(
   const rawLocPhrase = locEntries[0]
     ? buildCompactCharacterAnchor(locEntries[0][1], 24) || locEntries[0][0]
     : styleProfile.eraAndSetting || 'the surrounding room';
-  const locPhrase = rawLocPhrase.replace(/^(A|An|The)\s+(?=[a-z])/i, (m) => m.toLowerCase()).replace(/[.!?]+$/, '').trim();
+  let locPhrase = rawLocPhrase.replace(/^(A|An|The)\s+(?=[a-z])/i, (m) => m.toLowerCase()).replace(/[.!?]+$/, '').trim();
+  const vesselMatch = (scene.narratorLine || '').match(
+    /\b(?:in|inside|aboard)\s+(?:a|an|the)?\s*(?:[a-z]+\s+){0,2}(submersible|submarine|capsule|cockpit|cabin|spacecraft|shuttle|train|car)\b/i
+  );
+  if (vesselMatch && vesselMatch[1]) {
+    locPhrase = `the ${vesselMatch[1].toLowerCase()} interior`;
+  } else if (locPhrase && !/^(?:a|an|the|this|that|inside|within|in|on|at|across|beneath|under)\b/i.test(locPhrase) && /^[a-z]/.test(locPhrase)) {
+    const locArticle = /^[aeiou]/i.test(locPhrase) && !/^uni/i.test(locPhrase) ? 'an' : 'a';
+    locPhrase = `${locArticle} ${locPhrase}`;
+  }
 
   const isBarefoot = leadChar ? /\bbarefoot\b/i.test(leadChar[1]) : false;
   const stanceNote = isBarefoot ? 'bare feet planted firmly on the floor' : 'stance planted steadily on the ground';
+  const isMaskedOrMinimalist = /\b(?:stickman|stick[-\s]*figure|circle\s+head|helmet|visor|mask)\b/i.test(
+    `${charPhrase} ${styleProfile.artStyle || ''}`
+  );
 
   const lowerSpan = (beat.textSpan || '').toLowerCase();
   const variant = (Math.max(0, (scene.index || 1) - 1) + duplicateIdxInScene) % 4;
@@ -2273,7 +2339,9 @@ function buildContextPreservingProgressionBeat(
     shotType = 'Close-Up';
     cameraAngle = 'eye-level';
     cameraMovement = isVideoMode ? 'Slow Push-In' : 'Static Frame';
-    actionDescription = `showing a tight portrait study framing ${charPhrase} inside ${locPhrase}, tense stillness in shoulders and eyes fixed intently forward`;
+    actionDescription = isMaskedOrMinimalist
+      ? `tight close-up framing ${charPhrase} inside ${locPhrase}, still posture with head and shoulders angled intently forward`
+      : `showing a tight portrait study framing ${charPhrase} inside ${locPhrase}, tense stillness in shoulders and eyes fixed intently forward`;
   } else if (variant === 1) {
     shotType = 'Low-Angle Hero Shot';
     cameraAngle = 'low-angle';
@@ -2288,7 +2356,9 @@ function buildContextPreservingProgressionBeat(
     shotType = 'Medium Close-Up';
     cameraAngle = 'dutch-tilt';
     cameraMovement = isVideoMode ? 'Handheld Cinematic Drift' : 'Static Frame';
-    actionDescription = `capturing a canted medium close-up of ${charPhrase} bracing in quiet unease inside ${locPhrase}, stark directional contrast across facial contours`;
+    actionDescription = isMaskedOrMinimalist
+      ? `capturing a canted medium close-up of ${charPhrase} bracing in quiet alertness inside ${locPhrase}, stark directional contrast across the figure`
+      : `capturing a canted medium close-up of ${charPhrase} bracing in quiet unease inside ${locPhrase}, stark directional contrast across facial contours`;
   }
 
   const optics =

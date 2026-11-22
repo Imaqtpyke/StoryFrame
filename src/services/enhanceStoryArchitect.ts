@@ -26,6 +26,7 @@ import {
   sanitizeMonochromeLighting,
   sanitizeSharedVisualStyle,
   sanitizeStillImageMotionAndOptics,
+  synchronizeBeatMetadataWithPrompt,
   synchronizeCharacterSheetWithFirstAppearances,
 } from './beatProgressionEngine';
 import {
@@ -754,10 +755,20 @@ Output ONLY { "scenes": [ ... ] } starting immediately with Scene 1 Beat 1.`;
         const rawCameraAngle = removeEmDashes(beat.cameraAngle || inferCameraAngle(imagePrompt, beatIndex));
         const cameraMovement = removeEmDashes(beat.cameraMovement || inferCameraMovement(imagePrompt, beatIndex));
 
+        const preSynced = synchronizeBeatMetadataWithPrompt({
+          beatIndex,
+          textSpan,
+          shotType: rawShotType,
+          cameraAngle: rawCameraAngle,
+          cameraMovement,
+          imagePrompt,
+          estimatedSeconds: 1.5,
+        });
+
         // Expand CamelCase entity keys, enforce monochrome lighting purity, and clean still-image motion/optics
         imagePrompt = expandEntityKeysInPrompt(imagePrompt, sanitizedCharacterSheet, sanitizedLocationSheet);
         imagePrompt = sanitizeMonochromeLighting(imagePrompt, sanitizedStyleProfile);
-        imagePrompt = sanitizeStillImageMotionAndOptics(imagePrompt, rawShotType, isVideoMode);
+        imagePrompt = sanitizeStillImageMotionAndOptics(imagePrompt, preSynced.shotType, isVideoMode);
 
         // Deduplicate and clean prompt, stripping any audio cues in image mode
         imagePrompt = cleanAndDeduplicatePrompt(imagePrompt, isVideoMode);
@@ -979,13 +990,14 @@ Return ONLY valid JSON with "scenes": [ ...starting at index ${nextSceneIndex}..
     }
     const thumbSystemPrompt = `You are a high-CTR storyboard cover designer. Generate ONLY a JSON object for the story thumbnail using the locked cast and story scenes. No em dashes.
 Rules:
-- "heroMoment" MUST refer to characters ONLY using their exact Character Sheet names (never invent ungrounded labels like "a spectral traveler" when the sheet defines "Spirit Patron" or "Wandering Ghost").
+- "heroMoment" MUST refer to characters ONLY using their exact Character Sheet names (never invent ungrounded labels like "a spectral traveler" when the sheet defines "Spirit Patron" or "Wandering Ghost"), and MUST use frozen static visuals (never audio/motion phrases like "as it emits musical harmonic pulses").
+- "expression" MUST fit the literal hero anatomy and headgear in Character Sheet (singular helmet/visor for a single helmeted hero, stickman posture for circle-head stickmen).
 - "fontStyle" must NOT end with punctuation.
 - "accentColor" must match a concrete color from Color Palette without stray words.
 Schema:
 {
-  "heroMoment": "one crisp sentence describing the central conflict or turning point using exact Character Sheet names",
-  "expression": "emotionally fitting facial expression matching the story tone",
+  "heroMoment": "one crisp frozen visual sentence describing the central conflict or turning point using exact Character Sheet names",
+  "expression": "emotionally fitting expression or posture matching the hero's literal Character Sheet anatomy",
   "bgDescription": "dark, simplified high-contrast background with deep separation",
   "accentColor": "dramatic rim lighting color fitting the story palette",
   "hookText": "bold 2 to 4 word curiosity headline in ALL CAPS specific to this story (never generic like SURVIVE)",

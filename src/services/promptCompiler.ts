@@ -73,6 +73,12 @@ export function sanitizeKineticMotionForImage(prompt: string): string {
   cleaned = cleaned.replace(/\bstreaming\b/gi, 'suspended mid-pour');
   cleaned = cleaned.replace(/\bpouring\b/gi, 'suspended mid-pour');
   cleaned = cleaned.replace(/\b(particles|embers|sparks|steam|mist|dust|smoke)\s+rising\b/gi, '$1 suspended mid-air');
+  cleaned = cleaned.replace(/\bvibrating\s+with\s+pulsating\b/gi, 'etched with glowing');
+  cleaned = cleaned.replace(/\boutward-expanding\b/gi, 'frozen outward concentric');
+  cleaned = cleaned.replace(/\bpulsating\b/gi, 'glowing');
+  cleaned = cleaned.replace(/\bvibrating\b/gi, 'charged');
+  cleaned = cleaned.replace(/\bas\s+it\s+emits\s+musical\s+harmonic\s+pulses\b/gi, 'radiating crisp luminous concentric rings');
+  cleaned = cleaned.replace(/\bmusical\s+harmonic\s+pulses\b/gi, 'luminous concentric ring patterns');
   cleaned = cleaned.replace(/\bhovering\b/gi, 'hanging motionless');
   cleaned = cleaned.replace(/\bfluttering\s+in\s+(?:the\s+)?breeze\b/gi, 'frozen mid-billow');
   cleaned = cleaned.replace(/\bfluid\s+motion\b/gi, 'hand-drawn line work');
@@ -584,19 +590,28 @@ export function compileThumbnailPrompt(params: {
     premiseSentences[0] ||
     'The decisive turning point and central conflict of the story';
   const rawHeroMoment = (raw.heroMoment || derivedPremiseMoment).trim();
-  const heroMoment = sanitizeMonochromeLighting(
-    expandEntityKeysInPrompt(rawHeroMoment, params.characterSheet),
-    params.styleProfile
+  const heroMoment = sanitizeKineticMotionForImage(
+    sanitizeMonochromeLighting(
+      expandEntityKeysInPrompt(rawHeroMoment, params.characterSheet),
+      params.styleProfile
+    )
   );
-  const expression = (
+  const rawExpression = (
     raw.expression || 'intense, emotionally charged, and readable at thumbnail scale'
   ).trim();
+  const primaryCharDescLower = Object.values(params.characterSheet || {})[0]?.toLowerCase() || '';
+  const expression =
+    /\bhelmet\b/i.test(primaryCharDescLower)
+      ? rawExpression.replace(/\bbehind\s+glass\s+helmets\b/gi, 'visible behind the helmet visor').replace(/\bhelmets\b/gi, 'helmet')
+      : rawExpression;
   const rawBgDescription = (
     raw.bgDescription || 'deep atmospheric background with strong contrast and dramatic depth separation'
   ).trim();
-  const bgDescription = sanitizeMonochromeLighting(
-    expandEntityKeysInPrompt(rawBgDescription, params.characterSheet),
-    params.styleProfile
+  const bgDescription = sanitizeKineticMotionForImage(
+    sanitizeMonochromeLighting(
+      expandEntityKeysInPrompt(rawBgDescription, params.characterSheet),
+      params.styleProfile
+    )
   );
   const rawAccentColor = (
     raw.accentColor || (isMono ? 'stark high-contrast white' : isWidescreen ? 'vibrant electric amber' : 'cold crimson')
@@ -772,7 +787,7 @@ export function compileThumbnailPrompt(params: {
     `Hero Subject: ${primaryCharClause}, expression: ${cleanExpression}. ${subjectPlacement}.`,
     `Visual Conflict: Climactic turning point: ${cleanHeroMoment}. ${bgLightingSentence}`,
     `${safeZoneGuidance}`,
-    `Negative Space & Clean Plate: Clean negative space ${textPlacement} left completely empty without any text, lettering, words, watermarks, or logos, designed as a clean text-free background plate for custom graphic overlay.`,
+    `Negative Space & Clean Plate: Clean negative space ${textPlacement}, left completely empty without any text, lettering, words, watermarks, or logos, designed as a clean text-free background plate for custom graphic overlay.`,
     `--ar ${aspectRatio}`,
   ].join(' '));
 
@@ -1020,6 +1035,24 @@ export function inferStoryAdaptiveCtaQuestion(storyPremise?: string, characterNa
     };
   }
 
+  // Deep-Sea / Ocean Discovery / Acoustic Anomaly / Uncharted Exploration
+  if (
+    /\b(?:deep[-\s]*sea|mariana\s+trench|submersible|submarine|underwater\s+(?:city|metropolis|ruins|civilization)|sonar|harmonic(?:s)?|ocean\s+floor|abyssal|uncharted\s+(?:depths|waters)|marine\s+biologist)\b/i.test(
+      text
+    )
+  ) {
+    return {
+      primaryQuestion:
+        'If something buried miles beneath the ocean answered your signal, would you dive closer or turn back?',
+      alternateQuestions: [
+        'What do you think built an illuminated city at the bottom of the ocean?',
+        'Would you trust a musical signal coming from the deepest trench on Earth, or cut the engines?',
+        'Do you believe uncharted ruins or civilizations still lie hidden beneath our oceans?',
+        'What do you think happens the moment they answer that harmonic pulse?',
+      ],
+    };
+  }
+
   // General / Viral short-form engagement default
   return {
     primaryQuestion: `What would you have chosen in ${char}'s position? Tell us below.`,
@@ -1191,23 +1224,49 @@ export function compileCtaPrompt(params: {
       `${params.storyPremise || ''}`
     );
 
+  const isWonderOrDiscovery =
+    /\b(?:deep[-\s]*sea|mariana|trench|submersible|underwater\s+(?:city|metropolis)|illuminated|sonar|harmonic(?:s)?|biologist|discovery|wonder|uncharted)\b/i.test(
+      `${params.storyPremise || ''}`
+    ) &&
+    !/\b(?:horror|murder|killer|trap|betray|revenge|entity|mimic|monster|survival|crime)\b/i.test(
+      `${params.storyPremise || ''}`
+    );
+
+  const isMaskedOrMinimalist = /\b(?:stickman|stick[-\s]*figure|circle\s+head|helmet|visor|mask|armor)\b/i.test(
+    `${primaryCharClause} ${artStyle}`
+  );
+
   if (modality === 'video') {
     modalityHeader = `CINEMATIC 3-SECOND OUTRO VIDEO LOOP. ${platformLabel} moving video plate. Continuous seamless atmospheric loop. No jump cuts, no flashing strobes.`;
     visualActionClause = `Camera motion: slow subtle cinematic dolly in pushing slowly toward ${primaryCharClause}. Atmospheric ambient dust particles drift through ${inlineLighting}. ${
       isWarmOrBittersweet
-        ? 'The subject holds a gentle, knowing gaze directly into the camera lens with quiet bittersweet warmth.'
-        : 'The subject holds a lingering, unresolved, emotionally resonant gaze directly into the camera lens, breaking the fourth wall in quiet suspense as the scene holds tension.'
+        ? 'The subject holds a gentle, knowing stillness toward the camera lens with quiet bittersweet warmth.'
+        : isWonderOrDiscovery
+          ? 'The figure holds quiet awe and tense wonder facing the mysterious horizon.'
+          : 'The subject holds a lingering, unresolved, emotionally resonant stance toward the camera lens in quiet suspense.'
     }`;
   } else {
     modalityHeader = `STATIC OUTRO FRAME ONLY. ${platformLabel} closing freeze frame. Single ${
-      isWarmOrBittersweet ? 'expressive' : 'high-tension'
+      isWarmOrBittersweet || isWonderOrDiscovery ? 'expressive' : 'high-tension'
     } still image. Zero camera movement, no motion blur, no video, no multiple frames.`;
     const ctaBackdropPhrase = /\bseparat(?:ion|ing)\b/i.test(inlineLighting)
       ? `${inlineLighting} against atmospheric background shadows`
-      : `${inlineLighting} separating the hero from atmospheric background shadows`;
-    visualActionClause = isWarmOrBittersweet
-      ? `Composition: Freeze-frame closing portrait of ${primaryCharClause} holding a warm, knowing stillness, soft expressive eyes meeting the lens with gentle bittersweet emotion. Shallow depth of field, sharp focus on facial expression, ${ctaBackdropPhrase}.`
-      : `Composition: Freeze-frame closing portrait of ${primaryCharClause} locked in an intense climactic pause, eyes meeting the lens with deep emotional gravity. Shallow depth of field, sharp cinematic focus on facial expression, ${ctaBackdropPhrase}.`;
+      : `${inlineLighting}, separating the subject from atmospheric background shadows`;
+
+    if (isMaskedOrMinimalist) {
+      const tonePosture = isWarmOrBittersweet
+        ? 'holding a quiet, gentle stillness, helmeted silhouette angled toward the viewer'
+        : isWonderOrDiscovery
+          ? 'holding quiet awe and suspense, helmeted silhouette angled toward the frame while the distant glow reflects across the visor'
+          : 'locked in a tense climactic stillness, helmeted silhouette facing the frame in stark dramatic contrast';
+      visualActionClause = `Composition: Freeze-frame closing portrait of ${primaryCharClause} ${tonePosture}. Shallow depth of field, crisp focus on the silhouette and visor outline, ${ctaBackdropPhrase}.`;
+    } else {
+      visualActionClause = isWarmOrBittersweet
+        ? `Composition: Freeze-frame closing portrait of ${primaryCharClause} holding a warm, knowing stillness, soft expressive eyes meeting the lens with gentle bittersweet emotion. Shallow depth of field, sharp focus on facial expression, ${ctaBackdropPhrase}.`
+        : isWonderOrDiscovery
+          ? `Composition: Freeze-frame closing portrait of ${primaryCharClause} held in quiet awe and suspense, eyes widening subtly toward the glowing unknown. Shallow depth of field, sharp focus on expression, ${ctaBackdropPhrase}.`
+          : `Composition: Freeze-frame closing portrait of ${primaryCharClause} locked in an intense climactic pause, eyes meeting the lens with deep emotional gravity. Shallow depth of field, sharp cinematic focus on facial expression, ${ctaBackdropPhrase}.`;
+    }
   }
 
   // Full compiled prompt with typography (universal clean flags without legacy --style raw --v 6.1)
