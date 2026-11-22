@@ -415,6 +415,24 @@ export function sanitizeMonochromeLighting(text: string, styleProfile?: StylePro
 }
 
 /**
+ * Fixes accidental consecutive duplicate words ("curtain curtain" -> "curtain")
+ * and obvious "a <vowel>" article typos ("a indigo" -> "an indigo") without altering
+ * intentional narration text.
+ */
+export function sanitizePromptGrammarAndTypos(text: string): string {
+  if (!text || typeof text !== 'string') return '';
+  let cleaned = normalizeUnicodeAndDashes(text);
+  // Collapse accidental consecutive duplicate words of 3+ letters
+  cleaned = cleaned.replace(/\b([a-zA-Z]{3,})\s+\1\b/gi, '$1');
+  // Fix "a <vowel-word>" article errors on common colors, materials, and visual nouns
+  cleaned = cleaned.replace(
+    /\b(a)\s+(?=(?:indigo|amber|orange|ivory|olive|emerald|onyx|ebony|obsidian|ochre|ethereal|ornate|elderly|elder|aged|ancient|oversized|empty|eerie|iron|open|arch|oval|alley|awning|apron|oak|ash|overcoat)\b)/gi,
+    (_m, article: string) => (article === 'A' ? 'An ' : 'an ')
+  );
+  return cleaned.replace(/\s{2,}/g, ' ').trim();
+}
+
+/**
  * Replaces raw CamelCase sheet variable keys ("DarkRoom", "Protagonist", "CastleCourtyard")
  * with natural descriptive prose so image generators never receive unexpanded variable tokens.
  */
@@ -429,7 +447,7 @@ export function normalizeContinuitySheetKeys(sheet: Record<string, string>): Rec
       .replace(/\s+/g, ' ')
       .trim();
     if (cleanKey && val) {
-      normalized[cleanKey] = val;
+      normalized[cleanKey] = sanitizePromptGrammarAndTypos(val);
     }
   }
   return normalized;
@@ -492,13 +510,13 @@ export function sanitizeStillImageMotionAndOptics(
   shotType: string,
   isVideoMode: boolean
 ): string {
-  let cleaned = prompt || '';
+  let cleaned = sanitizePromptGrammarAndTypos(prompt || '');
 
   // Deduplicate repeated focal lengths (e.g. "35mm 35mm f/2.8" -> "35mm f/2.8")
   cleaned = cleaned.replace(/\b(\d{2,3}mm)\s+\1\b/gi, '$1');
 
   if (!isVideoMode) {
-    // Strip kinetic camera tracking directives and fast continuous motion adverbs that induce blur in Text-to-Image renders
+    // Strip kinetic camera tracking directives and freeze active continuous motion into still-frame states
     cleaned = cleaned
       .replace(/\btracking\s+(?:left|right|upward|downward|forward|back)\s+to\s+reveal\b/gi, 'revealing')
       .replace(/\btracking\s+(?:left|right|upward|downward|forward|back)\s+as\b/gi, 'as')
@@ -512,7 +530,27 @@ export function sanitizeStillImageMotionAndOptics(
       .replace(/\bstatic\s+frame\s+of\b/gi, 'of')
       .replace(/\b(?:eye-level|low-angle|high-angle)\s+static\s+frame\s+showing\b/gi, '$1 showing')
       .replace(/\bpanning\s+(?:left|right|across)\s+(?:to|over)\b/gi, 'across')
-      .replace(/\blistening\s+to\s+an\s+unseen\s+whisper,?\s*/gi, 'standing tense in silence, ');
+      .replace(/\blistening\s+to\s+an\s+unseen\s+whisper,?\s*/gi, 'standing tense in silence, ')
+      .replace(/\bswirling\s+vortex\s+of\b/gi, 'radiant spiral pattern of')
+      .replace(/\b(?:clouds?\s+)?swirls?\s+above\b/gi, 'dense curved storm-cloud formations hang frozen above')
+      .replace(/\bswirling\b/gi, 'frozen in curved spiral patterns')
+      .replace(/\bpouring\b/gi, 'suspended mid-pour')
+      .replace(/\b(particles|embers|sparks|steam|mist|dust|smoke)\s+rising\b/gi, '$1 suspended mid-air')
+      .replace(/\b(steam|particles|embers|dust)\s+rising\s+in\b/gi, '$1 suspended in')
+      .replace(/\bstreaming\s+in\s+a\s+thin\s+ribbon\b/gi, 'suspended in a thin frozen ribbon')
+      .replace(/\bhovering\b/gi, 'hanging motionless')
+      .replace(/\bfluttering\s+in\s+(?:the\s+)?breeze\b/gi, 'frozen mid-billow')
+      .replace(/\bflickering\b/gi, 'captured in a single frozen illumination')
+      .replace(/\bchurning\b/gi, 'crisp frozen ripples')
+      .replace(/\bliquid\s+motion\b/gi, 'frozen liquid details');
+
+    // Correct mismatched wide-angle 24mm lens descriptors accidentally copied onto tight Close-Up / Extreme Close-Up shots
+    const lowerShot = (shotType || '').toLowerCase();
+    if (lowerShot.includes('extreme close') || /\bextreme\s+close[-\s]*up\b/i.test(cleaned.slice(0, 90))) {
+      cleaned = cleaned.replace(/\bShot\s+on\s+24mm\s+(?:wide(?:-angle)?\s+)?prime\s+lens/gi, 'Shot on 100mm macro prime lens');
+    } else if (lowerShot.includes('close-up') || /\bclose[-\s]*up\b/i.test(cleaned.slice(0, 80))) {
+      cleaned = cleaned.replace(/\bShot\s+on\s+24mm\s+(?:wide(?:-angle)?\s+)?prime\s+lens/gi, 'Shot on 85mm portrait prime lens');
+    }
   }
 
   // Fix double periods (".." -> ".") and duplicate commas
@@ -791,13 +829,27 @@ const GENERIC_ALIAS_WORDS = new Set([
   'obsidian', 'marble', 'stone', 'wood', 'wooden', 'oak', 'paper', 'cardstock', 'cloth',
   'wool', 'velvet', 'leather', 'plastic', 'mechanical', 'clockwork', 'translucent', 'brushed',
   'articulated', 'matte', 'heavy', 'short', 'ancient', 'modern', 'antique', 'polymer',
+  'ramen', 'midnight', 'noodle', 'noodles', 'broth', 'soup', 'tea', 'coffee', 'bread',
+  'stall', 'shop', 'cart', 'market', 'shrine', 'lantern', 'wandering', 'spirit', 'ghost',
+  'spectral', 'patron', 'guest', 'customer', 'traveler', 'traveller', 'visitor', 'chef',
+  'cook', 'baker', 'keeper', 'owner', 'master', 'elder', 'monk', 'priest', 'vendor',
+  'merchant', 'witch', 'wizard', 'healer', 'guard', 'watchman', 'forest', 'mountain',
+]);
+
+const ROLE_SUFFIX_NOUNS = new Set([
+  'chef', 'cook', 'baker', 'keeper', 'owner', 'master', 'vendor', 'merchant', 'patron',
+  'guest', 'customer', 'traveler', 'traveller', 'visitor', 'ghost', 'spirit', 'elder',
+  'monk', 'priest', 'witch', 'wizard', 'healer', 'guard', 'soldier', 'knight', 'driver',
+  'worker', 'student', 'teacher', 'artist', 'scientist', 'waiter', 'barista', 'bartender',
 ]);
 
 function buildCharacterAliasRegex(charName: string, allCharNames: string[]): RegExp | null {
   const parts = charName.trim().split(/\s+/).filter(Boolean);
   if (parts.length < 2) return null;
   const firstToken = parts[0].replace(/[^a-zA-Z0-9-]/g, '');
+  const lastToken = parts[parts.length - 1].replace(/[^a-zA-Z0-9-]/g, '').toLowerCase();
   if (firstToken.length < 3 || GENERIC_ALIAS_WORDS.has(firstToken.toLowerCase())) return null;
+  if (parts.length === 2 && ROLE_SUFFIX_NOUNS.has(lastToken)) return null;
 
   const collidesWithOther = allCharNames.some((other) => {
     if (other === charName) return false;
@@ -806,7 +858,7 @@ function buildCharacterAliasRegex(charName: string, allCharNames: string[]): Reg
   if (collidesWithOther) return null;
 
   const escapedFirst = firstToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`\\b${escapedFirst}(?:'s)?\\b`, 'i');
+  return new RegExp(`\\b${escapedFirst}(?:'s)?\\b(?!\\s+(?:stall|cart|shop|bowl|soup|broth|noodles|stand|counter)\\b)`, 'i');
 }
 
 const COMMON_NOUN_CHARACTER_NAMES = new Set([
@@ -891,6 +943,19 @@ export function injectCompactCharacterLocks(
     );
 
   const isCloseUpOrEcu = /\b(?:Close-Up|Extreme Close-Up)\b/i.test(updated);
+  const isTightMacroScale = isCloseUpOrEcu && !/\bMedium\s+Close-Up\b/i.test(updated);
+  // Pure food/prop macro close-ups (e.g. a bowl of ramen, teacup, stamp) with zero body parts, pronouns, or cast present
+  const isPropOrFoodOnlyMacro =
+    isTightMacroScale &&
+    /\b(?:bowl|ramen|broth|soup|cup|teacup|mug|plate|dish|spoon|chopsticks|cauldron|lantern|stamp|coin|ledger|contract|bottle|scroll|key|ring|book|letter)\b/i.test(
+      bodyLower
+    ) &&
+    !/\b(?:he|him|his|she|her|hers|they|them|their|hand|hands|finger|fingers|palm|knuckles|wrist|arm|arms|face|eyes|head|shoulder|shoulders|mouth|lips|foot|feet|silhouette|figure|man|woman|boy|girl|child|chef|patron|spirit|ghost)\b/i.test(
+      bodyLower
+    );
+  if (isPropOrFoodOnlyMacro) {
+    return updated;
+  }
   const foregroundSlice = bodyLower
     .replace(/\b(?:toward|at|past)\s+(?:the\s+)?blurred\b[^.]*/gi, '')
     .slice(0, 280);
@@ -1177,13 +1242,39 @@ export function injectCompactCharacterLocks(
     const actionVerbCheck =
       /\b(?:[a-z]+ing|peeking|leaning|hunched|standing|sitting|seated|gripping|holding|looking|staring|reaching|walking|running|turning|swinging|pulling|pushing|adjusting|pointing|tightening|attaching|steady|steadying|resting|planted|looming|crouching|kneeling|smiling|frowning|listening|watching|peering|glancing)\b/i;
     const pruneAppositiveTraitsAfterLock = (text: string): string => {
-      const existingLockRegex = new RegExp(`(${escapedName}\\s*\\([^)]+\\))\\s*,\\s*([^.]+)`, 'i');
-      return text.replace(existingLockRegex, (fullSeg, headAnchor, tailStr) => {
+      const existingLockRegex = new RegExp(
+        `(${escapedName}\\s*\\([^)]+\\))(?:\\s*,\\s*|\\s+(?=(?:carrying|wearing|with|in)\\b))([^.]+)`,
+        'i'
+      );
+      let pruned = text.replace(existingLockRegex, (fullSeg, headAnchor, tailStr) => {
         const parts = tailStr.split(/,\s*/);
         let dropCount = 0;
         for (const part of parts) {
           const pTrim = part.trim();
-          if (!pTrim || actionVerbCheck.test(pTrim)) break;
+          if (!pTrim) break;
+          // Separate leading redundant appositive like "carrying an ethereal lantern approaching the stall"
+          const redundantCarryWearMatch = pTrim.match(
+            /^((?:carrying|wearing)\s+(?:an?\s+|the\s+)?[^,.]+?)(?:\s+(?=(?:approaching|walking|standing|sitting|leaning|holding|entering|looking|staring|crossing)\b)(.+))?$/i
+          );
+          if (redundantCarryWearMatch) {
+            const candidateClause = redundantCarryWearMatch[1].trim();
+            const restAction = (redundantCarryWearMatch[2] || '').trim();
+            const cWords = candidateClause
+              .toLowerCase()
+              .replace(/[^a-z0-9\s-]/g, ' ')
+              .split(/[\s-]+/)
+              .filter((w) => w.length > 2 && !traitStopWords.has(w));
+            const cOverlap = cWords.filter((w) => anchorTokenSet.has(w) || GENERIC_VISUAL_TRAIT_WORDS.has(w)).length;
+            if (cWords.length > 0 && cOverlap / cWords.length >= 0.6) {
+              if (restAction) {
+                parts[dropCount] = restAction;
+                return `${headAnchor} ${parts.slice(dropCount).join(', ')}`.trim();
+              }
+              dropCount++;
+              continue;
+            }
+          }
+          if (actionVerbCheck.test(pTrim)) break;
           const pWords = pTrim
             .toLowerCase()
             .replace(/[^a-z0-9\s-]/g, ' ')
@@ -1203,6 +1294,11 @@ export function injectCompactCharacterLocks(
         const keptTail = parts.slice(dropCount).join(', ').trim();
         return keptTail ? `${headAnchor}, ${keptTail}` : headAnchor;
       });
+      // Strip redundant glowing/semi-transparent summary sentences if those traits already appear inside a character lock
+      if (/\b(?:translucent|semi-transparent)\b/i.test(pruned) && /\bsoft glowing edges\b/i.test(pruned)) {
+        pruned = pruned.replace(/\s*They appear semi-transparent with glowing edges\.?/gi, '');
+      }
+      return pruned;
     };
 
     // Skip duplicate lock only when inline prompt already preserves the character AND all signature eyewear/garments
@@ -1214,16 +1310,24 @@ export function injectCompactCharacterLocks(
       continue;
     }
 
-    // For tight hand-only close-ups without inline sleeve cues (e.g. "Homeowner's hand"), scope lock to upper-body/skin/garment cues without face/carrying bleed
+    // For tight hand-only close-ups (e.g. "Ramen Chef's hands", "Homeowner's hand"), scope lock to upper-body/skin/garment cues without face/headwear/stature/carrying bleed
     let scopedAnchor = compactAnchor;
     if (isHandDetailCloseUp) {
       const handClauses = compactAnchor
         .split(/,\s*/)
+        .map((c) =>
+          c
+            .replace(/\s+and\s+(?:a\s+|the\s+)?(?:traditional\s+)?(?:hachimaki\s+)?(?:headband|bandana|hat|cap|helmet|crown|glasses|spectacles)[^,]*/gi, '')
+            .replace(/,?\s*(?:with\s+)?(?:a\s+|the\s+)?(?:traditional\s+)?(?:hachimaki\s+)?(?:headband|bandana|hat|cap|helmet)[^,]*/gi, '')
+            .trim()
+        )
         .filter(
           (c) =>
-            !/\b(?:hair|cheeks?|freckles?|face|facial|eyes|eyebrows?|nose|mouth|lips?|chin|jaw|forehead|ears?|head|neck|brow|goggles|spectacles|glasses|trousers|pants|jeans|skirt|boots|shoes|sneakers|barefoot|tall|short|stature)\b/i.test(
+            Boolean(c) &&
+            !/\b(?:hair|cheeks?|freckles?|face|facial|eyes|eyebrows?|nose|mouth|lips?|chin|jaw|forehead|ears?|head|headband|bandana|hat|cap|helmet|wig|neck|brow|goggles|spectacles|glasses|trousers|pants|jeans|skirt|boots|shoes|sneakers|barefoot|tall|short|stature)\b/i.test(
               c
-            ) && !/^\s*carrying\s+/i.test(c)
+            ) &&
+            !/^\s*carrying\s+/i.test(c)
         );
       if (handClauses.length > 0) {
         scopedAnchor = handClauses.join(', ').trim();
@@ -1247,7 +1351,7 @@ export function injectCompactCharacterLocks(
     } else if (isFootDetailCloseUp) {
       const footClauses = compactAnchor
         .split(/,\s*/)
-        .filter((c) => !/\b(?:hair|eyes|cheeks?|freckles?|glasses|spectacles|eyewear|hat|cap|helmet|collar)\b/i.test(c));
+        .filter((c) => !/\b(?:hair|eyes|cheeks?|freckles?|glasses|spectacles|eyewear|hat|cap|helmet|headband|collar)\b/i.test(c));
       if (footClauses.length > 0) {
         scopedAnchor = footClauses.join(', ').trim();
       }
@@ -1682,8 +1786,38 @@ export function formatFinalBeatPrompt(
     }
   }
 
+  // Fix Beat 1 finite-verb grammar right after "Shot..., angle of <Subject> ... stands/sits/walks" -> participle ("standing", "sitting", "walking")
+  if (/^(?:Extreme\s+Wide|Wide\s+Establishing|Wide|Medium\s+Close-Up|Medium|Extreme\s+Close-Up|Close-Up)[^.]*?\bof\s+/i.test(body)) {
+    body = body.replace(
+      /^([^.]*?\bof\s+(?:a|an|the)\s+[A-Z][^.]*?)\b(stands|sits|waits|kneels|leans|stares|looks|gazes|walks)\b(\s+(?:inside|at|by|near|on|in|under|beside|behind|across|toward|over)\b)/i,
+      (_m, prefix: string, verb: string, prep: string) => {
+        const participleMap: Record<string, string> = {
+          stands: 'standing',
+          sits: 'sitting',
+          waits: 'waiting',
+          kneels: 'kneeling',
+          leans: 'leaning',
+          stares: 'staring',
+          looks: 'looking',
+          gazes: 'gazing',
+          walks: 'walking',
+        };
+        const replacement = participleMap[verb.toLowerCase()] || verb;
+        return `${prefix}${replacement}${prep}`;
+      }
+    );
+  }
+
+  // Strip redundant tiny mid-prompt chibi style tags when full Visual Style suffix already specifies chibi/cel-shaded
+  if (/\bVisual Style:[^.]*\bchibi\b/i.test(body)) {
+    body = body.replace(
+      /\.\s*(?:Chibi\s+(?:art\s+)?(?:style|aesthetic)(?:\s*,\s*(?:thick\s+(?:clean\s+)?outlines|clean\s+cel-shading)|\s+with\s+clean\s+lines)?)[.,](?=\s*(?:Shot\s+on|Featuring|Visual\s+Style:))/gi,
+      '.'
+    );
+  }
+
   // Final punctuation, duplicated angle-of-angle guard, dangling preposition & spacing cleanup
-  body = body
+  body = sanitizePromptGrammarAndTypos(body)
     .replace(/\b(eye[-\s]*level|low[-\s]*angle|high[-\s]*angle|birds?[-\s]*eye|worms?[-\s]*eye|dutch[-\s]*tilt)\s+of\s+\1\b/gi, '$1 of')
     .replace(/\b(?:in|with)\s+a\s+(?=(?:from\s+a|at\s+eye[-\s]*level|at\s+(?:low|high)[-\s]*angle|with\s+a\s+(?:tense\s+)?dutch|birds?[-\s]*eye|worms?[-\s]*eye)\b)/gi, '')
     .replace(/\),\s+(Shot\s+on\b|Visual\s+Style:)/g, '). $1')
@@ -2354,10 +2488,52 @@ export function deduplicateAndProgressSceneBeats(
     finalized.push(beat);
   }
 
-  return finalized.map((b, idx) => ({
+  // Pass 4: Harmonize recurring container/prop materials within the scene (e.g. ceramic bowl -> wooden bowl drift)
+  const harmonized = harmonizeScenePropMaterials(finalized);
+
+  return harmonized.map((b, idx) => ({
     ...b,
     beatIndex: idx + 1,
   }));
+}
+
+/**
+ * Prevents unintended prop material drift across beats in the same scene (e.g., Beat 5 pouring broth into
+ * a "ceramic bowl" while Beat 6 describes a "wooden bowl of ramen") unless a transformation is explicitly narrated.
+ */
+export function harmonizeScenePropMaterials(beats: Beat[]): Beat[] {
+  if (!Array.isArray(beats) || beats.length <= 1) return beats;
+  const materialRegex =
+    /\b(ceramic|porcelain|wooden|wood|clay|glass|brass|copper|iron|steel|metal|stone|earthenware|lacquered)\s+(bowl|cup|teacup|mug|pot|kettle|cauldron|lantern|box|chest|tray)\b/gi;
+  const establishedMaterial = new Map<string, string>();
+
+  return beats.map((beat) => {
+    let prompt = beat.imagePrompt || '';
+    const spanLower = (beat.textSpan || '').toLowerCase();
+    const isTransformBeat = /\b(?:turn(?:s|ed)?\s+into|transform(?:s|ed)?\s+into|become(?:s)?)\b/i.test(spanLower);
+    if (isTransformBeat) {
+      return beat;
+    }
+
+    prompt = prompt.replace(materialRegex, (fullMatch, mat: string, prop: string) => {
+      const propKey = prop.toLowerCase();
+      const matLower = mat.toLowerCase();
+      const prevMat = establishedMaterial.get(propKey);
+      if (!prevMat) {
+        establishedMaterial.set(propKey, matLower);
+        return fullMatch;
+      }
+      if (prevMat !== matLower) {
+        return `${prevMat} ${prop}`;
+      }
+      return fullMatch;
+    });
+
+    return {
+      ...beat,
+      imagePrompt: prompt,
+    };
+  });
 }
 
 /**

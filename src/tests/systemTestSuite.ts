@@ -54,6 +54,8 @@ import {
   enrichStartFramePrompt,
   synchronizeBeatMetadataWithPrompt,
   sanitizeSharedVisualStyle,
+  harmonizeScenePropMaterials,
+  sanitizePromptGrammarAndTypos,
 } from '../services/beatProgressionEngine';
 import {
   sanitizeGroqErrorMessage,
@@ -4351,6 +4353,178 @@ async function runTestSuite38() {
   );
 }
 
+// ============================================================================
+// 39. GEMINI 3.1 STORYBOARD POLISH: ALIAS BLEED, PROP DRIFT, TYPO/GRAMMAR & THUMB/CTA TONE
+// ============================================================================
+function runTestSuite39() {
+  console.log('\n--- Running Test Suite 39: Gemini 3.1 Alias Bleed, Prop Continuity & Thumbnail/CTA Polish ---');
+
+  const ramenCast: Record<string, string> = {
+    'Ramen Chef': 'Short chibi stature, large gentle eyes, wearing a indigo happi coat with a white apron and a traditional hachimaki headband tied neatly',
+    'Spirit Patron': 'Translucent blue-tinted humanoid form with soft glowing edges and wispy aesthetic, wearing traditional tattered kimono layers',
+    'Wandering Ghost': 'Small spectral chibi figure, semi-transparent, wearing a faded straw hat and simple peasant robes, carrying a small ethereal lantern',
+  };
+  const cleanSheets = normalizeContinuitySheetKeys(ramenCast);
+
+  // 39.1 Prevents "Ramen" in "Midnight Ramen Stall" or "bowl of ramen" from injecting Featuring Ramen Chef onto stall/ghost/bowl beats
+  const stallExteriorLocked = injectCompactCharacterLocks(
+    'Vertical 9:16 portrait composition, Wide Establishing Shot, eye-level of the Midnight Ramen Stall featuring a glowing red lantern and steaming iron cauldron under a weathered Shinto shrine gate.',
+    'a midnight street stall',
+    'A ramen chef operates a midnight street stall...',
+    cleanSheets
+  );
+  const spiritsLocked = injectCompactCharacterLocks(
+    'Vertical 9:16 portrait composition, Medium Shot, eye-level of a translucent blue-tinted Spirit Patron and a Wandering Ghost carrying an ethereal lantern approaching the ramen stall. They appear semi-transparent with glowing edges.',
+    'that only spirits and wandering ghosts can see,',
+    'A ramen chef operates a midnight street stall...',
+    cleanSheets
+  );
+  const bowlMacroLocked = injectCompactCharacterLocks(
+    'Vertical 9:16 portrait composition, Extreme Close-Up, eye-level of a swirling vortex of ethereal light inside a wooden bowl of ramen, glowing soft particles rising.',
+    'that restores mortal memories.',
+    'A ramen chef operates a midnight street stall...',
+    cleanSheets
+  );
+  assert(
+    !stallExteriorLocked.includes('Ramen Chef') &&
+      !spiritsLocked.includes('Ramen Chef') &&
+      !bowlMacroLocked.includes('Ramen Chef') &&
+      !spiritsLocked.includes(') carrying an ethereal lantern') &&
+      !spiritsLocked.includes('They appear semi-transparent with glowing edges'),
+    'Suite 39: Gemini 3.1 Alias Bleed, Prop Continuity & Thumbnail/CTA Polish',
+    '39.1 Blocks Food/Setting Alias Leakage ("Ramen Stall"/"Bowl of Ramen") & Comma-less Appositive Duplicates',
+    `stall=${stallExteriorLocked} | spirits=${spiritsLocked} | bowl=${bowlMacroLocked}`
+  );
+
+  // 39.2 Hand close-up ("Ramen Chef's hands") strips stature, eyes, and headband while fixing "a indigo" -> "an indigo"
+  const handPourLocked = injectCompactCharacterLocks(
+    "Vertical 9:16 portrait composition, Close-Up, high-angle of the Ramen Chef's hands pouring golden warm broth into a ceramic bowl.",
+    'serving warm broth',
+    'A ramen chef operates a midnight street stall serving warm broth.',
+    cleanSheets
+  );
+  const handSanitized = sanitizePromptGrammarAndTypos(handPourLocked);
+  assert(
+    !handSanitized.includes('Short chibi stature') &&
+      !handSanitized.includes('large gentle eyes') &&
+      !handSanitized.includes('headband') &&
+      handSanitized.includes('an indigo happi coat') &&
+      !handSanitized.includes('a indigo'),
+    'Suite 39: Gemini 3.1 Alias Bleed, Prop Continuity & Thumbnail/CTA Polish',
+    '39.2 Strips Stature, Eyes, and Headband From Hand Close-Ups & Fixes "a indigo" Article Typo',
+    handSanitized
+  );
+
+  // 39.3 Harmonizes prop materials ("ceramic bowl" -> "wooden bowl" drift), freezes pouring/swirling/particles rising, and fixes 24mm ECU lens
+  const driftedSceneBeats = harmonizeScenePropMaterials([
+    {
+      beatIndex: 5,
+      textSpan: 'serving warm broth',
+      shotType: 'Close-Up',
+      cameraAngle: 'high-angle',
+      cameraMovement: 'Static Frame',
+      imagePrompt: 'Close-Up, high-angle of hands pouring golden warm broth into a ceramic bowl. Shot on 24mm prime lens, f/1.4 aperture.',
+      estimatedSeconds: 1.3,
+    },
+    {
+      beatIndex: 6,
+      textSpan: 'that restores mortal memories.',
+      shotType: 'Extreme Close-Up',
+      cameraAngle: 'eye-level',
+      cameraMovement: 'Static Frame',
+      imagePrompt: 'Extreme Close-Up, eye-level of a swirling vortex of ethereal light inside a wooden bowl of ramen, glowing soft particles rising. Shot on 24mm prime lens, f/1.8 aperture.',
+      estimatedSeconds: 1.5,
+    },
+  ]);
+  const b5Static = sanitizeStillImageMotionAndOptics(driftedSceneBeats[0].imagePrompt, 'Close-Up', false);
+  const b6Static = sanitizeStillImageMotionAndOptics(driftedSceneBeats[1].imagePrompt, 'Extreme Close-Up', false);
+  assert(
+    b6Static.includes('ceramic bowl of ramen') &&
+      !b6Static.includes('wooden bowl') &&
+      !b6Static.includes('swirling vortex') &&
+      !b6Static.includes('particles rising') &&
+      b5Static.includes('suspended mid-pour') &&
+      b5Static.includes('85mm portrait prime lens') &&
+      b6Static.includes('100mm macro prime lens'),
+    'Suite 39: Gemini 3.1 Alias Bleed, Prop Continuity & Thumbnail/CTA Polish',
+    '39.3 Harmonizes Prop Materials ("ceramic bowl"), Freezes Motion Verbs, & Upgrades 24mm Close-Up Optics',
+    `b5=${b5Static} | b6=${b6Static}`
+  );
+
+  // 39.4 Cleans doubled words ("curtain curtain") and Beat 1 "of a Chef ... stands inside" grammar + double chibi tag
+  const locFixed = sanitizePromptGrammarAndTypos('a hand-painted fabric curtain curtain fluttering in the breeze.');
+  const beat1Fixed = formatFinalBeatPrompt(
+    {
+      beatIndex: 1,
+      textSpan: 'A ramen chef operates',
+      shotType: 'Medium Shot',
+      cameraAngle: 'eye-level',
+      cameraMovement: 'Static Frame',
+      imagePrompt:
+        'Medium Shot, eye-level of a Ramen Chef with large gentle eyes, an indigo happi coat, and white apron stands inside a Midnight Ramen Stall. Chibi style, thick outlines. Visual Style: 2D vector-based chibi animation.',
+      estimatedSeconds: 1.3,
+    },
+    false,
+    false
+  );
+  assert(
+    locFixed === 'a hand-painted fabric curtain fluttering in the breeze.' &&
+      beat1Fixed.imagePrompt.includes('standing inside a Midnight Ramen Stall') &&
+      !beat1Fixed.imagePrompt.includes('stands inside') &&
+      !beat1Fixed.imagePrompt.includes('Chibi style, thick outlines.'),
+    'Suite 39: Gemini 3.1 Alias Bleed, Prop Continuity & Thumbnail/CTA Polish',
+    '39.4 Fixes "curtain curtain", Beat 1 "of a Subject ... stands" Grammar, & Redundant Mid-Prompt Chibi Tag',
+    `loc=${locFixed} | beat1=${beat1Fixed.imagePrompt}`
+  );
+
+  // 39.5 Thumbnail font punctuation ("shadow.,"), accent lowercase ("Neon"), and nostalgic memory CTA tone/grammar
+  const ramenThumb = compileThumbnailPrompt({
+    rawThumbnail: {
+      heroMoment: 'Ramen Chef serves Spirit Patron one final warm bowl',
+      expression: 'bittersweet, knowing smile',
+      bgDescription: 'rain-slicked Tokyo crossroads with a red Shinto gate',
+      accentColor: 'Neon kanji pink',
+      hookText: 'THE LAST MEMORY',
+      fontStyle: 'Thick brush-stroke Japanese calligraphy font with a glowing white inner stroke and dark drop shadow.',
+    },
+    styleProfile: {
+      artStyle: '2D vector-based chibi animation with smooth cel-shaded rendering',
+      colorPalette: 'deep indigo twilight, neon kanji pink, warm steam amber',
+      lighting: 'low-key nocturnal lighting from paper lanterns',
+      eraAndSetting: 'contemporary Tokyo',
+    },
+    characterSheet: cleanSheets,
+    storyPremise: 'A ramen chef operates a midnight street stall at a forgotten Tokyo crossroads that only spirits and wandering ghosts can see, serving warm broth that restores mortal memories.',
+    format: 'short',
+    platform: 'TikTok',
+  });
+  const ramenCta = compileCtaPrompt({
+    storyPremise: 'A ramen chef operates a midnight street stall at a forgotten Tokyo crossroads that only spirits and wandering ghosts can see, serving warm broth that restores mortal memories.',
+    styleProfile: {
+      artStyle: '2D vector-based chibi animation with smooth cel-shaded rendering',
+      colorPalette: 'deep indigo twilight, neon kanji pink, warm steam amber',
+      lighting: 'low-key nocturnal lighting from paper lanterns',
+      eraAndSetting: 'contemporary Tokyo',
+    },
+    characterSheet: cleanSheets,
+    format: 'short',
+    platform: 'tiktok',
+    modality: 'image',
+  });
+  assert(
+    !ramenThumb.compiledPrompt.includes('shadow.,') &&
+      ramenThumb.compiledPrompt.includes('drop shadow, in bold uppercase') &&
+      ramenThumb.compiledPrompt.includes('intense neon kanji pink rim lighting') &&
+      !ramenCta.questionText.includes("Ramen Chef's position") &&
+      ramenCta.questionText.toLowerCase().includes('memory') &&
+      ramenCta.compiledPrompt.includes('portrait of the ramen chef (') &&
+      !ramenCta.compiledPrompt.includes('intense climactic pause'),
+    'Suite 39: Gemini 3.1 Alias Bleed, Prop Continuity & Thumbnail/CTA Polish',
+    '39.5 Fixes Thumbnail "shadow.,", Lowercases Accent, Uses Nostalgic Memory CTA & Gentle Chibi Outro Tone',
+    `thumb=${ramenThumb.compiledPrompt} | ctaQ=${ramenCta.questionText} | cta=${ramenCta.compiledPrompt}`
+  );
+}
+
 runTestSuite21().then(async () => {
   runTestSuite23();
   runTestSuite24();
@@ -4368,6 +4542,7 @@ runTestSuite21().then(async () => {
   runTestSuite36();
   runTestSuite37();
   await runTestSuite38();
+  runTestSuite39();
   console.log('\n====================================================================');
   console.log('                  FULL-SYSTEM VERIFICATION REPORT                  ');
   console.log('====================================================================');

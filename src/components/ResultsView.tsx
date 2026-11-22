@@ -6,7 +6,7 @@ import CharacterReferenceModal from './CharacterReferenceModal';
 import StyleAndCharactersSection from './StyleAndCharactersSection';
 import SeriesRoadmapModal from './SeriesRoadmapModal';
 import { getPreviewText } from '../services/beatSplitting';
-import { normalizeStoryboardForDisplay } from '../services/beatProgressionEngine';
+import { normalizeStoryboardForDisplay, normalizeContinuitySheetKeys, sanitizePromptGrammarAndTypos } from '../services/beatProgressionEngine';
 import { compileBeatPrompt, lintStoryboard, compileThumbnailPrompt, compileCtaPrompt } from '../services/promptCompiler';
 import { generateCMX3600EDL, generateSRTSubtitles, calculatePacing } from '../services/timelineExport';
 import {
@@ -300,7 +300,15 @@ export default function ResultsView({
 
   const fullScript = normalizedScenes.map((s) => s.narratorLine).join(' ');
   const totalBeatsCount = normalizedScenes.reduce((acc, s) => acc + (s.beats?.length || 0), 0);
-  const characterEntries = Object.entries(result.characterSheet || {});
+  const cleanedCharacterSheet = useMemo<Record<string, string>>(
+    () => normalizeContinuitySheetKeys(result.characterSheet || {}),
+    [result.characterSheet]
+  );
+  const cleanedLocationSheet = useMemo<Record<string, string>>(
+    () => normalizeContinuitySheetKeys(result.locationSheet || {}),
+    [result.locationSheet]
+  );
+  const characterEntries = Object.entries<string>(cleanedCharacterSheet);
   const isVideoMode = result.generationMode === 'video';
 
   // Thumbnail & CTA states
@@ -326,26 +334,26 @@ export default function ResultsView({
     return compileThumbnailPrompt({
       rawThumbnail: undefined,
       styleProfile: result.styleProfile,
-      characterSheet: result.characterSheet,
+      characterSheet: cleanedCharacterSheet,
       storyPremise: fullScript || '',
       format,
       platform,
     });
-  }, [isStoryboardReadyForOutro, result.thumbnail, result.styleProfile, result.characterSheet, fullScript, format, platform]);
+  }, [isStoryboardReadyForOutro, result.thumbnail, result.styleProfile, cleanedCharacterSheet, fullScript, format, platform]);
 
   const activeCta = useMemo(() => {
     if (!isStoryboardReadyForOutro) return null;
     return compileCtaPrompt({
       storyPremise: fullScript || '',
       styleProfile: result.styleProfile,
-      characterSheet: result.characterSheet,
+      characterSheet: cleanedCharacterSheet,
       format,
       platform: ctaPlatform,
       modality: ctaModality,
       questionText: customCtaQuestion,
       engagementType: ctaEngagementType,
     });
-  }, [isStoryboardReadyForOutro, fullScript, result.styleProfile, result.characterSheet, format, ctaPlatform, ctaModality, customCtaQuestion, ctaEngagementType]);
+  }, [isStoryboardReadyForOutro, fullScript, result.styleProfile, cleanedCharacterSheet, format, ctaPlatform, ctaModality, customCtaQuestion, ctaEngagementType]);
 
   const effectiveTotalDuration = useMemo(() => {
     const sum = Math.round(normalizedScenes.reduce((acc, s) => acc + (s.estimatedSeconds || 0), 0) * 10) / 10;
@@ -519,16 +527,16 @@ export default function ResultsView({
     if (characterEntries.length > 0) {
       md += `## Character Continuity Sheet\n`;
       characterEntries.forEach(([name, desc]) => {
-        md += `- **${name}**: ${desc}\n`;
+        md += `- **${name}**: ${sanitizePromptGrammarAndTypos(String(desc))}\n`;
       });
       md += `\n`;
     }
 
-    const locationEntries = result.locationSheet ? Object.entries(result.locationSheet) : [];
+    const locationEntries = Object.entries<string>(cleanedLocationSheet);
     if (locationEntries.length > 0) {
       md += `## Location Continuity Sheet\n`;
       locationEntries.forEach(([name, desc]) => {
-        md += `- **${name}**: ${desc}\n`;
+        md += `- **${name}**: ${sanitizePromptGrammarAndTypos(String(desc))}\n`;
       });
       md += `\n`;
     }

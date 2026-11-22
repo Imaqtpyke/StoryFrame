@@ -811,7 +811,7 @@ SCHEMA AND STRUCTURE REQUIREMENTS:
      * STRICT MONOCHROME / BLACK-AND-WHITE RULE: Whenever the story's artStyle or colorPalette specifies pure black-and-white, monochrome, noir ink, or manga ("no gray gradients", "Junji Ito ink", "black and white"), you are STRICTLY FORBIDDEN from outputting chromatic Kelvin values ("3200K warm", "cold 5400K") or colors ("cold cyan", "amber", "golden"). Describe lighting strictly via stark high-contrast chiaroscuro, harsh directional shadows, and white-edge highlights!
 
 5. Cinematic Optics & Lens Prescriptions (IMAGE MODE = ZERO MOTION LANGUAGE):
-   Specify ONE focal length and aperture in every beat prompt (e.g. "Shot on 85mm f/1.4 portrait prime with shallow depth of field"). NEVER repeat the focal length ("35mm 35mm"). In Text-to-Image mode, NEVER write video camera movement prose ("tracking left to reveal", "tracking upward", "panning across"); represent blinks/breaths/moves as crisp frozen static instants (half-closed eyelids, frozen breath mist on cold glass, parallel shoulder posture).
+   Specify ONE focal length and aperture appropriate to shot scale in every beat prompt: use wide focal lengths (24mm) ONLY for Wide Establishing / Medium shots, and portrait/macro framing (85mm, 100mm macro, or shallow foreground focus for 2D vector/chibi styles) for Close-Up and Extreme Close-Up beats. NEVER repeat the focal length ("35mm 35mm"). Also keep prop materials 100% consistent across beats (if a broth is poured into a ceramic bowl, never change it to a wooden bowl in the next shot) and avoid generic "swirling vortex" magic clichés. In Text-to-Image mode, NEVER write video camera movement prose ("tracking left to reveal", "tracking upward", "panning across") or active fluid-motion clichés ("particles rising", "swirling"); represent blinks/breaths/steam/light as crisp frozen static instants.
 
 6. STRICT BAN ON AUDIO / SOUND CUES & PHANTOM TEXT IN IMAGE PROMPTS:
    Diffusion image models generate static visuals and CANNOT render sound. DO NOT write audio cues or sound phrases like "listening to an unseen whisper", "hearing a sound", or ambient foley. Also NEVER invent unstated etched date timelines or floating text on mirrors/walls unless explicitly spoken in narration.
@@ -1600,14 +1600,18 @@ Return ONLY valid JSON containing:
       onStatusMessage('Step 3: Compiling cover thumbnail & CTA outro...');
     }
     const thumbSystemPrompt = `You are a high-CTR storyboard cover designer. Generate ONLY a JSON object for the story thumbnail using the locked cast and story scenes. No em dashes.
+Rules:
+- "heroMoment" MUST refer to characters ONLY using their exact Character Sheet names (never invent ungrounded labels like "a spectral traveler" when the sheet defines "Spirit Patron" or "Wandering Ghost").
+- "fontStyle" must NOT end with punctuation.
+- "accentColor" must match a concrete color from Color Palette without stray words.
 Schema:
 {
-  "heroMoment": "one crisp sentence describing the central conflict or turning point",
-  "expression": "intense, emotionally charged facial expression",
+  "heroMoment": "one crisp sentence describing the central conflict or turning point using exact Character Sheet names",
+  "expression": "emotionally fitting facial expression matching the story tone",
   "bgDescription": "dark, simplified high-contrast background with deep separation",
   "accentColor": "dramatic rim lighting color fitting the story palette",
   "hookText": "bold 2 to 4 word curiosity headline in ALL CAPS specific to this story (never generic like SURVIVE)",
-  "fontStyle": "story-adapted typography style",
+  "fontStyle": "story-adapted typography style without trailing period",
   "alternateHooks": ["ALT HOOK 1", "ALT HOOK 2"]
 }`;
     const thumbUserPrompt = `Story Script: ${story}

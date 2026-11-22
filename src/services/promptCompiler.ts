@@ -62,6 +62,7 @@ export function sanitizeKineticMotionForImage(prompt: string): string {
   let cleaned = prompt;
 
   // Replace process verbs with frozen static states
+  cleaned = cleaned.replace(/\bswirling\s+vortex\s+of\b/gi, 'radiant spiral pattern of');
   cleaned = cleaned.replace(/\b(?:clouds?\s+)?swirls?\s+above\b/gi, 'dense curved storm-cloud formations hang frozen above');
   cleaned = cleaned.replace(/\bswirling\b/gi, 'frozen in curved spiral patterns');
   cleaned = cleaned.replace(/\bflickers?\b/gi, 'captured in a single frozen lightning strike');
@@ -71,7 +72,9 @@ export function sanitizeKineticMotionForImage(prompt: string): string {
   cleaned = cleaned.replace(/\bstreaming\s+in\s+a\s+thin\s+ribbon\b/gi, 'suspended in a thin frozen ribbon');
   cleaned = cleaned.replace(/\bstreaming\b/gi, 'suspended mid-pour');
   cleaned = cleaned.replace(/\bpouring\b/gi, 'suspended mid-pour');
+  cleaned = cleaned.replace(/\b(particles|embers|sparks|steam|mist|dust|smoke)\s+rising\b/gi, '$1 suspended mid-air');
   cleaned = cleaned.replace(/\bhovering\b/gi, 'hanging motionless');
+  cleaned = cleaned.replace(/\bfluttering\s+in\s+(?:the\s+)?breeze\b/gi, 'frozen mid-billow');
   cleaned = cleaned.replace(/\bfluid\s+motion\b/gi, 'hand-drawn line work');
   cleaned = cleaned.replace(/\bliquid\s+motion\b/gi, 'frozen liquid details');
   cleaned = cleaned.replace(/\bmoving\b/gi, 'static');
@@ -611,10 +614,11 @@ export function compileThumbnailPrompt(params: {
   }
   if (!cleanHook) cleanHook = storyFallbackHook;
 
-  const storyAdaptiveFont =
+  const rawStoryAdaptiveFont =
     raw.fontStyle && raw.fontStyle.trim().length > 0
       ? raw.fontStyle.trim()
       : inferStoryAdaptiveFont(params.styleProfile?.artStyle, params.storyPremise);
+  const storyAdaptiveFont = rawStoryAdaptiveFont.replace(/[.,;:!?]+$/, '').trim();
 
   // Primary character extraction for identity lock (strip transient expressions so thumbnail emotion never clashes)
   const formatSheetSubjectName = (rawKey: string, capitalizeStart: boolean): string => {
@@ -662,11 +666,14 @@ export function compileThumbnailPrompt(params: {
     ? 'Platform safe zone: strictly keep the bottom-right corner clear of text and faces for the YouTube timestamp duration badge; keep lower 10% clear for the scrub bar.'
     : 'Platform safe zone: keep the top 12% clear for header/profile icons, bottom 25% clear for captions/music titles, and right edge clear for like/comment buttons.';
 
-  const cleanAccentColor =
+  const rawAccentWithoutDirectives =
     accentColor
       .replace(/^intense\s+/i, '')
       .replace(/\s*rim\s+(?:lighting|light)\s*$/i, '')
       .trim() || accentColor;
+  const cleanAccentColor = /^[A-Z][a-z]/.test(rawAccentWithoutDirectives)
+    ? rawAccentWithoutDirectives[0].toLowerCase() + rawAccentWithoutDirectives.slice(1)
+    : rawAccentWithoutDirectives;
   const rimLightPhrase = isMono
     ? 'stark pure-white rim lighting cutting through pitch-black cross-hatched shadows'
     : `intense ${cleanAccentColor} rim lighting separating the subject from the background`;
@@ -995,6 +1002,24 @@ export function inferStoryAdaptiveCtaQuestion(storyPremise?: string, characterNa
     };
   }
 
+  // Nostalgic / Memory / Comfort Sanctuary / Spirit Folklore
+  if (
+    /\b(?:restores?\s+mortal\s+memor(?:y|ies)|forgotten\s+memor(?:y|ies)|lost\s+memor(?:y|ies)|nostalg|warm\s+broth|ramen|lantern|wandering\s+ghosts?|spirits?\s+and\s+wandering|comfort\s+food|healing\s+meal)\b/i.test(
+      text
+    )
+  ) {
+    return {
+      primaryQuestion:
+        'If one warm meal could bring back any forgotten memory, which moment from your life would you choose?',
+      alternateQuestions: [
+        'Who is someone from your past you wish could sit beside you for one quiet midnight meal?',
+        'Do you think forgotten memories fade away, or wait quietly until something brings them back?',
+        'What scent or comfort dish instantly unlocks your clearest memory?',
+        'Would you rather revisit your happiest memory once, or heal a quiet regret?',
+      ],
+    };
+  }
+
   // General / Viral short-form engagement default
   return {
     primaryQuestion: `What would you have chosen in ${char}'s position? Tell us below.`,
@@ -1042,7 +1067,7 @@ export function compileCtaPrompt(params: {
     const lower = spaced.toLowerCase();
     const isGenericRole =
       hasCamelBoundary ||
-      /\b(?:protagonist|narrator|photographer|detective|soldier|scientist|survivor|child|mother|father|driver|archivist|diver|doctor|stranger|victim|hero|explorer|journalist|writer|teacher|student|guard|pilot|captain|officer|knight|king|queen|engineer|astronaut|astronauts|courier|nurse|surgeon|worker|researcher|operative|operatives|enforcers|guards|soldiers)\b$/i.test(
+      /\b(?:protagonist|narrator|photographer|detective|soldier|scientist|survivor|child|mother|father|driver|archivist|diver|doctor|stranger|victim|hero|explorer|journalist|writer|teacher|student|guard|pilot|captain|officer|knight|king|queen|engineer|astronaut|astronauts|courier|nurse|surgeon|worker|researcher|operative|operatives|enforcers|guards|soldiers|chef|cook|baker|keeper|owner|master|vendor|merchant|waiter|barista|bartender|host|elder|monk|priest|witch|wizard|healer|guardian|warden|ghost|spirit|patron|traveler|wanderer|blacksmith|clockmaker|tinker|shoemaker|tailor|librarian|caretaker|watchman)\b$/i.test(
         lower
       );
     return isGenericRole ? `the ${lower}` : spaced;
@@ -1158,15 +1183,31 @@ export function compileCtaPrompt(params: {
     ? lighting[0].toLowerCase() + lighting.slice(1)
     : lighting;
 
+  const isWarmOrBittersweet =
+    /\b(?:warm|gentle|bittersweet|memor(?:y|ies)|nostalg|cozy|healing|broth|chibi|kind|peaceful|restore|restores|spirits?)\b/i.test(
+      `${params.storyPremise || ''} ${artStyle} ${lighting}`
+    ) &&
+    !/\b(?:horror|murder|killer|trap|betray|revenge|entity|mimic|monster|survival|crime|penalty|seizure|arrest)\b/i.test(
+      `${params.storyPremise || ''}`
+    );
+
   if (modality === 'video') {
     modalityHeader = `CINEMATIC 3-SECOND OUTRO VIDEO LOOP. ${platformLabel} moving video plate. Continuous seamless atmospheric loop. No jump cuts, no flashing strobes.`;
-    visualActionClause = `Camera motion: slow subtle cinematic dolly in pushing slowly toward ${primaryCharClause}. Atmospheric ambient dust particles drift through ${inlineLighting}. The subject holds a lingering, unresolved, emotionally resonant gaze directly into the camera lens, breaking the fourth wall in quiet suspense as the scene holds tension.`;
+    visualActionClause = `Camera motion: slow subtle cinematic dolly in pushing slowly toward ${primaryCharClause}. Atmospheric ambient dust particles drift through ${inlineLighting}. ${
+      isWarmOrBittersweet
+        ? 'The subject holds a gentle, knowing gaze directly into the camera lens with quiet bittersweet warmth.'
+        : 'The subject holds a lingering, unresolved, emotionally resonant gaze directly into the camera lens, breaking the fourth wall in quiet suspense as the scene holds tension.'
+    }`;
   } else {
-    modalityHeader = `STATIC OUTRO FRAME ONLY. ${platformLabel} closing freeze frame. Single high-tension still image. Zero camera movement, no motion blur, no video, no multiple frames.`;
+    modalityHeader = `STATIC OUTRO FRAME ONLY. ${platformLabel} closing freeze frame. Single ${
+      isWarmOrBittersweet ? 'expressive' : 'high-tension'
+    } still image. Zero camera movement, no motion blur, no video, no multiple frames.`;
     const ctaBackdropPhrase = /\bseparat(?:ion|ing)\b/i.test(inlineLighting)
       ? `${inlineLighting} against atmospheric background shadows`
       : `${inlineLighting} separating the hero from atmospheric background shadows`;
-    visualActionClause = `Composition: Freeze-frame closing portrait of ${primaryCharClause} locked in an intense climactic pause, eyes meeting the lens with deep emotional gravity. Shallow depth of field, sharp cinematic focus on facial expression, ${ctaBackdropPhrase}.`;
+    visualActionClause = isWarmOrBittersweet
+      ? `Composition: Freeze-frame closing portrait of ${primaryCharClause} holding a warm, knowing stillness, soft expressive eyes meeting the lens with gentle bittersweet emotion. Shallow depth of field, sharp focus on facial expression, ${ctaBackdropPhrase}.`
+      : `Composition: Freeze-frame closing portrait of ${primaryCharClause} locked in an intense climactic pause, eyes meeting the lens with deep emotional gravity. Shallow depth of field, sharp cinematic focus on facial expression, ${ctaBackdropPhrase}.`;
   }
 
   // Full compiled prompt with typography (universal clean flags without legacy --style raw --v 6.1)

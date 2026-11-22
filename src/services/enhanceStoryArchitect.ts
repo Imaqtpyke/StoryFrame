@@ -978,14 +978,18 @@ Return ONLY valid JSON with "scenes": [ ...starting at index ${nextSceneIndex}..
       onStatusMessage('Step 3: Compiling cover thumbnail & CTA outro...');
     }
     const thumbSystemPrompt = `You are a high-CTR storyboard cover designer. Generate ONLY a JSON object for the story thumbnail using the locked cast and story scenes. No em dashes.
+Rules:
+- "heroMoment" MUST refer to characters ONLY using their exact Character Sheet names (never invent ungrounded labels like "a spectral traveler" when the sheet defines "Spirit Patron" or "Wandering Ghost").
+- "fontStyle" must NOT end with punctuation.
+- "accentColor" must match a concrete color from Color Palette without stray words.
 Schema:
 {
-  "heroMoment": "one crisp sentence describing the central conflict or turning point",
-  "expression": "intense, emotionally charged facial expression",
+  "heroMoment": "one crisp sentence describing the central conflict or turning point using exact Character Sheet names",
+  "expression": "emotionally fitting facial expression matching the story tone",
   "bgDescription": "dark, simplified high-contrast background with deep separation",
   "accentColor": "dramatic rim lighting color fitting the story palette",
   "hookText": "bold 2 to 4 word curiosity headline in ALL CAPS specific to this story (never generic like SURVIVE)",
-  "fontStyle": "story-adapted typography style",
+  "fontStyle": "story-adapted typography style without trailing period",
   "alternateHooks": ["ALT HOOK 1", "ALT HOOK 2"]
 }`;
     const thumbUserPrompt = `Premise: ${story}
