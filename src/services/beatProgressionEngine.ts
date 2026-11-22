@@ -440,6 +440,7 @@ export function sanitizePromptGrammarAndTypos(text: string): string {
     .replace(/\bhard\s+noir\s+film\s+noir\b/gi, 'hard film noir')
     .replace(/\bsharp,\s*deep,\s*yet\s+soft-edged\s+shadows\b/gi, 'sharp, deep cast shadows')
     .replace(/\bof\s+extreme\s+detail\s+of\b/gi, 'extreme detail of')
+    .replace(/\bof\s+(?:a\s+|an\s+|the\s+)?(?:macro|close)\s+view\s+of\b/gi, 'macro detail of')
     .replace(/\bneo-(Seoul|Tokyo|Kyoto)\b/g, 'Neo-$1');
   // Fix "a <vowel-word>" article errors on common colors, materials, and visual nouns
   cleaned = cleaned.replace(
@@ -1316,9 +1317,9 @@ export function injectCompactCharacterLocks(
         for (const part of parts) {
           const pTrim = part.trim();
           if (!pTrim) break;
-          // Separate leading redundant appositive like "carrying an ethereal lantern approaching the stall"
+          // Separate leading redundant appositive like "carrying an ethereal lantern approaching" or "with red scarf and pencil stands"
           const redundantCarryWearMatch = pTrim.match(
-            /^((?:carrying|wearing)\s+(?:an?\s+|the\s+)?[^,.]+?)(?:\s+(?=(?:approaching|walking|standing|sitting|leaning|holding|entering|looking|staring|crossing)\b)(.+))?$/i
+            /^((?:carrying|wearing|with)\s+(?:an?\s+|the\s+)?[^,.]+?)(?:\s+(?=(?:approaching|walking|standing|sitting|leaning|holding|entering|looking|staring|crossing|stands|sits|works|uses|draws|reaches|picks)\b)(.+))?$/i
           );
           if (redundantCarryWearMatch) {
             const candidateClause = redundantCarryWearMatch[1].trim();
@@ -1329,7 +1330,7 @@ export function injectCompactCharacterLocks(
               .split(/[\s-]+/)
               .filter((w) => w.length > 2 && !traitStopWords.has(w));
             const cOverlap = cWords.filter((w) => anchorTokenSet.has(w) || GENERIC_VISUAL_TRAIT_WORDS.has(w)).length;
-            if (cWords.length > 0 && cOverlap / cWords.length >= 0.6) {
+            if (cWords.length > 0 && cOverlap / cWords.length >= 0.55) {
               if (restAction) {
                 parts[dropCount] = restAction;
                 return `${headAnchor} ${parts.slice(dropCount).join(', ')}`.trim();
@@ -1860,23 +1861,40 @@ export function formatFinalBeatPrompt(
     }
   }
 
-  // Restore exact location key capitalization if lowerFirst turned a leading LocationSheet title lowercase ("of mirror Oasis" -> "of the Mirror Oasis")
-  if (options?.locationSheet) {
-    for (const locKey of Object.keys(options.locationSheet)) {
-      const trimmedLoc = locKey.trim();
-      if (!trimmedLoc || !/^[A-Z]/.test(trimmedLoc)) continue;
-      const escapedLoc = trimmedLoc.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      body = body.replace(
-        new RegExp(`(\\bof\\s+)(?:the\\s+)?${escapedLoc}\\b`, 'gi'),
-        `$1the ${trimmedLoc}`
-      );
+  // Protect exact characterSheet & locationSheet proper names if lowerFirst turned a leading proper name lowercase ("of pip" -> "of Pip")
+  const restoreLeadingProperNames = (text: string): string => {
+    let fixed = text;
+    if (options?.characterSheet) {
+      for (const charKey of Object.keys(options.characterSheet)) {
+        const trimmedChar = charKey.trim();
+        if (!trimmedChar || !/^[A-Z]/.test(trimmedChar)) continue;
+        const escChar = trimmedChar.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        fixed = fixed.replace(new RegExp(`(\\bof\\s+)${escChar}\\b`, 'gi'), `$1${trimmedChar}`);
+      }
     }
-  }
+    if (options?.locationSheet) {
+      for (const locKey of Object.keys(options.locationSheet)) {
+        const trimmedLoc = locKey.trim();
+        if (!trimmedLoc || !/^[A-Z]/.test(trimmedLoc)) continue;
+        const escLoc = trimmedLoc.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        if (/^(?:The|A|An)\s+/i.test(trimmedLoc)) {
+          fixed = fixed.replace(new RegExp(`(\\bof\\s+)${escLoc}\\b`, 'gi'), `$1${trimmedLoc}`);
+        } else {
+          fixed = fixed.replace(
+            new RegExp(`(\\bof\\s+)(?:the\\s+)?${escLoc}\\b`, 'gi'),
+            `$1the ${trimmedLoc}`
+          );
+        }
+      }
+    }
+    return fixed;
+  };
+  body = restoreLeadingProperNames(body);
 
-  // Fix finite-verb grammar right after "Shot..., angle of <Subject/Location> ... stands/sits/reveals" -> participle
+  // Fix finite-verb grammar right after "Shot..., angle of <Subject/Location> ... stands/sits/works/uses/reveals" -> participle
   if (/^(?:Extreme\s+Wide|Wide\s+Establishing|Wide|Medium\s+Close-Up|Medium|Extreme\s+Close-Up|Close-Up)[^.]*?\bof\s+/i.test(body)) {
     body = body.replace(
-      /^([^.]*?\bof\s+(?:(?:a|an|the)\s+)?[A-Za-z][^.]*?)\b(stands|sits|waits|kneels|leans|stares|looks|gazes|walks|reveals|shows|reflects|rises|gleams|shimmers)\b(\s+(?:inside|at|by|near|on|in|under|beside|behind|across|toward|over|a|an|the|cluster|clusters|rows?|lines?|columns?|beams?|shards?|pools?)\b)/i,
+      /^([^.]*?\bof\s+(?:(?:a|an|the)\s+)?[A-Za-z](?:[^.()]|\([^)]*\))*?)\b(stands|sits|waits|kneels|leans|stares|looks|gazes|walks|works|uses|draws|reaches|picks|holds|reveals|shows|reflects|rises|gleams|shimmers)\b(\s+(?:inside|at|by|near|on|in|under|beside|behind|across|toward|over|before|up|out|forward|down|still|firm|tall|poised|frantically|firmly|a|an|the|cluster|clusters|rows?|lines?|columns?|beams?|shards?|pools?)\b)/i,
       (_m, prefix: string, verb: string, prep: string) => {
         const participleMap: Record<string, string> = {
           stands: 'standing',
@@ -1888,6 +1906,12 @@ export function formatFinalBeatPrompt(
           looks: 'looking',
           gazes: 'gazing',
           walks: 'walking',
+          works: 'working',
+          uses: 'using',
+          draws: 'drawing',
+          reaches: 'reaching',
+          picks: 'picking',
+          holds: 'holding',
           reveals: 'revealing',
           shows: 'showing',
           reflects: 'reflecting',
@@ -2302,7 +2326,11 @@ function buildContextPreservingProgressionBeat(
   let cameraMovement = 'Static Frame';
   let actionDescription = '';
 
-  if (isInfancyOrChildhoodFlashback(lowerSpan)) {
+  const hasStrictInfancyCribCue =
+    /\b(?:since\s+birth|infant|newborn|baby|cradle|crib|swaddled)\b/i.test(lowerSpan) ||
+    /\b(?:entity|crib|swaddled|since\s+birth)\b/i.test(scene.narratorLine || '');
+
+  if (hasStrictInfancyCribCue && isInfancyOrChildhoodFlashback(lowerSpan)) {
     shotType = 'Medium Shot';
     cameraAngle = 'high-angle';
     cameraMovement = isVideoMode ? 'Slow Push-In' : 'Static Frame';
@@ -2530,11 +2558,13 @@ export function deduplicateAndProgressSceneBeats(
     const prevIsTinyConnector = isShortConnectiveFragment(prev, isVideoMode);
     const distinctMontageSubjects = hasDistinctMontageFocalSubject(prev, curr);
 
-    // In Image Mode (Option B Phrase Cuts), only merge if beats are near-identical clones (sim >= 0.50)
-    // OR one of them is a genuine broken stub/colon fragment; preserve distinct 2-6 word visual phrases.
+    // In Image Mode (Option B Phrase Cuts), only merge if beats are near-identical clones (sim >= 0.52)
+    // OR one of them is a genuine broken stub/colon fragment; NEVER re-merge healthy 2-6w beats past 6 words.
     const simThreshold = isVideoMode ? 0.46 : 0.52;
     const maxCombinedPhraseWords =
-      isVideoMode || currIsTinyConnector || prevIsTinyConnector ? VISUAL_EVENT_MAX_WORDS : 11;
+      isVideoMode || currIsTinyConnector || prevIsTinyConnector
+        ? VISUAL_EVENT_MAX_WORDS
+        : 6;
 
     const shouldMergeAdjacent =
       combinedSeconds <= maxMergeSeconds &&
@@ -2794,6 +2824,105 @@ export interface TwoPhaseProgressionParams {
   userSignal?: AbortSignal;
   onStatusMessage?: (msg: string) => void;
   skipLlmRepair?: boolean;
+  skipOptionBPhraseSplit?: boolean;
+}
+
+/**
+ * Deterministic Option B Phrase-Level Segmentation enforcer (Image Mode only):
+ * If an LLM returns an oversized >= 7-word beat in Text-to-Image mode, splits its spoken textSpan
+ * cleanly at natural grammatical boundaries into 2 to 6 word beats and evolves visual perspective
+ * across the split sub-beats so every phrase gets a distinct framing without losing story context.
+ */
+function enforceOptionBPhraseBeatsInScene(
+  scene: Scene,
+  styleProfile: StyleProfile,
+  characterSheet: Record<string, string>,
+  locationSheet: Record<string, string>,
+  isLongForm: boolean
+): Scene {
+  const inputBeats = Array.isArray(scene.beats) ? scene.beats : [];
+  if (inputBeats.length === 0) return scene;
+
+  const shotVariants = [
+    { shotType: 'Close-Up', cameraAngle: 'low-angle' },
+    { shotType: 'Over-the-Shoulder (OTS)', cameraAngle: 'high-angle' },
+    { shotType: 'Medium Close-Up', cameraAngle: 'eye-level' },
+    { shotType: 'Wide Establishing Shot', cameraAngle: 'low-angle' },
+    { shotType: 'Extreme Close-Up', cameraAngle: 'eye-level' },
+  ];
+
+  const expandedBeats: Beat[] = [];
+  for (let bIdx = 0; bIdx < inputBeats.length; bIdx++) {
+    const beat = inputBeats[bIdx];
+    const span = (beat.textSpan || '').trim();
+    const wc = getWordCount(span);
+    if (wc <= 6) {
+      expandedBeats.push(beat);
+      continue;
+    }
+
+    const subPhrases = splitPhraseIntoSubBeats(span, 6);
+    if (subPhrases.length <= 1) {
+      expandedBeats.push(beat);
+      continue;
+    }
+
+    const totalSec = typeof beat.estimatedSeconds === 'number' && beat.estimatedSeconds > 0 ? beat.estimatedSeconds : Math.max(1.6, wc * 0.4);
+    const totalSubWords = Math.max(1, subPhrases.reduce((acc, p) => acc + Math.max(1, getWordCount(p)), 0));
+
+    subPhrases.forEach((subText, subIdx) => {
+      const subWords = Math.max(1, getWordCount(subText));
+      const subSec = Math.max(0.8, Math.min(2.2, Math.round(((totalSec * subWords) / totalSubWords) * 10) / 10));
+
+      if (subIdx === 0) {
+        expandedBeats.push({
+          ...beat,
+          textSpan: subText,
+          estimatedSeconds: subSec,
+        });
+        return;
+      }
+
+      const v = shotVariants[(bIdx + subIdx) % shotVariants.length];
+      const baseBody = stripLeadingOrientationPrefixes(beat.imagePrompt || '')
+        .replace(/\s*--ar\s+[0-9:]+.*$/i, '')
+        .replace(/^(?:Extreme\s+Wide\s+Shot|Wide\s+Establishing\s+Shot|Wide|Medium\s+Close-Up|Medium\s+Shot|Extreme\s+Close-Up|Close-Up|Over-the-Shoulder\s*\(OTS\)|Point-of-View\s*\(POV\)|Whip[-\s]*Pan)(?:\s*,\s*[a-z-]+)?(?:\s*(?:,|of|:)\s*)?/i, '')
+        .trim();
+
+      const progressedSub = buildContextPreservingProgressionBeat(
+        {
+          ...beat,
+          beatIndex: bIdx + subIdx + 1,
+          textSpan: subText,
+          shotType: v.shotType,
+          cameraAngle: v.cameraAngle,
+          cameraMovement: 'Static Frame',
+          estimatedSeconds: subSec,
+          imagePrompt: baseBody
+            ? `${v.shotType}, ${v.cameraAngle} shifting focus within ${baseBody}`
+            : '',
+        },
+        bIdx + subIdx + 1,
+        scene,
+        styleProfile,
+        characterSheet,
+        locationSheet,
+        isLongForm,
+        false
+      );
+
+      expandedBeats.push({
+        ...progressedSub,
+        textSpan: subText,
+        estimatedSeconds: subSec,
+      });
+    });
+  }
+
+  return {
+    ...scene,
+    beats: expandedBeats.map((b, i) => ({ ...b, beatIndex: i + 1 })),
+  };
 }
 
 /**
@@ -3019,6 +3148,19 @@ STRICT REPAIR RULES:
     } catch {
       // Non-fatal: fall through seamlessly to deterministic progression repair below
     }
+  }
+
+  // Step 4b: Deterministic Option B Phrase-Level Segmentation (2-6 words per Image beat)
+  if (!isVideoMode && !params.skipOptionBPhraseSplit) {
+    workingScenes = workingScenes.map((sc) =>
+      enforceOptionBPhraseBeatsInScene(
+        sc,
+        styleProfile,
+        activeCharacterSheet,
+        locationSheet,
+        isLongForm
+      )
+    );
   }
 
   // Step 5: Deterministic progression deduplication + compact character locks + synchronized framing opening

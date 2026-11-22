@@ -750,21 +750,14 @@ STRICT VERBATIM SCRIPT LOCK (ZERO EXPANSION / ZERO REWRITING):
 
 CLAUSE & MICRO-ACTION BEAT SEGMENTATION RULES (CRITICAL):
 1. Do NOT make a boring 1-sentence = 1-image breakdown! A long sentence with multiple items, actions, or psychological turns MUST be broken into granular, rhythmic visual beats.
-2. VISUAL EVENT INVARIANT & KINEMATIC ACTION PROGRESSION (CRITICAL):
-   A VISUAL BEAT IS NOT MERELY A TEXT FRAGMENT. A VISUAL BEAT IS ONE PHYSICAL MOMENT IN A CONTINUOUS ACTION CHAIN.
-   - Do NOT generate separate image prompts for sub-clauses that describe the exact same physical event! For example, "Pinakita niya sa akin ang phone na ring nang ring" should NOT produce 4 identical phone prompts. It should advance through a sequence of distinct actions or state transitions:
-     * Beat A: Hand reaching and opening the door
-     * Beat B: POV through door crack revealing the pale mother in the hallway
-     * Beat C: Mother extending the phone forward (screen dark)
-     * Beat D: Student hands taking and gripping the phone
-     * Beat E: Phone screen illuminating amber with incoming call alert
-     * Beat F: Macro insert of phone casing and speaker vibrating with visible physical distortion
-   - Every beat in a scene MUST change at least one of:
+2. VISUAL PROGRESSION ACROSS PHRASE BEATS (CRITICAL):
+   A VISUAL BEAT IS ONE DISTINCT VISUAL MOMENT IN A CONTINUOUS ACTION CHAIN.
+   - Every beat MUST advance at least one of:
      1) PHYSICAL STATE of an object or environment (e.g. door closed -> cracked -> open; screen dark -> backlit -> caller ID).
      2) POSSESSION / CONTACT (e.g. phone in mother's hands -> extended -> taken by student).
      3) CAMERA PERSPECTIVE (e.g. wide establishing -> over-the-shoulder -> POV -> macro insert -> reaction close-up).
      4) CHARACTER ACTION (e.g. reaching -> turning -> extending -> receiving -> reacting).
-   - STRICT BAN ON REPETITIVE PROMPTS: Never describe the same frozen action across consecutive beats! If a spoken fragment merely finishes a sentence without introducing a new physical event, sustain the shot or combine the sub-words into a single coherent visual beat.
+   - STRICT OPTION B LENGTH & VARIATION LOCK: NEVER combine multiple spoken clauses into a long 8+ word beat in Text-to-Image mode! Keep every spoken phrase between 2 and 6 words (following Rule 3 below), and shift the shot size, angle, or focal detail on every single 2-6 word cut so consecutive beats never repeat the same frozen composition.
 3. Option B Phrase-Level Visual Segmentation (2 to 6 Words Per Beat, Natural Grammar):
    - SEGMENTATION CADENCE (~0.7s to 2.0s per image beat): Break spoken sentences into crisp 2 to 6 word visual phrases along natural grammatical boundaries so every short spoken phrase earns its own fresh image!
      * Example: "If you pay off your mortgage ten years early, your lender might hit you with a massive penalty" ->
@@ -1440,6 +1433,7 @@ Output ONLY { "scenes": [ ... ] } starting immediately with Scene 1 Beat 1.`;
       userSignal,
       onStatusMessage,
       skipLlmRepair,
+      skipOptionBPhraseSplit: isCustomBeats,
     });
 
     const calculatedTotalSeconds = Math.round(scenesWithTransitionHints.reduce((sum: number, s: any) => sum + (s.estimatedSeconds || 0), 0) * 10) / 10;

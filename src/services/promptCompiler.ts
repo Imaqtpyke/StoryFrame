@@ -830,7 +830,11 @@ export function inferStoryAdaptiveCtaQuestion(storyPremise?: string, characterNa
   const char = rawChar.toLowerCase() === 'protagonist' ? 'the protagonist' : rawChar;
 
   // Horror / Supernatural / Mirror / Psychological Suspense (evaluated BEFORE incidental moral words like "lie")
+  const hasStorybookFableCue =
+    /\b(?:paper-cut|storybook|handcrafted|clay\s+creature|woodland\s+creature|drawing\s+.*child|save\s+the\s+forest)\b/i.test(text) &&
+    !/\b(?:horror|murder|killer|nightmare|haunt|mimic|warden|doppelganger|blood|scream)\b/i.test(text);
   if (
+    !hasStorybookFableCue &&
     /\b(?:horror|creature|monster|shadow|dark|fear|haunt|escape|trap|mirror|reflection|entity|mimic|warden|unblinking|smiling|never smiled|parallel universe|staring back|half-second late|nightmare|doppelganger|creep|whisper|grin)\b/i.test(
       text
     )
@@ -1038,6 +1042,24 @@ export function inferStoryAdaptiveCtaQuestion(storyPremise?: string, characterNa
         `Would you follow ${char} across an endless dune sea without knowing what awaits?`,
         'Is this mirror oasis a real sanctuary, or a desert mirage trap?',
         'How far would you travel across an endless desert chasing a single legend?',
+      ],
+    };
+  }
+
+  // Storybook / Living Art / Childhood Drawing / Fragile World Rescue
+  if (
+    /\b(?:paper-cut|inkwell|ink\s+dries|finish\s+the\s+drawing|drawing\s+\w+\s+as\s+a\s+child|last\s+living\s+tree|handcrafted\s+clay\s+creature|storybook|brought\s+to\s+life)\b/i.test(
+      text
+    )
+  ) {
+    return {
+      primaryQuestion:
+        'If a creature you drew as a child came to life to guard the last living tree, would you risk everything to finish its story?',
+      alternateQuestions: [
+        'What childhood drawing do you wish could step off the page in real life?',
+        `Do you think ${char} finished the drawing in time before the ink dried?`,
+        'Would you trust a forgotten map from a storybook world if it led somewhere real?',
+        'Which detail in this paper-cut world would you want to explore first?',
       ],
     };
   }
@@ -1287,9 +1309,11 @@ export function compileCtaPrompt(params: {
       `${params.storyPremise || ''}`
     );
 
-  const isMaskedOrMinimalist = /\b(?:stickman|stick[-\s]*figure|circle\s+head|helmet|visor|mask|armor)\b/i.test(
+  const hasHelmetOrVisor = /\b(?:helmet|visor|space\s+suit|diving\s+suit|mask|armor)\b/i.test(
     `${primaryCharClause} ${artStyle}`
   );
+  const isBareStickman =
+    !hasHelmetOrVisor && /\b(?:stickman|stick[-\s]*figure|circle\s+head)\b/i.test(`${primaryCharClause} ${artStyle}`);
 
   if (modality === 'video') {
     modalityHeader = `CINEMATIC 3-SECOND OUTRO VIDEO LOOP. ${platformLabel} moving video plate. Continuous seamless atmospheric loop. No jump cuts, no flashing strobes.`;
@@ -1308,13 +1332,20 @@ export function compileCtaPrompt(params: {
       ? `${inlineLighting} against atmospheric background shadows`
       : `${inlineLighting}, separating the subject from atmospheric background shadows`;
 
-    if (isMaskedOrMinimalist) {
+    if (hasHelmetOrVisor) {
       const tonePosture = isWarmOrBittersweet
         ? 'holding a quiet, gentle stillness, helmeted silhouette angled toward the viewer'
         : isWonderOrDiscovery
           ? 'holding quiet awe and suspense, helmeted silhouette angled toward the frame while the distant glow reflects across the visor'
           : 'locked in a tense climactic stillness, helmeted silhouette facing the frame in stark dramatic contrast';
       visualActionClause = `Composition: Freeze-frame closing portrait of ${primaryCharClause} ${tonePosture}. Shallow depth of field, crisp focus on the silhouette and visor outline, ${ctaBackdropPhrase}.`;
+    } else if (isBareStickman) {
+      const stickTone = isWarmOrBittersweet
+        ? 'holding a quiet, warm stillness facing forward, stylized round eyes catching gentle light'
+        : isWonderOrDiscovery
+          ? 'standing in quiet wonder facing the viewer, minimalist ink silhouette framed with expressive eyes'
+          : 'locked in tense, determined stillness facing forward in stark dramatic contrast';
+      visualActionClause = `Composition: Freeze-frame closing portrait of ${primaryCharClause} ${stickTone}. Shallow depth of field, crisp focus on the drawn figure and silhouette edges, ${ctaBackdropPhrase}.`;
     } else {
       visualActionClause = isWarmOrBittersweet
         ? `Composition: Freeze-frame closing portrait of ${primaryCharClause} holding a warm, knowing stillness, soft expressive eyes meeting the lens with gentle bittersweet emotion. Shallow depth of field, sharp focus on facial expression, ${ctaBackdropPhrase}.`

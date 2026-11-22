@@ -839,6 +839,7 @@ Output ONLY { "scenes": [ ... ] } starting immediately with Scene 1 Beat 1.`;
       userSignal,
       onStatusMessage,
       skipLlmRepair,
+      skipOptionBPhraseSplit: isCustomBeats,
     });
 
     const totalDuration = Math.round(scenesWithHints.reduce((sum: number, s: any) => sum + (s.estimatedSeconds || 0), 0) * 10) / 10;

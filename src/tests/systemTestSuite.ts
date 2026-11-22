@@ -4911,6 +4911,178 @@ function runTestSuite42() {
   );
 }
 
+async function runTestSuite43() {
+  console.log('\n--- Running Suite 43: Paper-Cut Stickman Option B Segmentation, Grammar, Crib Guard & Storybook CTA ---');
+
+  const paperCutStyle = {
+    artStyle: 'tactile paper-cut stop-motion collage with hand-drawn minimalist stickman silhouette',
+    colorPalette: 'warm parchment cream, forest moss green, scarlet scarf red, deep ink charcoal',
+    lighting: 'soft studio tabletop lamp light with gentle layered paper shadows',
+    eraAndSetting: 'whimsical handmade storybook paper studio',
+    lensAndFilmStock: '85mm macro lens, crisp tactile paper grain',
+  };
+  const paperCast: Record<string, string> = {
+    Pip: 'minimalist black ink stickman figure with bright circular white eyes, wearing a long scarlet red knit scarf and gripping a stubby yellow pencil',
+    Moss: 'small round moss-green sculptural clay forest creature with curved bark horns and glowing amber pebble eyes',
+    'Child Pip': 'younger minimalist black ink stickman figure wearing the same scarlet red knit scarf',
+  };
+  const paperLocations: Record<string, string> = {
+    'Paper Forest': 'layered green construction-paper trees surrounding an ancient gnarled oak in the clearing',
+    'Dark Sketchbook': 'open textured watercolor notebook spread with charcoal smudges',
+  };
+
+  // 43.1 Option B Phrase-Level Segmentation enforces <= 6 words in Image Mode and preserves child non-crib flashbacks + custom/video opt-out
+  const longBeatScenes = [
+    {
+      sceneNumber: 1,
+      narratorLine: 'a handcrafted clay creature guarding the last living tree.',
+      beats: [
+        {
+          beatIndex: 1,
+          textSpan: 'a handcrafted clay creature guarding the last living tree.',
+          shotType: 'Medium Shot',
+          cameraAngle: 'eye-level',
+          cameraMovement: 'Static Frame',
+          estimatedSeconds: 3.6,
+          imagePrompt: 'Medium Shot, eye-level of Moss standing beside an oak tree in the Paper Forest.',
+        },
+      ],
+    },
+    {
+      sceneNumber: 2,
+      narratorLine: 'Flashbacks show Pip drawing Moss as a child.',
+      beats: [
+        {
+          beatIndex: 1,
+          textSpan: 'Flashbacks show Pip drawing Moss as a child.',
+          shotType: 'Close-Up',
+          cameraAngle: 'high-angle',
+          cameraMovement: 'Static Frame',
+          estimatedSeconds: 3.2,
+          imagePrompt: 'Close-Up, high-angle of Child Pip sketching Moss inside the Dark Sketchbook.',
+        },
+      ],
+    },
+  ];
+
+  const segmentedScenes = await runTwoPhaseProgressionAndRepair({
+    scenes: longBeatScenes as any,
+    styleProfile: paperCutStyle,
+    characterSheet: paperCast,
+    locationSheet: paperLocations,
+    isLongForm: false,
+    isVideoMode: false,
+    skipLlmRepair: true,
+  });
+
+  const scene1Words = segmentedScenes[0].beats.map((b) => (b.textSpan || '').trim().split(/\s+/).filter(Boolean).length);
+  const scene1Joined = segmentedScenes[0].beats.map((b) => (b.textSpan || '').trim()).join(' ');
+  const scene2Joined = segmentedScenes[1].beats.map((b) => (b.textSpan || '').trim()).join(' ');
+  const scene2Prompts = segmentedScenes[1].beats.map((b) => b.imagePrompt).join(' ');
+
+  const customUnchangedScenes = await runTwoPhaseProgressionAndRepair({
+    scenes: [longBeatScenes[0]] as any,
+    styleProfile: paperCutStyle,
+    characterSheet: paperCast,
+    locationSheet: paperLocations,
+    isLongForm: false,
+    isVideoMode: false,
+    skipLlmRepair: true,
+    skipOptionBPhraseSplit: true,
+  });
+
+  const videoUnchangedScenes = await runTwoPhaseProgressionAndRepair({
+    scenes: [longBeatScenes[0]] as any,
+    styleProfile: paperCutStyle,
+    characterSheet: paperCast,
+    locationSheet: paperLocations,
+    isLongForm: false,
+    isVideoMode: true,
+    targetVideoDuration: 4,
+    skipLlmRepair: true,
+  });
+
+  assert(
+    segmentedScenes[0].beats.length >= 2 &&
+      scene1Words.every((w) => w >= 1 && w <= 6) &&
+      scene1Joined === 'a handcrafted clay creature guarding the last living tree.' &&
+      scene2Joined === 'Flashbacks show Pip drawing Moss as a child.' &&
+      !/swaddled\s+inside\s+a\s+wooden\s+crib|dark\s+gaunt\s+entity/i.test(scene2Prompts) &&
+      customUnchangedScenes[0].beats.length === 1 &&
+      videoUnchangedScenes[0].beats.length === 1,
+    'Suite 43: Paper-Cut Stickman Option B Segmentation, Grammar, Crib Guard & Storybook CTA',
+    '43.1 Enforces 2-6 Word Option B Beats in Image Mode, Guards Non-Crib Childhood Flashbacks, and Skips Custom/Video Modes',
+    `s1Len=${segmentedScenes[0].beats.length} s1Words=${JSON.stringify(scene1Words)} s2Prompts=${scene2Prompts}`
+  );
+
+  // 43.2 Preserves Proper Names after 'of ', Converts Finite Verbs to Participles, Prunes Duplicate Traits & Cleans 'of a macro view of'
+  const pipGrammarBeat = formatFinalBeatPrompt(
+    {
+      beatIndex: 1,
+      textSpan: 'Pip steps closer',
+      shotType: 'Medium Shot',
+      cameraAngle: 'eye-level',
+      cameraMovement: 'Static Frame',
+      estimatedSeconds: 1.5,
+      imagePrompt:
+        'Medium Shot, eye-level of Pip (minimalist black ink stickman with red scarf and yellow pencil) with red scarf and yellow pencil stands inside the Paper Forest.',
+    },
+    false,
+    false,
+    { styleProfile: paperCutStyle, characterSheet: paperCast, locationSheet: paperLocations }
+  );
+
+  const macroGrammarBeat = formatFinalBeatPrompt(
+    {
+      beatIndex: 2,
+      textSpan: 'his pencil tip glows',
+      shotType: 'Extreme Close-Up',
+      cameraAngle: 'high-angle',
+      cameraMovement: 'Static Frame',
+      estimatedSeconds: 1.2,
+      imagePrompt:
+        'Extreme Close-Up, high-angle of a macro view of Child Pip uses a stubby yellow pencil inside the Dark Sketchbook.',
+    },
+    false,
+    false,
+    { styleProfile: paperCutStyle, characterSheet: paperCast, locationSheet: paperLocations }
+  );
+
+  assert(
+    pipGrammarBeat.imagePrompt.includes('of Pip (') &&
+      pipGrammarBeat.imagePrompt.includes('standing inside') &&
+      !pipGrammarBeat.imagePrompt.includes('of pip') &&
+      macroGrammarBeat.imagePrompt.includes('macro detail of Child Pip using') &&
+      !macroGrammarBeat.imagePrompt.includes('of a macro view of'),
+    'Suite 43: Paper-Cut Stickman Option B Segmentation, Grammar, Crib Guard & Storybook CTA',
+    '43.2 Protects Proper Name Capitalization, Participle Grammar & Removes Redundant Macro Prefix',
+    `pip=${pipGrammarBeat.imagePrompt} | macro=${macroGrammarBeat.imagePrompt}`
+  );
+
+  // 43.3 Storybook Fable avoids Horror CTA and Bare Stickman CTA avoids Helmet/Visor Silhouette
+  const fablePremise =
+    'A tiny paper-cut stickman named Pip tries to save a handcrafted clay creature guarding the last living tree after drawing Moss as a child, hoping to finish the drawing before the ink dries.';
+  const fableCta = inferStoryAdaptiveCtaQuestion(fablePremise, 'Pip');
+  const bareStickmanCta = compileCtaPrompt({
+    storyPremise: fablePremise,
+    characterSheet: { Pip: paperCast.Pip },
+    styleProfile: paperCutStyle,
+    format: 'short',
+    platform: 'tiktok',
+    modality: 'image',
+  });
+
+  assert(
+    !/fled the moment things went dark/i.test(fableCta.primaryQuestion) &&
+      /tree|drawing|story|creature/i.test(fableCta.primaryQuestion) &&
+      !/helmeted silhouette|visor outline/i.test(bareStickmanCta.compiledPrompt) &&
+      /silhouette edges|drawn figure/i.test(bareStickmanCta.compiledPrompt),
+    'Suite 43: Paper-Cut Stickman Option B Segmentation, Grammar, Crib Guard & Storybook CTA',
+    '43.3 Routes Storybook Fables to Living-Art CTA and Bare Stickmen Away from Helmeted Silhouette',
+    `ctaQ=${fableCta.primaryQuestion} | ctaPrompt=${bareStickmanCta.compiledPrompt}`
+  );
+}
+
 runTestSuite21().then(async () => {
   runTestSuite23();
   runTestSuite24();
@@ -4932,6 +5104,7 @@ runTestSuite21().then(async () => {
   runTestSuite40();
   runTestSuite41();
   runTestSuite42();
+  await runTestSuite43();
   console.log('\n====================================================================');
   console.log('                  FULL-SYSTEM VERIFICATION REPORT                  ');
   console.log('====================================================================');

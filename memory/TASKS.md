@@ -296,6 +296,8 @@
   - Added Test Suite 41 (`41.1` through `41.4`) in `src/tests/systemTestSuite.ts` and verified `252 / 252` tests passing.
 - [x] **Desert Nomad Chibi Fixes & Fast Workflow Preference (Suite 42, 255/255 passing):** Fixed Fantasy CTA substring false-positives (`seeking`/`solar-powered`), added Desert/Oasis CTA branch, normalized `Nomad` role naming, decoupled `chibi` art style from bittersweet CTA tone, cleaned contradictory midday shadows & location reveal/`of extreme detail of` grammar, and updated `MEMORY.md` for direct bug-fix execution with minimal memory logs.
 
+- [x] **Paper-Cut Stickman Option B Segmentation, Grammar & Storybook CTA (Suite 43, 258/258 passing):** Enforced Option B 2-6 word phrase cuts in Gemini prompt + deterministic `enforceOptionBPhraseBeatsInScene` (honoring `skipOptionBPhraseSplit` for custom beats & preserving tiny connector merges), guarded non-crib childhood flashbacks, protected proper names after `of ` and converted parenthetical/`with` finite verbs to participles without backtracking, removed `of a macro view of`, routed storybook fables out of Horror CTA, and replaced helmeted silhouette with bare stickman CTA framing.
+
 ## Active Testing & Planned Future Roadmap (Post-Testing)
 - [ ] **Genre Stress-Testing Loop (In Progress):**
   - Completed: **Sci-Fi**, **Documentary / History**, **Horror / Psychological Thriller**, **Stylized Art**, **Multi-Character + Flashbacks**, **130-Word Finance/Diorama (Text-to-Image)**, and **Text-to-Video (4s Clip Mode)**.
