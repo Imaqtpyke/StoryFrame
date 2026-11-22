@@ -505,7 +505,7 @@ Rules:
   * "lighting": concrete atmospheric lighting matching this story's mood and eras.
   * "eraAndSetting": exact time period, weather, and world location from the story.
   * "lensAndFilmStock": specific prime lens/stock profile.
-- "characterSheet": MUST list EVERY recurring character, creature/spirit, parent/relative, and distinct age/flashback variant with permanent expression-free biometric traits, accurate anatomy (e.g. paws vs hooves, never unstated wings), and locked wardrobe/accessories. Never leave empty when characters appear.
+- "characterSheet": MUST list EVERY recurring character, creature/spirit, parent/relative, and distinct age/flashback variant with permanent expression-free biometric traits, accurate anatomy (e.g. paws vs hooves, never unstated wings), and locked wardrobe/accessories. NEVER add inanimate graphic text, headlines, captions, or props (like "The Headlines") into characterSheet. Never leave empty when characters appear.
 - "locationSheet": EVERY recurring setting with concrete physical surfaces and props.
 - "scriptOutline": concise ordered list of the exact spoken voiceover sentences from Scene 1 to final Scene matching target duration.
 - Do not use em dashes. Output raw JSON only:

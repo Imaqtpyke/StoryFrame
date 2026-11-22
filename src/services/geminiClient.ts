@@ -918,7 +918,7 @@ Rules:
   * "lighting": concrete atmospheric lighting matching this story's mood and eras.
   * "eraAndSetting": exact time period, weather, and world location from the script.
   * "lensAndFilmStock": specific prime lens/stock profile.
-- "characterSheet": MUST list EVERY named character, creature/spirit, parent/relative, AND distinct age/flashback variant (for example, if a hero appears both as an adult/youth and in a childhood flashback, include separate locked entries such as "Young Healer Sable", "Child Sable", "Sable's Mother", and "Frost"). Each value MUST lock permanent physical traits, hair, build, anatomy (e.g. paws vs hooves, never unstated wings), and fixed wardrobe/accessories with ZERO transient expressions or frozen poses. Do NOT leave characterSheet empty when characters exist in the script.
+- "characterSheet": MUST list EVERY named character, creature/spirit, parent/relative, AND distinct age/flashback variant (for example, if a hero appears both as an adult/youth and in a childhood flashback, include separate locked entries such as "Young Healer Sable", "Child Sable", "Sable's Mother", and "Frost"). Each value MUST lock permanent physical traits, hair, build, anatomy (e.g. paws vs hooves, never unstated wings), and fixed wardrobe/accessories with ZERO transient expressions or frozen poses. NEVER add inanimate graphic text, headlines, captions, signs, or props (such as "The Headlines" or "The Clock") into characterSheet; put recurring places/environments in locationSheet. Do NOT leave characterSheet empty when characters exist in the script.
 - "locationSheet": EVERY recurring setting mapped to readable spaced keys with concrete physical surfaces and props.
 - Do not use em dashes. Output raw JSON ONLY:
 {
@@ -1303,11 +1303,12 @@ Output ONLY { "scenes": [ ... ] } starting immediately with Scene 1 Beat 1.`;
 
         const temporalAnchor = assignedBeatAnchorMap.get(bIdx);
         if (temporalAnchor) {
-          const anchorUpper = temporalAnchor.toUpperCase();
-          const hasOnScreenText = /text|title|typography|lettering/i.test(finalImagePrompt) && finalImagePrompt.toUpperCase().includes(anchorUpper);
+          const anchorDisplay = /^\d{3,4}s$/i.test(temporalAnchor.trim())
+            ? temporalAnchor.trim().replace(/S$/, 's')
+            : temporalAnchor.toUpperCase();
+          const hasOnScreenText = /text|title|typography|lettering/i.test(finalImagePrompt) && finalImagePrompt.toUpperCase().includes(anchorDisplay.toUpperCase());
           if (!hasOnScreenText) {
-            const styleRef = sanitizedStyleProfile.artStyle || characterStyle || 'the visual aesthetic';
-            finalImagePrompt += ` Featuring large clear legible on-screen text reading "${anchorUpper}" displayed above at the upper portion of the frame in a bold typography stylized to match ${styleRef}, clearly visible to the naked eye.`;
+            finalImagePrompt += ` Featuring large clear legible on-screen text reading "${anchorDisplay}" displayed above at the upper portion of the frame in bold typography stylized to match the scene aesthetic, clearly visible to the naked eye.`;
           }
         } else {
           finalImagePrompt = cleanRedundantOnScreenText(finalImagePrompt);

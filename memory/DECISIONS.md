@@ -387,3 +387,16 @@
 - **Date:** 2026-11-22
 - **Status:** Active
 
+## Neo-Seoul Photographer Audit: Monochrome Grammar, Flicker Freeze, Proper+Role Naming & Premonition CTA (Suite 41)
+- **Fact/Decision:**
+  1. **Monochrome Adjective Grammar & Noir Typo Cleanup (`beatProgressionEngine.ts`, `promptCompiler.ts`):** Updated `sanitizeMonochromeLighting` to separate noun-phrase `cyan (accents|tints|glow|highlights)` (`stark white $1`) from standalone pre-nominal `cyan` adjectives (`white`), added `hard noir film noir` -> `hard film noir` and `neo-(Seoul|Tokyo|Kyoto)` -> `Neo-$1` normalization in `sanitizePromptGrammarAndTypos`, and re-ran monochrome + grammar cleanup *after* secondary character expansion in Thumbnail Conflict and CTA lighting.
+  2. **Attributive Flicker Freeze & Non-Living Typography Filtering (`beatProgressionEngine.ts`, `promptCompiler.ts`, `geminiClient.ts`, `enhanceStoryArchitect.ts`):** Updated `sanitizeStillImageMotionAndOptics` and `sanitizeKineticMotionForImage` so attributive phrases (`flickering overhead bulb`, `flickering lamp`) convert cleanly to `still-lit <modifiers> <noun>` while only standalone `flickering` falls back to `frozen in mid-glow`; filtered inanimate typography/graphic sheet entries (`The Headlines`, `digital text`, `terminal font`) out of `injectCompactCharacterLocks` and forbade inanimate graphic props in Step 1 `characterSheet` prompts.
+  3. **Proper-Name + Role Suffix Preservation, Temporal Casing & Premonition CTA (`promptCompiler.ts`, `geminiClient.ts`):** Preserved titled names containing `the`/`of` (`Joon the Photographer` instead of `The joon the photographer`) in `formatSheetSubjectName` and `formatCtaRoleName`, derived leading proper names (`Joon`) for viewer questions, fixed `"1980S"` decade uppercasing to `"1980s"` without duplicating `artStyle` inside `temporalAnchor`, and added a Premonition / Future-Prediction / Time-Warning Thriller branch in `inferStoryAdaptiveCtaQuestion`. Excluded `Character & Visual Style` input handling and `sanitizeSharedVisualStyle`.
+- **Context:** Eliminated the remaining naming, monochrome adjective, flicker-syntax, typography-key, temporal-text, and CTA routing issues surfaced in the 1980s Neo-Seoul Noir stickman Gemini 3.1 export (`252 / 252` tests passing).
+- **Date:** 2026-11-22
+- **Status:** Active
+
+## Fast Bug-Fix Workflow & Desert Nomad Prompt Fixes (Suite 42)
+- **Fact/Decision:** Switched workflow to direct execution with brief 1-line memory logs on clear bug fixes and audit patches (keeping Plan -> Approval only for major features, UI redesigns, or DB/security changes); fixed Fantasy CTA substring triggers (`seeking`/`solar-powered`), added Desert/Oasis CTA + `Nomad` role formatting, decoupled `chibi` from bittersweet CTA mood, and fixed shadow contradictions and location reveal grammar (`255 / 255` tests passing).
+- **Date:** 2026-11-22
+- **Status:** Active

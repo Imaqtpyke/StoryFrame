@@ -7,9 +7,9 @@
 
 ## Communication & Planning Preferences
 - **Tone:** Direct, technical, transparent, and actionable.
-- **Workflow:** Strict adherence to Step 1 (Plan & explain) -> Step 2 (Stop & await approval) -> Step 3 (Execute).
+- **Workflow:** Direct execution on straightforward bug fixes and prompt-audit patches (keep Step 1 Plan -> Wait for Approval only for major new features, UI redesigns, or database/security changes). Keep memory log updates ultra-brief (1-line summaries; major decisions only).
 - **Format:** Clean markdown, standard hyphens or colons instead of em dashes, zero emojis in UI and documentation.
-- **Approval Gate:** Never generate, refactor, or execute application code without explicit approval ("Proceed", "Approved", "Yes").
+- **Approval Gate:** Pause for approval on major features, UI redesigns, or security/schema changes; auto-execute clear bug fixes and audit patches.
 
 ## Design & UI Conventions
 - **Colors:** Clean solid dark theme palettes (#121211, #18140B, #1C1C1A) or subtle monochrome gradients. Strictly NO purple gradients.

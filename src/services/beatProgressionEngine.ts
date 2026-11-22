@@ -411,10 +411,12 @@ export function sanitizeMonochromeLighting(text: string, styleProfile?: StylePro
     )
     .replace(/\b(?:at\s+)?\d{4}K\s+(?:warm\s+|cool\s+|cold\s+)?(?:tungsten|daylight|balanced\s+daylight)?/gi, '')
     .replace(/\b(?:intense\s+)?(?:cold\s+|cool\s+|electric\s+)?cyan\s+(?:rim\s+)?light(?:ing)?/gi, 'stark white-edge rim highlight')
-    .replace(/\b(?:cold\s+|cool\s+|electric\s+)?cyan(?:\s+(?:accents?|tints?|glow|highlights?))?/gi, 'stark white accents')
+    .replace(/\b(?:cold\s+|cool\s+|electric\s+)?cyan\s+(accents?|tints?|glow|highlights?)\b/gi, 'stark white $1')
+    .replace(/\b(?:cold\s+|cool\s+|electric\s+)?cyan\b/gi, 'white')
     .replace(/\b(?:warm\s+(?:tungsten|amber|golden)|cool\s+(?:daylight|fluorescent|blue)|cold\s+(?:blue|5400K))\b/gi, 'stark high-contrast')
     .replace(/\b(?:amber|crimson|ruby\s+red|neon\s+cyan|emerald|cobalt)\s+(?:rim\s+|key\s+|glow|light(?:ing)?|highlight|accents?)/gi, 'stark monochrome $1')
     .replace(/\bwith\s+stark\s+white\s+accents\s+accents/gi, 'with stark white highlights')
+    .replace(/\bhard\s+noir\s+film\s+noir\b/gi, 'hard film noir')
     .replace(/\b(?:stark high-contrast\s+){2,}/gi, 'stark high-contrast ')
     .replace(/\s+,/g, ',')
     .replace(/,\s*,+/g, ',')
@@ -432,8 +434,13 @@ export function sanitizeMonochromeLighting(text: string, styleProfile?: StylePro
 export function sanitizePromptGrammarAndTypos(text: string): string {
   if (!text || typeof text !== 'string') return '';
   let cleaned = normalizeUnicodeAndDashes(text);
-  // Collapse accidental consecutive duplicate words of 3+ letters
-  cleaned = cleaned.replace(/\b([a-zA-Z]{3,})\s+\1\b/gi, '$1');
+  // Collapse accidental consecutive duplicate words of 3+ letters and "hard noir film noir"
+  cleaned = cleaned
+    .replace(/\b([a-zA-Z]{3,})\s+\1\b/gi, '$1')
+    .replace(/\bhard\s+noir\s+film\s+noir\b/gi, 'hard film noir')
+    .replace(/\bsharp,\s*deep,\s*yet\s+soft-edged\s+shadows\b/gi, 'sharp, deep cast shadows')
+    .replace(/\bof\s+extreme\s+detail\s+of\b/gi, 'extreme detail of')
+    .replace(/\bneo-(Seoul|Tokyo|Kyoto)\b/g, 'Neo-$1');
   // Fix "a <vowel-word>" article errors on common colors, materials, and visual nouns
   cleaned = cleaned.replace(
     /\b(a)\s+(?=(?:indigo|amber|orange|ivory|olive|emerald|onyx|ebony|obsidian|ochre|ethereal|ornate|elderly|elder|aged|ancient|oversized|empty|eerie|iron|open|arch|oval|alley|awning|apron|oak|ash|overcoat)\b)/gi,
@@ -570,7 +577,8 @@ export function sanitizeStillImageMotionAndOptics(
       .replace(/\bstreaming\s+in\s+a\s+thin\s+ribbon\b/gi, 'suspended in a thin frozen ribbon')
       .replace(/\bhovering\b/gi, 'hanging motionless')
       .replace(/\bfluttering\s+in\s+(?:the\s+)?breeze\b/gi, 'frozen mid-billow')
-      .replace(/\bflickering\b/gi, 'captured in a single frozen illumination')
+      .replace(/\bflickering\s+((?:[a-z]+\s+){0,2}?(?:bulb|lamp|light|candle|lantern|flame|sign|screen|monitor|neon|tube))\b/gi, 'still-lit $1')
+      .replace(/\bflickering\b/gi, 'frozen in mid-glow')
       .replace(/\bchurning\b/gi, 'crisp frozen ripples')
       .replace(/\bliquid\s+motion\b/gi, 'frozen liquid details');
 
@@ -942,7 +950,19 @@ export function injectCompactCharacterLocks(
 
   const isFlashback = isInfancyOrChildhoodFlashback(textSpan, prompt);
   let updated = prompt;
-  const charEntries = Object.entries(characterSheet);
+  // Filter out pure graphic/typography overlay entries accidentally placed in characterSheet (e.g. "The Headlines")
+  const charEntries = Object.entries(characterSheet).filter(([cName, cDesc]) => {
+    const combined = `${cName} ${cDesc || ''}`;
+    const isTypographyEffectOnly =
+      /\b(?:text\s+blocks?|terminal\s+font|digital\s+text|captions?|subtitles?|headlines?)\b/i.test(combined) &&
+      !/\b(?:person|man|woman|boy|girl|figure|stickman|character|photographer|chef|biologist|scientist|soldier|detective|spirit|ghost|creature|entity|submersible|robot|wearing|eyes|hair|hands|arms)\b/i.test(
+        combined
+      );
+    return !isTypographyEffectOnly;
+  });
+  if (charEntries.length === 0) {
+    return prompt;
+  }
   const allCharNames = charEntries.map(([name]) => name);
   const singleLeadChar = charEntries.length === 1 ? charEntries[0] : null;
   const spanLower = (textSpan || '').toLowerCase();
@@ -1840,10 +1860,23 @@ export function formatFinalBeatPrompt(
     }
   }
 
-  // Fix Beat 1 finite-verb grammar right after "Shot..., angle of <Subject> ... stands/sits/walks" -> participle ("standing", "sitting", "walking")
+  // Restore exact location key capitalization if lowerFirst turned a leading LocationSheet title lowercase ("of mirror Oasis" -> "of the Mirror Oasis")
+  if (options?.locationSheet) {
+    for (const locKey of Object.keys(options.locationSheet)) {
+      const trimmedLoc = locKey.trim();
+      if (!trimmedLoc || !/^[A-Z]/.test(trimmedLoc)) continue;
+      const escapedLoc = trimmedLoc.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      body = body.replace(
+        new RegExp(`(\\bof\\s+)(?:the\\s+)?${escapedLoc}\\b`, 'gi'),
+        `$1the ${trimmedLoc}`
+      );
+    }
+  }
+
+  // Fix finite-verb grammar right after "Shot..., angle of <Subject/Location> ... stands/sits/reveals" -> participle
   if (/^(?:Extreme\s+Wide|Wide\s+Establishing|Wide|Medium\s+Close-Up|Medium|Extreme\s+Close-Up|Close-Up)[^.]*?\bof\s+/i.test(body)) {
     body = body.replace(
-      /^([^.]*?\bof\s+(?:a|an|the)\s+[A-Z][^.]*?)\b(stands|sits|waits|kneels|leans|stares|looks|gazes|walks)\b(\s+(?:inside|at|by|near|on|in|under|beside|behind|across|toward|over)\b)/i,
+      /^([^.]*?\bof\s+(?:(?:a|an|the)\s+)?[A-Za-z][^.]*?)\b(stands|sits|waits|kneels|leans|stares|looks|gazes|walks|reveals|shows|reflects|rises|gleams|shimmers)\b(\s+(?:inside|at|by|near|on|in|under|beside|behind|across|toward|over|a|an|the|cluster|clusters|rows?|lines?|columns?|beams?|shards?|pools?)\b)/i,
       (_m, prefix: string, verb: string, prep: string) => {
         const participleMap: Record<string, string> = {
           stands: 'standing',
@@ -1855,9 +1888,19 @@ export function formatFinalBeatPrompt(
           looks: 'looking',
           gazes: 'gazing',
           walks: 'walking',
+          reveals: 'revealing',
+          shows: 'showing',
+          reflects: 'reflecting',
+          rises: 'rising',
+          gleams: 'gleaming',
+          shimmers: 'shimmering',
         };
         const replacement = participleMap[verb.toLowerCase()] || verb;
-        return `${prefix}${replacement}${prep}`;
+        const normalizedPrep =
+          verb.toLowerCase() === 'reveals' && /^\s+cluster\b/i.test(prep)
+            ? prep.replace(/^\s+cluster\b/i, ' a cluster')
+            : prep;
+        return `${prefix}${replacement}${normalizedPrep}`;
       }
     );
   }

@@ -10,6 +10,7 @@ import {
   isMonochromeStyle,
   normalizeUnicodeAndDashes,
   sanitizeMonochromeLighting,
+  sanitizePromptGrammarAndTypos,
   sanitizeSharedVisualStyle,
   sanitizeStyleForEra,
   stripLeadingOrientationPrefixes,
@@ -66,7 +67,8 @@ export function sanitizeKineticMotionForImage(prompt: string): string {
   cleaned = cleaned.replace(/\b(?:clouds?\s+)?swirls?\s+above\b/gi, 'dense curved storm-cloud formations hang frozen above');
   cleaned = cleaned.replace(/\bswirling\b/gi, 'frozen in curved spiral patterns');
   cleaned = cleaned.replace(/\bflickers?\b/gi, 'captured in a single frozen lightning strike');
-  cleaned = cleaned.replace(/\bflickering\b/gi, 'captured in a single frozen illumination');
+  cleaned = cleaned.replace(/\bflickering\s+((?:[a-z]+\s+){0,2}?(?:bulb|lamp|light|candle|lantern|flame|sign|screen|monitor|neon|tube))\b/gi, 'still-lit $1');
+  cleaned = cleaned.replace(/\bflickering\b/gi, 'frozen in mid-glow');
   cleaned = cleaned.replace(/\bchurns?\b/gi, 'has crisp frozen ripples');
   cleaned = cleaned.replace(/\bchurning\b/gi, 'crisp frozen ripples');
   cleaned = cleaned.replace(/\bstreaming\s+in\s+a\s+thin\s+ribbon\b/gi, 'suspended in a thin frozen ribbon');
@@ -590,10 +592,12 @@ export function compileThumbnailPrompt(params: {
     premiseSentences[0] ||
     'The decisive turning point and central conflict of the story';
   const rawHeroMoment = (raw.heroMoment || derivedPremiseMoment).trim();
-  const heroMoment = sanitizeKineticMotionForImage(
-    sanitizeMonochromeLighting(
-      expandEntityKeysInPrompt(rawHeroMoment, params.characterSheet),
-      params.styleProfile
+  const heroMoment = sanitizePromptGrammarAndTypos(
+    sanitizeKineticMotionForImage(
+      sanitizeMonochromeLighting(
+        expandEntityKeysInPrompt(rawHeroMoment, params.characterSheet),
+        params.styleProfile
+      )
     )
   );
   const rawExpression = (
@@ -607,10 +611,12 @@ export function compileThumbnailPrompt(params: {
   const rawBgDescription = (
     raw.bgDescription || 'deep atmospheric background with strong contrast and dramatic depth separation'
   ).trim();
-  const bgDescription = sanitizeKineticMotionForImage(
-    sanitizeMonochromeLighting(
-      expandEntityKeysInPrompt(rawBgDescription, params.characterSheet),
-      params.styleProfile
+  const bgDescription = sanitizePromptGrammarAndTypos(
+    sanitizeKineticMotionForImage(
+      sanitizeMonochromeLighting(
+        expandEntityKeysInPrompt(rawBgDescription, params.characterSheet),
+        params.styleProfile
+      )
     )
   );
   const rawAccentColor = (
@@ -645,10 +651,14 @@ export function compileThumbnailPrompt(params: {
       .replace(/_/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
+    // Preserve proper-name + title structures (e.g. "Joon the Photographer", "Alex of Mars") without prepending "The"
+    if (/\b(?:the|of)\b/i.test(spaced)) {
+      return spaced;
+    }
     const lower = spaced.toLowerCase();
     const isGenericRole =
       hasCamelBoundary ||
-      /\b(?:protagonist|narrator|photographer|detective|soldier|scientist|survivor|child|mother|father|driver|archivist|diver|doctor|stranger|victim|hero|explorer|journalist|writer|teacher|student|guard|pilot|captain|officer|knight|king|queen|engineer|astronaut|astronauts|courier|nurse|surgeon|worker|researcher|operative|operatives|enforcers|guards|soldiers)\b$/i.test(
+      /\b(?:protagonist|narrator|photographer|detective|soldier|scientist|survivor|child|mother|father|driver|archivist|diver|doctor|stranger|victim|hero|explorer|journalist|writer|teacher|student|guard|pilot|captain|officer|knight|king|queen|engineer|astronaut|astronauts|courier|nurse|surgeon|worker|researcher|operative|operatives|enforcers|guards|soldiers|nomad|pilgrim|hermit|scout|tracker|beast|guardian)\b$/i.test(
         lower
       );
     if (isGenericRole) {
@@ -663,7 +673,8 @@ export function compileThumbnailPrompt(params: {
   if (characters.length > 0) {
     const [name, desc] = characters[0];
     primaryName = name;
-    const cleanIdentityDesc = (stripTransientExpressionsAndPoses(desc) || desc).replace(/[.!?]+$/, '').trim();
+    const rawIdentityDesc = (stripTransientExpressionsAndPoses(desc) || desc).replace(/[.!?]+$/, '').trim();
+    const cleanIdentityDesc = sanitizeMonochromeLighting(rawIdentityDesc, params.styleProfile);
     const displayName = formatSheetSubjectName(name, true);
     primaryCharClause = `${displayName} (locked visual identity: ${cleanIdentityDesc})`;
   }
@@ -758,6 +769,7 @@ export function compileThumbnailPrompt(params: {
         }
       }
     }
+    cleanHeroMoment = sanitizeMonochromeLighting(cleanHeroMoment, params.styleProfile);
   }
 
   const bgAlreadyHasRimOrSeparating = /\b(?:rim\s+light|rim\s+lighting|separat(?:ing|ion))\b/i.test(
@@ -995,16 +1007,11 @@ export function inferStoryAdaptiveCtaQuestion(storyPremise?: string, characterNa
     };
   }
 
-  // Fantasy / Magic / Kingdom / Myth / Power
+  // Fantasy / Magic / Kingdom / Myth / Supernatural Power (strict whole-word checks so "seeking" or "solar-powered" never false-trigger)
   if (
-    text.includes('magic') ||
-    text.includes('dragon') ||
-    text.includes('spell') ||
-    text.includes('kingdom') ||
-    text.includes('king') ||
-    text.includes('queen') ||
-    text.includes('power') ||
-    text.includes('curse')
+    /\b(?:magic|magical|spell|spells|sorcery|sorcerer|wizard|witchcraft|dragon|dragons|kingdom|kings|queens?|curse|cursed|enchanted|superpower|superpowers|(?:supernatural|mystical|arcane|godlike|forbidden)\s+power)\b/i.test(
+      text
+    )
   ) {
     return {
       primaryQuestion: 'If you possessed this power, how would you have used it?',
@@ -1013,6 +1020,24 @@ export function inferStoryAdaptiveCtaQuestion(storyPremise?: string, characterNa
         `Did ${char} make the right pact in the end?`,
         'Which realm or faction would you pledge loyalty to?',
         'What price would you pay for that knowledge?',
+      ],
+    };
+  }
+
+  // Desert / Nomad / Wasteland Expedition / Mirage / Oasis Quest
+  if (
+    /\b(?:nomad|caravan|dune\s+sea|endless\s+(?:dune|desert|wasteland)|oasis|mirage|crystallized\s+mirrors?|seeking\s+an\s+oasis|mechanical\s+beasts?)\b/i.test(
+      text
+    )
+  ) {
+    return {
+      primaryQuestion:
+        'If an impossible oasis of crystallized mirrors appeared in the middle of the wasteland, would you walk into it or turn back?',
+      alternateQuestions: [
+        'What do you think actually waits inside an oasis made entirely of mirrors?',
+        `Would you follow ${char} across an endless dune sea without knowing what awaits?`,
+        'Is this mirror oasis a real sanctuary, or a desert mirage trap?',
+        'How far would you travel across an endless desert chasing a single legend?',
       ],
     };
   }
@@ -1049,6 +1074,24 @@ export function inferStoryAdaptiveCtaQuestion(storyPremise?: string, characterNa
         'Would you trust a musical signal coming from the deepest trench on Earth, or cut the engines?',
         'Do you believe uncharted ruins or civilizations still lie hidden beneath our oceans?',
         'What do you think happens the moment they answer that harmonic pulse?',
+      ],
+    };
+  }
+
+  // Premonition / Future-Prediction / Time-Warning Thriller
+  if (
+    /\b(?:future\s+headlines?|before\s+they\s+happen|predict(?:s|ing)?\s+(?:the\s+)?future|captures?\s+future|ten\s+minutes\s+before|minutes\s+before\s+(?:it|they)\s+happen|tomorrow'?s\s+(?:news|headlines?)|warning\s+from\s+(?:the\s+)?future)\b/i.test(
+      text
+    )
+  ) {
+    return {
+      primaryQuestion:
+        'If you captured proof of an event ten minutes before it happened, would you try to stop it or walk away?',
+      alternateQuestions: [
+        'Would you destroy that film immediately, or wait to see if the future actually comes true?',
+        'If you could see ten minutes ahead, would changing it save someone or make things worse?',
+        'What do you think appears on the very next frame of that roll?',
+        'Do you believe warning people in time would even work?',
       ],
     };
   }
@@ -1097,35 +1140,45 @@ export function compileCtaPrompt(params: {
       .replace(/_/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
+    // Keep proper-name + epithet titles like "Joon the Photographer" intact without stacking "the "
+    if (/\b(?:the|of)\b/i.test(spaced)) {
+      return spaced;
+    }
     const lower = spaced.toLowerCase();
     const isGenericRole =
       hasCamelBoundary ||
-      /\b(?:protagonist|narrator|photographer|detective|soldier|scientist|survivor|child|mother|father|driver|archivist|diver|doctor|stranger|victim|hero|explorer|journalist|writer|teacher|student|guard|pilot|captain|officer|knight|king|queen|engineer|astronaut|astronauts|courier|nurse|surgeon|worker|researcher|operative|operatives|enforcers|guards|soldiers|chef|cook|baker|keeper|owner|master|vendor|merchant|waiter|barista|bartender|host|elder|monk|priest|witch|wizard|healer|guardian|warden|ghost|spirit|patron|traveler|wanderer|blacksmith|clockmaker|tinker|shoemaker|tailor|librarian|caretaker|watchman)\b$/i.test(
+      /\b(?:protagonist|narrator|photographer|detective|soldier|scientist|survivor|child|mother|father|driver|archivist|diver|doctor|stranger|victim|hero|explorer|journalist|writer|teacher|student|guard|pilot|captain|officer|knight|king|queen|engineer|astronaut|astronauts|courier|nurse|surgeon|worker|researcher|operative|operatives|enforcers|guards|soldiers|chef|cook|baker|keeper|owner|master|vendor|merchant|waiter|barista|bartender|host|elder|monk|priest|witch|wizard|healer|guardian|warden|ghost|spirit|patron|traveler|wanderer|blacksmith|clockmaker|tinker|shoemaker|tailor|librarian|caretaker|watchman|nomad|pilgrim|hermit|scout|tracker|beast)\b$/i.test(
         lower
       );
     return isGenericRole ? `the ${lower}` : spaced;
   };
 
+  const isMono = isMonochromeStyle(params.styleProfile);
   const characters = Object.entries(params.characterSheet || {});
   let primaryCharName = 'the protagonist';
   let primaryCharClause = 'the protagonist';
   if (characters.length > 0) {
     const [rawName, rawDesc] = characters[0];
-    const cleanDesc = (stripTransientExpressionsAndPoses(rawDesc) || rawDesc).replace(/[.!?]+$/, '').trim();
+    const cleanDesc = sanitizeMonochromeLighting(
+      (stripTransientExpressionsAndPoses(rawDesc) || rawDesc).replace(/[.!?]+$/, '').trim(),
+      params.styleProfile
+    );
     const formattedName = formatCtaRoleName(rawName);
     primaryCharName = formattedName;
     primaryCharClause = `${formattedName} (locked visual identity: ${cleanDesc})`;
   }
 
-  // Question resolution (strip production age prefixes like "Adult " / "Young " so the viewer question reads naturally)
-  const ctaQuestionSubject = primaryCharName.replace(/^(?:Adult|Young|Old|Older|Teen|Child|Elder)\s+/i, '').trim() || primaryCharName;
+  // Question resolution (strip production age prefixes & trailing "the <role>" epithet from named characters like "Joon the Photographer" -> "Joon")
+  const namedShortSubject = primaryCharName.replace(/\s+the\s+[a-z][a-z\s-]+$/i, '').trim();
+  const ctaQuestionSubject =
+    (namedShortSubject || primaryCharName).replace(/^(?:Adult|Young|Old|Older|Teen|Child|Elder)\s+/i, '').trim() ||
+    primaryCharName;
   const { primaryQuestion, alternateQuestions } = inferStoryAdaptiveCtaQuestion(params.storyPremise, ctaQuestionSubject);
   const activeQuestion =
     params.questionText && params.questionText.trim().length > 0
       ? params.questionText.trim()
       : primaryQuestion;
 
-  const isMono = isMonochromeStyle(params.styleProfile);
   const rawArtStyle = sanitizeSharedVisualStyle(params.styleProfile?.artStyle || 'Cinematic realistic') || 'Cinematic realistic';
   const artStyle = (sanitizeStyleForEra(rawArtStyle, 'present') || rawArtStyle).replace(/[.!?]+$/, '').trim();
   const rawPalette = params.styleProfile?.colorPalette || 'high-contrast dramatic lighting, rich atmospheric haze';
@@ -1152,14 +1205,16 @@ export function compileCtaPrompt(params: {
           'present'
         )
       : sanitizeStyleForEra(rawLighting, 'present');
-  const lighting = (
-    isMono
-      ? sanitizeMonochromeLighting(staticSafeLighting, params.styleProfile) ||
-        'stark chiaroscuro contrast lighting with deep ink shadows'
-      : staticSafeLighting || rawLighting
-  )
-    .replace(/[.!?]+$/, '')
-    .trim();
+  const lighting = sanitizePromptGrammarAndTypos(
+    (
+      isMono
+        ? sanitizeMonochromeLighting(staticSafeLighting, params.styleProfile) ||
+          'stark chiaroscuro contrast lighting with deep ink shadows'
+        : staticSafeLighting || rawLighting
+    )
+      .replace(/[.!?]+$/, '')
+      .trim()
+  );
 
   // Platform specific safe zone rules & UI annotations
   let platformLabel = 'TikTok';
@@ -1217,15 +1272,15 @@ export function compileCtaPrompt(params: {
     : lighting;
 
   const isWarmOrBittersweet =
-    /\b(?:warm|gentle|bittersweet|memor(?:y|ies)|nostalg|cozy|healing|broth|chibi|kind|peaceful|restore|restores|spirits?)\b/i.test(
-      `${params.storyPremise || ''} ${artStyle} ${lighting}`
+    /\b(?:warm|gentle|bittersweet|memor(?:y|ies)|nostalg|cozy|healing|broth|kind|peaceful|restore|restores|spirits?)\b/i.test(
+      `${params.storyPremise || ''} ${lighting}`
     ) &&
     !/\b(?:horror|murder|killer|trap|betray|revenge|entity|mimic|monster|survival|crime|penalty|seizure|arrest)\b/i.test(
       `${params.storyPremise || ''}`
     );
 
   const isWonderOrDiscovery =
-    /\b(?:deep[-\s]*sea|mariana|trench|submersible|underwater\s+(?:city|metropolis)|illuminated|sonar|harmonic(?:s)?|biologist|discovery|wonder|uncharted)\b/i.test(
+    /\b(?:deep[-\s]*sea|mariana|trench|submersible|underwater\s+(?:city|metropolis)|illuminated|sonar|harmonic(?:s)?|biologist|discovery|wonder|uncharted|oasis|mirage|crystallized|nomad|caravan|dune\s+sea)\b/i.test(
       `${params.storyPremise || ''}`
     ) &&
     !/\b(?:horror|murder|killer|trap|betray|revenge|entity|mimic|monster|survival|crime)\b/i.test(

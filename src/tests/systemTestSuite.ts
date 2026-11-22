@@ -4697,6 +4697,220 @@ function runTestSuite40() {
   );
 }
 
+// ============================================================================
+// TEST SUITE 41: Neo-Seoul Photographer Audit (Monochrome Adjective, Flicker Syntax, Proper+Title Name, Premonition CTA)
+// ============================================================================
+function runTestSuite41() {
+  const noirStyle: StyleProfile = {
+    artStyle: '2D minimalist stickman silhouettes with high contrast ink lines on a textured grainy paper background',
+    colorPalette: 'monochrome palette of deep carbon black, stark off-white paper, and neon-pulse stark white accents',
+    lighting: 'hard noir film noir lighting with deep shadows and harsh volumetric light rays hitting smoke',
+    eraAndSetting: '1980s Neo-Seoul, a dense rain-slicked urban sprawl',
+  };
+
+  // 41.1 Monochrome cyan adjective stays grammatical ("white") and "hard noir film noir" / "neo-Seoul" clean cleanly
+  const monoFont = sanitizeMonochromeLighting(
+    'floating 2D sans-serif digital text blocks in a glowing cyan terminal font with cyan accents',
+    noirStyle
+  );
+  const noirGrammar = sanitizePromptGrammarAndTypos(
+    'Wide Establishing Shot, high-angle of neo-Seoul Street under hard noir film noir lighting.'
+  );
+  assert(
+    monoFont.includes('glowing white terminal font') &&
+      !monoFont.includes('stark white accents terminal font') &&
+      monoFont.includes('stark white accents') &&
+      noirGrammar.includes('Neo-Seoul Street') &&
+      noirGrammar.includes('hard film noir lighting'),
+    'Suite 41: Neo-Seoul Photographer Monochrome, Flicker, Naming & Premonition CTA',
+    '41.1 Preserves Adjective Grammar on Monochrome Cyan & Fixes "hard noir film noir" + "neo-Seoul"',
+    `monoFont=${monoFont} | grammar=${noirGrammar}`
+  );
+
+  // 41.2 Attributive "flickering overhead bulb" freezes to "still-lit overhead bulb" without "single captured in a single..."
+  const frozenBulb = sanitizeStillImageMotionAndOptics(
+    "Medium Close-Up, birds-eye of stickman photographer inside Joon's Darkroom under a single flickering overhead bulb. 35mm lens profile.",
+    'Medium Close-Up',
+    false
+  );
+  assert(
+    frozenBulb.includes('a single still-lit overhead bulb') &&
+      !frozenBulb.includes('captured in a single frozen illumination'),
+    'Suite 41: Neo-Seoul Photographer Monochrome, Flicker, Naming & Premonition CTA',
+    '41.2 Freezes Attributive "flickering overhead bulb" Without Syntax Break or Doubled "single"',
+    `frozenBulb=${frozenBulb}`
+  );
+
+  // 41.3 Excludes text-overlay characterSheet entries ("The Headlines") from stealing singleLeadChar or leaking onto alley beats
+  const neoCast = {
+    'Joon the Photographer':
+      'stickman figure with a prominent rectangular camera strapped around his neck, wearing a long trench coat and a brimmed fedora',
+    'The Headlines': 'floating 2D sans-serif digital text blocks in a glowing cyan terminal font',
+  };
+  const alleyBeat = injectCompactCharacterLocks(
+    'Wide Establishing Shot, high-angle of Neo-Seoul Street with towering signs and rain-puddled asphalt.',
+    'in 1980s Neo-Seoul',
+    'A young street photographer in 1980s Neo-Seoul develops black-and-white film.',
+    noirStyle ? neoCast : neoCast
+  );
+  const beat1Photographer = injectCompactCharacterLocks(
+    'Medium Shot, eye-level of a stickman figure with rectangular camera standing in alley.',
+    'A young street photographer',
+    'A young street photographer in 1980s Neo-Seoul develops black-and-white film.',
+    neoCast
+  );
+  assert(
+    !alleyBeat.includes('Featuring The Headlines') &&
+      beat1Photographer.includes('Joon the Photographer (stickman figure'),
+    'Suite 41: Neo-Seoul Photographer Monochrome, Flicker, Naming & Premonition CTA',
+    '41.3 Filters Non-Living Typography Sheet Keys ("The Headlines") Out of Character Locking',
+    `alley=${alleyBeat} | beat1=${beat1Photographer}`
+  );
+
+  // 41.4 Preserves "Joon the Photographer" capitalization, strips cyan inside Thumbnail Conflict, and triggers Premonition CTA
+  const joonPremise =
+    'A young street photographer in 1980s Neo-Seoul develops black-and-white film that unexpectedly captures future headlines ten minutes before they happen.';
+  const joonThumb = compileThumbnailPrompt({
+    rawThumbnail: {
+      heroMoment: 'Joon the Photographer witnesses The Headlines materializing within developed film frames',
+      expression: 'tense alert posture',
+      bgDescription: 'rain slicked 1980s Neo-Seoul alleyway',
+      accentColor: 'stark white',
+      hookText: 'THE FUTURE DEVELOPED',
+      fontStyle: 'gritty 1980s retro terminal font',
+    },
+    styleProfile: noirStyle,
+    characterSheet: neoCast,
+    storyPremise: joonPremise,
+    format: 'short',
+    platform: 'TikTok',
+  });
+  const joonCta = compileCtaPrompt({
+    storyPremise: joonPremise,
+    styleProfile: noirStyle,
+    characterSheet: neoCast,
+    format: 'short',
+    platform: 'tiktok',
+    modality: 'image',
+  });
+  assert(
+    joonThumb.compiledPrompt.includes('Hero Subject: Joon the Photographer (') &&
+      !joonThumb.compiledPrompt.includes('The joon the photographer') &&
+      !joonThumb.compiledPrompt.includes('cyan') &&
+      joonCta.compiledPrompt.includes('portrait of Joon the Photographer (') &&
+      !joonCta.compiledPrompt.includes('the joon the photographer') &&
+      !joonCta.compiledPrompt.includes('hard noir film noir') &&
+      /ten minutes before/i.test(joonCta.questionText) &&
+      !joonCta.questionText.includes("position?"),
+    'Suite 41: Neo-Seoul Photographer Monochrome, Flicker, Naming & Premonition CTA',
+    '41.4 Preserves "Joon the Photographer" Naming, Keeps Thumbnail Monochrome, & Routes Premonition Story CTA',
+    `thumb=${joonThumb.compiledPrompt} | ctaQ=${joonCta.questionText} | cta=${joonCta.compiledPrompt}`
+  );
+}
+
+// ============================================================================
+// TEST SUITE 42: Desert Nomad Chibi Audit (CTA Substring Bug, Role Naming, Chibi Tone, Location Grammar)
+// ============================================================================
+function runTestSuite42() {
+  const chibiDesertStyle: StyleProfile = {
+    artStyle: '3D stylized chibi rendering with soft rounded edges and matte tactile plastic textures',
+    colorPalette: 'golden desert ochre, sun-bleached sandstone white, vibrant cobalt sky',
+    lighting: 'High-contrast harsh midday sun creating sharp, deep, yet soft-edged shadows, with intense lens flares reflecting off mirror surfaces',
+    eraAndSetting: 'Post-apocalyptic high-fantasy future, endless rolling sand dunes',
+  };
+  const nomadPremise =
+    'A silent desert nomad guides a caravan of solar-powered mechanical beasts across an endless dune sea, seeking an oasis made entirely of crystallized mirrors.';
+  const nomadCast = {
+    Nomad: 'Chibi proportions with oversized head, hooded beige burlap cloak, brass-rimmed goggles over dark eyes',
+  };
+  const nomadLocations = {
+    'Mirror Oasis': 'A cluster of geometric floating quartz pillars and shattered mirrored glass pools reflecting the sky',
+  };
+
+  // 42.1 "seeking" & "solar-powered" never trigger Fantasy "possessed this power"; routes to Desert / Oasis CTA
+  const desertQuestion = inferStoryAdaptiveCtaQuestion(nomadPremise, 'the nomad');
+  assert(
+    !desertQuestion.primaryQuestion.includes('possessed this power') &&
+      /oasis|wasteland|dune|mirage|mirror/i.test(desertQuestion.primaryQuestion),
+    'Suite 42: Desert Nomad Chibi CTA, Role Naming & Location Grammar',
+    '42.1 Blocks "seeking"/"solar-powered" Fantasy False-Positives and Routes to Desert Oasis CTA',
+    `primaryQuestion=${desertQuestion.primaryQuestion}`
+  );
+
+  // 42.2 Nomad formats as "The nomad" / "the nomad", chibi doesn't force bittersweet emotion, shadows deduplicate
+  const nomadThumb = compileThumbnailPrompt({
+    rawThumbnail: {
+      heroMoment: 'Nomad stands atop a dune pointing toward a shimmering tower of crystallized mirrors',
+      expression: 'focused gaze behind brass-rimmed goggles',
+      bgDescription: 'ochre sand dunes under vibrant cobalt sky',
+      accentColor: 'prismatic iridescent chrome',
+      hookText: 'THE MIRROR OASIS',
+      fontStyle: 'Chunky rounded sans serif',
+    },
+    styleProfile: chibiDesertStyle,
+    characterSheet: nomadCast,
+    storyPremise: nomadPremise,
+    format: 'short',
+    platform: 'TikTok',
+  });
+  const nomadCta = compileCtaPrompt({
+    storyPremise: nomadPremise,
+    styleProfile: chibiDesertStyle,
+    characterSheet: nomadCast,
+    format: 'short',
+    platform: 'tiktok',
+    modality: 'image',
+  });
+  assert(
+    nomadThumb.compiledPrompt.includes('Hero Subject: The nomad (locked visual identity:') &&
+      nomadCta.compiledPrompt.includes('portrait of the nomad (locked visual identity:') &&
+      !nomadCta.compiledPrompt.includes('gentle bittersweet emotion') &&
+      !nomadCta.compiledPrompt.includes('sharp, deep, yet soft-edged shadows') &&
+      nomadCta.compiledPrompt.includes('sharp, deep cast shadows'),
+    'Suite 42: Desert Nomad Chibi CTA, Role Naming & Location Grammar',
+    '42.2 Formats Nomad Role Cleanly, Drops Forced Chibi Bittersweet Tone, & Cleans Contradictory Shadows',
+    `thumb=${nomadThumb.compiledPrompt} | cta=${nomadCta.compiledPrompt}`
+  );
+
+  // 42.3 Location reveal grammar ("Mirror Oasis reveals cluster of") & "of extreme detail of a" cleanup
+  const beat6 = formatFinalBeatPrompt(
+    {
+      beatIndex: 6,
+      textSpan: 'of crystallized mirrors.',
+      shotType: 'Wide Establishing Shot',
+      cameraAngle: 'eye-level',
+      cameraMovement: 'Static Frame',
+      estimatedSeconds: 1.5,
+      imagePrompt: 'Mirror Oasis reveals cluster of geometric floating quartz pillars reflecting the sky. 14mm lens.',
+    },
+    false,
+    false,
+    { styleProfile: chibiDesertStyle, characterSheet: nomadCast, locationSheet: nomadLocations }
+  );
+  const beat3 = formatFinalBeatPrompt(
+    {
+      beatIndex: 3,
+      textSpan: 'of solar-powered mechanical beasts',
+      shotType: 'Close-Up',
+      cameraAngle: 'eye-level',
+      cameraMovement: 'Static Frame',
+      estimatedSeconds: 1.5,
+      imagePrompt: 'Close-Up, eye-level of extreme detail of a chibi mechanical beast with copper chassis. 14mm lens.',
+    },
+    false,
+    false,
+    { styleProfile: chibiDesertStyle, characterSheet: nomadCast, locationSheet: nomadLocations }
+  );
+  assert(
+    beat6.imagePrompt.includes('of the Mirror Oasis revealing a cluster of') &&
+      !beat3.imagePrompt.includes('of extreme detail of a') &&
+      beat3.imagePrompt.includes('extreme detail of a'),
+    'Suite 42: Desert Nomad Chibi CTA, Role Naming & Location Grammar',
+    '42.3 Fixes Location Reveal Verb Grammar and Removes Doubled "of extreme detail of"',
+    `beat6=${beat6.imagePrompt} | beat3=${beat3.imagePrompt}`
+  );
+}
+
 runTestSuite21().then(async () => {
   runTestSuite23();
   runTestSuite24();
@@ -4716,6 +4930,8 @@ runTestSuite21().then(async () => {
   await runTestSuite38();
   runTestSuite39();
   runTestSuite40();
+  runTestSuite41();
+  runTestSuite42();
   console.log('\n====================================================================');
   console.log('                  FULL-SYSTEM VERIFICATION REPORT                  ');
   console.log('====================================================================');
