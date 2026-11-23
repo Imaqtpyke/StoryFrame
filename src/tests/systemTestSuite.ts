@@ -5083,6 +5083,208 @@ async function runTestSuite43() {
   );
 }
 
+async function runTestSuite44() {
+  console.log('\n--- Running Suite 44: Submerged Library & Lighthouse Keeper Fixes ---');
+
+  // 44.1 Preserves concrete prop/action context + Fixed 35mm lens during Option B split, and protects "glass lantern room"
+  const libraryStyle = {
+    artStyle: 'High-contrast 2D stickman ink-wash figures with cross-hatched shadows',
+    colorPalette: 'deep obsidian blacks, stark paper-white, weathered sepia highlights',
+    lighting: 'harsh dramatic chiaroscuro rim lighting',
+    eraAndSetting: 'post-apocalyptic flooded coastal library ruin',
+    lensAndFilmStock: 'Fixed 35mm prime lens perspective on degraded 16mm black-and-white stock',
+  };
+  const scavengerCast = {
+    'The Scavenger': 'minimalist stickman silhouette with hunched posture, tattered wide-brimmed hat, sodden hooded cloak over thin wiry frame',
+  };
+  const libraryLocations = {
+    'The Submerged Library': 'decaying stone pillars and skeletal barnacle-encrusted bookshelves in shallow standing water',
+  };
+
+  const splitJournalScenes = await runTwoPhaseProgressionAndRepair({
+    scenes: [
+      {
+        index: 1,
+        narratorLine: 'he pulls out a sealed leather journal.',
+        estimatedSeconds: 2.5,
+        beats: [
+          {
+            beatIndex: 1,
+            textSpan: 'he pulls out a sealed leather journal.',
+            shotType: 'Medium Shot',
+            cameraAngle: 'eye-level',
+            cameraMovement: 'Static Frame',
+            estimatedSeconds: 2.5,
+            imagePrompt:
+              'Medium Shot, eye-level of The Scavenger pulling a worn, sealed leather journal from submerged debris inside The Submerged Library. Fixed 35mm prime lens perspective.',
+          },
+        ],
+      },
+    ],
+    styleProfile: libraryStyle,
+    characterSheet: scavengerCast,
+    locationSheet: libraryLocations,
+    isLongForm: false,
+    isVideoMode: false,
+    skipLlmRepair: true,
+  });
+
+  const secondSplitPrompt = splitJournalScenes[0].beats[1]?.imagePrompt || '';
+
+  const keeperCast = {
+    'The Keeper':
+      'Seventy-year-old male, deep facial wrinkles, salt-and-pepper stubble, pale blue eyes, heavy oversized dark wool pea coat, oil-stained heavy canvas trousers, worn-through leather boots',
+  };
+  const lighthouseStyle = {
+    artStyle: 'Hyper-realistic cinematic digital painting with tactile gritty textures',
+    colorPalette: 'deep obsidian blacks, stormy slate blues, brilliant lighthouse lantern gold',
+    lighting: 'high-contrast chiaroscuro lantern beams',
+    eraAndSetting: 'mid-20th century rocky islet in a violent hurricane',
+    lensAndFilmStock: '35mm anamorphic lens with heavy film grain',
+  };
+
+  const harmonizedRooms = harmonizeScenePropMaterials([
+    {
+      beatIndex: 1,
+      textSpan: 'He lit the lamp,',
+      shotType: 'Medium Close-Up',
+      cameraAngle: 'eye-level',
+      cameraMovement: 'Static Frame',
+      estimatedSeconds: 1.5,
+      imagePrompt: 'Medium Close-Up of The Keeper striking a match against the brass lantern housing.',
+    },
+    {
+      beatIndex: 2,
+      textSpan: 'raged against the glass.',
+      shotType: 'Close-Up',
+      cameraAngle: 'eye-level',
+      cameraMovement: 'Static Frame',
+      estimatedSeconds: 1.5,
+      imagePrompt: 'Close-Up of rainwater pressed against the reinforced circular glass lantern room.',
+    },
+  ]);
+
+  assert(
+    splitJournalScenes[0].beats.length >= 2 &&
+      /leather\s+journal/i.test(secondSplitPrompt) &&
+      !/still posture with head and shoulders angled intently forward/i.test(secondSplitPrompt) &&
+      !/Shot on 85mm/i.test(secondSplitPrompt) &&
+      /Fixed 35mm prime lens/i.test(secondSplitPrompt) &&
+      harmonizedRooms[1].imagePrompt.includes('glass lantern room') &&
+      !harmonizedRooms[1].imagePrompt.includes('brass lantern room'),
+    'Suite 44: Submerged Library & Lighthouse Keeper Fixes',
+    '44.1 Preserves Prop Context + Fixed 35mm Lens in Option B Splits and Shields Glass Lantern Room Material',
+    `secondSplit=${secondSplitPrompt} | harmonized=${harmonizedRooms[1].imagePrompt}`
+  );
+
+  // 44.2 Fixes "the swirling storm rain", "lashing violently"/"sweeping out", finite verbs after locks, duplicate traits & dropped angles
+  const keeperLockedText1 = injectCompactCharacterLocks(
+    'Medium Shot, eye-level of The Keeper (Seventy-year-old male, deep facial wrinkles, salt-and-pepper stubble, pale blue eyes, heavy oversized dark wool pea coat, oil-stained heavy canvas trousers, worn-through leather boots) in oil-stained heavy canvas trousers and worn-through leather boots ascends a spiral iron staircase.',
+    'climbed the rusted stairs',
+    'The old lighthouse keeper climbed the rusted stairs for the final time.',
+    keeperCast
+  );
+  const keeperBeat1 = formatFinalBeatPrompt(
+    {
+      beatIndex: 1,
+      textSpan: 'climbed the rusted stairs',
+      shotType: 'Medium Shot',
+      cameraAngle: 'eye-level',
+      cameraMovement: 'Static Frame',
+      estimatedSeconds: 1.5,
+      imagePrompt: keeperLockedText1,
+    },
+    false,
+    false,
+    { styleProfile: lighthouseStyle, characterSheet: keeperCast, locationSheet: {} }
+  );
+
+  const keeperBeat2 = formatFinalBeatPrompt(
+    {
+      beatIndex: 2,
+      textSpan: 'He lit the lamp,',
+      shotType: 'Medium Close-Up',
+      cameraAngle: 'eye-level',
+      cameraMovement: 'Static Frame',
+      estimatedSeconds: 1.5,
+      imagePrompt:
+        'Medium Close-Up, eye-level of The keeper (Seventy-year-old male, heavy oversized dark wool pea coat), strikes a match against the brass lantern housing while rain is lashing violently against the glass and the beam is sweeping out over the violent, dark ocean.',
+    },
+    false,
+    false,
+    { styleProfile: lighthouseStyle, characterSheet: keeperCast, locationSheet: {} }
+  );
+
+  const keeperBeat3 = formatFinalBeatPrompt(
+    {
+      beatIndex: 3,
+      textSpan: 'Outside, the storm',
+      shotType: 'Extreme Wide Shot',
+      cameraAngle: 'high-angle',
+      cameraMovement: 'Static Frame',
+      estimatedSeconds: 1.5,
+      imagePrompt: 'Extreme wide exterior shot of an isolated rocky islet during a violent hurricane. Shot on 24mm f/4 wide lens.',
+    },
+    false,
+    false,
+    { styleProfile: lighthouseStyle, characterSheet: keeperCast, locationSheet: {} }
+  );
+
+  const frozeSwirlRain = sanitizeKineticMotionForImage(
+    'The Keeper stands rigid as a golden beam illuminates the swirling storm rain.'
+  );
+
+  assert(
+    keeperBeat1.imagePrompt.includes('ascending a spiral') &&
+      !keeperBeat1.imagePrompt.includes('in oil-stained heavy canvas trousers and worn-through leather boots') &&
+      keeperBeat2.imagePrompt.includes('The Keeper (') &&
+      keeperBeat2.imagePrompt.includes('striking a match') &&
+      !/\blashing violently\b/i.test(keeperBeat2.imagePrompt) &&
+      !/\bsweeping out\b/i.test(keeperBeat2.imagePrompt) &&
+      keeperBeat3.imagePrompt.includes('Extreme wide exterior shot, high-angle of') &&
+      frozeSwirlRain.includes('the storm rain frozen in curved spiral patterns'),
+    'Suite 44: Submerged Library & Lighthouse Keeper Fixes',
+    '44.2 Fixes Pre-Noun Swirling Motion, Lashing/Sweeping Freeze, Participle Grammar, Angle Sync & Keeper Casing',
+    `b1=${keeperBeat1.imagePrompt} | b2=${keeperBeat2.imagePrompt} | b3=${keeperBeat3.imagePrompt} | swirl=${frozeSwirlRain}`
+  );
+
+  // 44.3 Routes Lighthouse Final Watch & Submerged Library Archive to Story-Matched CTAs and Fixes Thumbnail Post-Colon Case
+  const lighthouseCta = inferStoryAdaptiveCtaQuestion(
+    'The old lighthouse keeper climbed the rusted stairs for the final time. His watch was over, but the light would guide the lost souls home forever tonight.',
+    'The Keeper'
+  );
+  const archiveCta = inferStoryAdaptiveCtaQuestion(
+    'A lone scavenger digs through the flooded ruins of an ancient coastal library, pulling out a sealed leather journal preserving words from a world lost to water.',
+    'The Scavenger'
+  );
+  const lighthouseThumb = compileThumbnailPrompt({
+    storyPremise: 'An old lighthouse keeper lights the lamp for his final watch.',
+    styleProfile: lighthouseStyle,
+    characterSheet: keeperCast,
+    rawThumbnail: {
+      heroMoment: 'The Keeper stands beside the lantern glass illuminating the swirling storm rain',
+      expression: 'A weathered resolute expression',
+      bgDescription: 'Obsidian dark storm clouds and crashing sea waves',
+      accentColor: 'lighthouse lantern gold',
+      hookText: 'HIS FINAL LIGHT',
+      fontStyle: 'Heavy industrial sans serif',
+    },
+    format: 'short',
+    platform: 'tiktok',
+  });
+
+  assert(
+    /keep the light burning|guiding light|final watch/i.test(lighthouseCta.primaryQuestion) &&
+      !/ramen|warm meal/i.test(lighthouseCta.primaryQuestion) &&
+      /save only one dry book|drowned|lost world/i.test(archiveCta.primaryQuestion) &&
+      lighthouseThumb.compiledPrompt.includes('the storm rain frozen in curved spiral patterns') &&
+      lighthouseThumb.compiledPrompt.includes('background: obsidian dark storm clouds'),
+    'Suite 44: Submerged Library & Lighthouse Keeper Fixes',
+    '44.3 Routes Lighthouse & Submerged Library CTAs Accurately and Lowercases Post-Colon Thumbnail Background',
+    `lhQ=${lighthouseCta.primaryQuestion} | archQ=${archiveCta.primaryQuestion} | thumb=${lighthouseThumb.compiledPrompt}`
+  );
+}
+
 runTestSuite21().then(async () => {
   runTestSuite23();
   runTestSuite24();
@@ -5105,6 +5307,7 @@ runTestSuite21().then(async () => {
   runTestSuite41();
   runTestSuite42();
   await runTestSuite43();
+  await runTestSuite44();
   console.log('\n====================================================================');
   console.log('                  FULL-SYSTEM VERIFICATION REPORT                  ');
   console.log('====================================================================');

@@ -298,6 +298,8 @@
 
 - [x] **Paper-Cut Stickman Option B Segmentation, Grammar & Storybook CTA (Suite 43, 258/258 passing):** Enforced Option B 2-6 word phrase cuts in Gemini prompt + deterministic `enforceOptionBPhraseBeatsInScene` (honoring `skipOptionBPhraseSplit` for custom beats & preserving tiny connector merges), guarded non-crib childhood flashbacks, protected proper names after `of ` and converted parenthetical/`with` finite verbs to participles without backtracking, removed `of a macro view of`, routed storybook fables out of Horror CTA, and replaced helmeted silhouette with bare stickman CTA framing.
 
+- [x] **Submerged Library & Lighthouse Keeper Fixes (Suite 44, 261/261 passing):** Preserved prop context and fixed lenses in Option B sub-beat splits without Pass 3 overwrites, fixed pre-noun `swirling` / `lashing` / `sweeping` still-motion grammar, shielded `glass lantern room` from `brass lantern` material swaps, expanded participle verbs (`ascends`/`strikes`/`ignites`/`amidst`) + angle syncing + multi-word sheet casing (`The Keeper`), added plural location article guard, lowercased Thumbnail post-colon background text, and added Final Watch / Lighthouse & Lost Archive CTA branches.
+
 ## Active Testing & Planned Future Roadmap (Post-Testing)
 - [ ] **Genre Stress-Testing Loop (In Progress):**
   - Completed: **Sci-Fi**, **Documentary / History**, **Horror / Psychological Thriller**, **Stylized Art**, **Multi-Character + Flashbacks**, **130-Word Finance/Diorama (Text-to-Image)**, and **Text-to-Video (4s Clip Mode)**.

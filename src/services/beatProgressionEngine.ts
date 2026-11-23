@@ -571,7 +571,15 @@ export function sanitizeStillImageMotionAndOptics(
       .replace(/\bmusical\s+harmonic\s+pulses\b/gi, 'luminous concentric ring patterns')
       .replace(/\bswirling\s+vortex\s+of\b/gi, 'radiant spiral pattern of')
       .replace(/\b(?:clouds?\s+)?swirls?\s+above\b/gi, 'dense curved storm-cloud formations hang frozen above')
+      .replace(
+        /\b(the\s+|a\s+|an\s+)?swirling\s+((?:storm\s+)?(?:rain|snow|mist|fog|smoke|dust|ash|clouds?|leaves|water|petals|sparks|embers|wind|spray))\b/gi,
+        '$1$2 frozen in curved spiral patterns'
+      )
       .replace(/\bswirling\b/gi, 'frozen in curved spiral patterns')
+      .replace(/\blashing\s+violently\s+against\b/gi, 'frozen mid-lash against')
+      .replace(/\blashing\s+against\b/gi, 'pressed mid-splash against')
+      .replace(/\bsweeping\s+out\s+over\b/gi, 'stretching across')
+      .replace(/\bslicing\s+through\b/gi, 'cutting sharply through')
       .replace(/\bpouring\b/gi, 'suspended mid-pour')
       .replace(/\b(particles|embers|sparks|steam|mist|dust|smoke)\s+rising\b/gi, '$1 suspended mid-air')
       .replace(/\b(steam|particles|embers|dust)\s+rising\s+in\b/gi, '$1 suspended in')
@@ -1308,18 +1316,19 @@ export function injectCompactCharacterLocks(
       /\b(?:[a-z]+ing|peeking|leaning|hunched|standing|sitting|seated|gripping|holding|looking|staring|reaching|walking|running|turning|swinging|pulling|pushing|adjusting|pointing|tightening|attaching|steady|steadying|resting|planted|looming|crouching|kneeling|smiling|frowning|listening|watching|peering|glancing)\b/i;
     const pruneAppositiveTraitsAfterLock = (text: string): string => {
       const existingLockRegex = new RegExp(
-        `(${escapedName}\\s*\\([^)]+\\))(?:\\s*,\\s*|\\s+(?=(?:carrying|wearing|with|in)\\b))([^.]+)`,
+        `(${escapedName}\\s*\\([^)]+\\))(?:\\s*,\\s*|\\s+(?=(?:carrying|wearing|with|in|stickman|figure|creature)\\b))([^.]+)`,
         'i'
       );
       let pruned = text.replace(existingLockRegex, (fullSeg, headAnchor, tailStr) => {
-        const parts = tailStr.split(/,\s*/);
+        const cleanTail = tailStr.replace(/^(?:stickman|figure|creature)\s+/i, '');
+        const parts = cleanTail.split(/,\s*/);
         let dropCount = 0;
         for (const part of parts) {
           const pTrim = part.trim();
           if (!pTrim) break;
-          // Separate leading redundant appositive like "carrying an ethereal lantern approaching" or "with red scarf and pencil stands"
+          // Separate leading redundant appositive like "carrying an ethereal lantern approaching" or "in oil-stained heavy canvas trousers ascends"
           const redundantCarryWearMatch = pTrim.match(
-            /^((?:carrying|wearing|with)\s+(?:an?\s+|the\s+)?[^,.]+?)(?:\s+(?=(?:approaching|walking|standing|sitting|leaning|holding|entering|looking|staring|crossing|stands|sits|works|uses|draws|reaches|picks)\b)(.+))?$/i
+            /^((?:carrying|wearing|with|in)\s+(?:an?\s+|the\s+)?[^,.]+?)(?:\s+(?=(?:approaching|walking|standing|sitting|leaning|holding|entering|looking|staring|crossing|ascending|descending|climbing|stands|sits|works|uses|draws|reaches|picks|ascends|descends|climbs|opens|pulls|strikes|ignites|lights|reads|searches)\b)(.+))?$/i
           );
           if (redundantCarryWearMatch) {
             const candidateClause = redundantCarryWearMatch[1].trim();
@@ -1861,7 +1870,29 @@ export function formatFinalBeatPrompt(
     }
   }
 
-  // Protect exact characterSheet & locationSheet proper names if lowerFirst turned a leading proper name lowercase ("of pip" -> "of Pip")
+  // Synchronize bare shot openers that dropped their angle (e.g. "Extreme wide exterior shot of...", "Over-the-shoulder framing...")
+  if (!isVideoMode && synced.cameraAngle) {
+    const lead70 = body.slice(0, 75);
+    const hasAngleInLead = /\b(?:eye[-\s]*level|low[-\s]*angle|high[-\s]*angle|birds?[-\s]*eye|worms?[-\s]*eye|dutch[-\s]*tilt)\b/i.test(
+      lead70
+    );
+    if (!hasAngleInLead) {
+      if (/^Over-the-shoulder\s+framing\b/i.test(body)) {
+        body = body.replace(/^Over-the-shoulder\s+framing\b/i, `Over-the-Shoulder (OTS), ${synced.cameraAngle}`);
+      } else if (/^Macro\s+detail\s+of\b/i.test(body) && /extreme\s+close/i.test(synced.shotType)) {
+        body = body.replace(/^Macro\s+detail\s+of\b/i, `Extreme Close-Up, ${synced.cameraAngle}, macro detail of`);
+      } else if (/^Extreme\s+wide(?:\s+exterior)?\s+shot\s+(?:of|on)\b/i.test(body)) {
+        body = body.replace(
+          /^(Extreme\s+wide(?:\s+exterior)?\s+shot)\s+(of|on)\b/i,
+          `$1, ${synced.cameraAngle} $2`
+        );
+      } else if (/^Close-?up\s+(?:on|of)\b/i.test(body)) {
+        body = body.replace(/^(Close-?up)\s+(on|of)\b/i, `Close-Up, ${synced.cameraAngle} $2`);
+      }
+    }
+  }
+
+  // Protect exact characterSheet & locationSheet proper names if lowerFirst turned a leading or multi-word proper name lowercase ("of pip" -> "of Pip", "The keeper (" -> "The Keeper (")
   const restoreLeadingProperNames = (text: string): string => {
     let fixed = text;
     if (options?.characterSheet) {
@@ -1870,6 +1901,9 @@ export function formatFinalBeatPrompt(
         if (!trimmedChar || !/^[A-Z]/.test(trimmedChar)) continue;
         const escChar = trimmedChar.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         fixed = fixed.replace(new RegExp(`(\\bof\\s+)${escChar}\\b`, 'gi'), `$1${trimmedChar}`);
+        if (/\s+/.test(trimmedChar)) {
+          fixed = fixed.replace(new RegExp(`\\b${escChar}\\b`, 'gi'), trimmedChar);
+        }
       }
     }
     if (options?.locationSheet) {
@@ -1891,10 +1925,10 @@ export function formatFinalBeatPrompt(
   };
   body = restoreLeadingProperNames(body);
 
-  // Fix finite-verb grammar right after "Shot..., angle of <Subject/Location> ... stands/sits/works/uses/reveals" -> participle
+  // Fix finite-verb grammar right after "Shot..., angle of <Subject/Location> ... stands/sits/works/uses/ascends/strikes/ignites" -> participle
   if (/^(?:Extreme\s+Wide|Wide\s+Establishing|Wide|Medium\s+Close-Up|Medium|Extreme\s+Close-Up|Close-Up)[^.]*?\bof\s+/i.test(body)) {
     body = body.replace(
-      /^([^.]*?\bof\s+(?:(?:a|an|the)\s+)?[A-Za-z](?:[^.()]|\([^)]*\))*?)\b(stands|sits|waits|kneels|leans|stares|looks|gazes|walks|works|uses|draws|reaches|picks|holds|reveals|shows|reflects|rises|gleams|shimmers)\b(\s+(?:inside|at|by|near|on|in|under|beside|behind|across|toward|over|before|up|out|forward|down|still|firm|tall|poised|frantically|firmly|a|an|the|cluster|clusters|rows?|lines?|columns?|beams?|shards?|pools?)\b)/i,
+      /^([^.]*?\bof\s+(?:(?:a|an|the)\s+)?[A-Za-z](?:[^.()]|\([^)]*\))*?)(?:,\s*(?=[a-z]))?\b(stands|sits|waits|kneels|leans|stares|looks|gazes|walks|works|uses|draws|reaches|picks|holds|ascends|descends|climbs|strikes|ignites|lights|opens|pulls|clutches|braces|reveals|shows|reflects|rises|gleams|shimmers)\b(\s+(?:inside|at|by|near|on|in|under|beside|behind|across|toward|over|before|amidst|with|against|from|onto|through|up|out|forward|down|still|firm|tall|poised|frantically|firmly|a|an|the|cluster|clusters|rows?|lines?|columns?|beams?|shards?|pools?)\b)/i,
       (_m, prefix: string, verb: string, prep: string) => {
         const participleMap: Record<string, string> = {
           stands: 'standing',
@@ -1912,6 +1946,16 @@ export function formatFinalBeatPrompt(
           reaches: 'reaching',
           picks: 'picking',
           holds: 'holding',
+          ascends: 'ascending',
+          descends: 'descending',
+          climbs: 'climbing',
+          strikes: 'striking',
+          ignites: 'igniting',
+          lights: 'lighting',
+          opens: 'opening',
+          pulls: 'pulling',
+          clutches: 'clutching',
+          braces: 'bracing',
           reveals: 'revealing',
           shows: 'showing',
           reflects: 'reflecting',
@@ -1924,7 +1968,8 @@ export function formatFinalBeatPrompt(
           verb.toLowerCase() === 'reveals' && /^\s+cluster\b/i.test(prep)
             ? prep.replace(/^\s+cluster\b/i, ' a cluster')
             : prep;
-        return `${prefix}${replacement}${normalizedPrep}`;
+        const cleanPrefix = prefix.replace(/,\s*$/, ' ');
+        return `${cleanPrefix}${cleanPrefix.endsWith(' ') ? '' : ' '}${replacement}${normalizedPrep}`;
       }
     );
   }
@@ -2302,15 +2347,23 @@ function buildContextPreservingProgressionBeat(
   const rawLocPhrase = locEntries[0]
     ? buildCompactCharacterAnchor(locEntries[0][1], 24) || locEntries[0][0]
     : styleProfile.eraAndSetting || 'the surrounding room';
-  let locPhrase = rawLocPhrase.replace(/^(A|An|The)\s+(?=[a-z])/i, (m) => m.toLowerCase()).replace(/[.!?]+$/, '').trim();
+  let locPhrase = rawLocPhrase
+    .replace(/^(A|An|The)\s+/i, '')
+    .replace(/^(Spiral|Ruined|Circular|Flooded|Decaying|Ancient|Dense|Dark|Shadowed|Submerged|Stone|Wooden|Metal)\b/, (m) => m.toLowerCase())
+    .replace(/[.!?]+$/, '')
+    .trim();
   const vesselMatch = (scene.narratorLine || '').match(
     /\b(?:in|inside|aboard)\s+(?:a|an|the)?\s*(?:[a-z]+\s+){0,2}(submersible|submarine|capsule|cockpit|cabin|spacecraft|shuttle|train|car)\b/i
   );
   if (vesselMatch && vesselMatch[1]) {
     locPhrase = `the ${vesselMatch[1].toLowerCase()} interior`;
   } else if (locPhrase && !/^(?:a|an|the|this|that|inside|within|in|on|at|across|beneath|under)\b/i.test(locPhrase) && /^[a-z]/.test(locPhrase)) {
-    const locArticle = /^[aeiou]/i.test(locPhrase) && !/^uni/i.test(locPhrase) ? 'an' : 'a';
-    locPhrase = `${locArticle} ${locPhrase}`;
+    const headBeforeConnector = locPhrase.split(/\s+(?:and|with|in|of|on|under)\b|,/i)[0].trim();
+    const isPluralHead = /s$/i.test(headBeforeConnector) && !/(?:glass|brass|grass|moss|abyss|chaos|darkness|mist|fog)$/i.test(headBeforeConnector);
+    if (!isPluralHead) {
+      const locArticle = /^[aeiou]/i.test(locPhrase) && !/^uni/i.test(locPhrase) ? 'an' : 'a';
+      locPhrase = `${locArticle} ${locPhrase}`;
+    }
   }
 
   const isBarefoot = leadChar ? /\bbarefoot\b/i.test(leadChar[1]) : false;
@@ -2411,29 +2464,31 @@ function buildContextPreservingProgressionBeat(
     cameraAngle = 'eye-level';
     cameraMovement = isVideoMode ? 'Slow Push-In' : 'Static Frame';
     actionDescription = isMaskedOrMinimalist
-      ? `tight close-up framing ${charPhrase} inside ${locPhrase}, still posture with head and shoulders angled intently forward`
-      : `showing a tight portrait study framing ${charPhrase} inside ${locPhrase}, tense stillness in shoulders and eyes fixed intently forward`;
+      ? `${charPhrase} framed closely inside ${locPhrase}, still posture with head and shoulders angled intently forward`
+      : `${charPhrase} framed in quiet stillness inside ${locPhrase}, tense composure and eyes fixed intently forward`;
   } else if (variant === 1) {
     shotType = 'Low-Angle Hero Shot';
     cameraAngle = 'low-angle';
     cameraMovement = isVideoMode ? 'Tracking Subject' : 'Static Frame';
-    actionDescription = `capturing a low-angle perspective framing ${charPhrase} within ${locPhrase} with ${stanceNote}, towering shadows stretching across the background surfaces`;
+    actionDescription = `${charPhrase} inside ${locPhrase} with ${stanceNote}, towering shadows stretching across the background surfaces`;
   } else if (variant === 2) {
     shotType = 'Over-the-Shoulder (OTS)';
     cameraAngle = 'high-angle';
     cameraMovement = isVideoMode ? 'Smooth Pan' : 'Static Frame';
-    actionDescription = `over-the-shoulder framing across ${locPhrase}, revealing surrounding depth, structural details, and shadows ahead of ${charPhrase}`;
+    actionDescription = `vantage looking past ${charPhrase} across ${locPhrase}, revealing surrounding depth, structural details, and shadows`;
   } else {
     shotType = 'Medium Close-Up';
     cameraAngle = 'dutch-tilt';
     cameraMovement = isVideoMode ? 'Handheld Cinematic Drift' : 'Static Frame';
     actionDescription = isMaskedOrMinimalist
-      ? `capturing a canted medium close-up of ${charPhrase} bracing in quiet alertness inside ${locPhrase}, stark directional contrast across the figure`
-      : `capturing a canted medium close-up of ${charPhrase} bracing in quiet unease inside ${locPhrase}, stark directional contrast across facial contours`;
+      ? `${charPhrase} bracing in quiet alertness inside ${locPhrase}, stark directional contrast across the figure`
+      : `${charPhrase} bracing in quiet unease inside ${locPhrase}, stark directional contrast across facial contours`;
   }
 
-  const optics =
-    shotType.includes('Close-Up')
+  const fixedLensMatch = (styleProfile.lensAndFilmStock || '').match(/\bfixed\s+(\d{1,3}mm(?:\s+(?:prime|anamorphic|wide(?:-angle)?|macro))?)\s+lens\b/i);
+  const optics = fixedLensMatch
+    ? `Fixed ${fixedLensMatch[1]} lens perspective`
+    : shotType.includes('Close-Up')
       ? 'Shot on 85mm f/1.8 portrait prime lens with shallow depth of field'
       : 'Shot on 35mm f/4 cinema lens with atmospheric depth';
 
@@ -2647,7 +2702,7 @@ export function deduplicateAndProgressSceneBeats(
 export function harmonizeScenePropMaterials(beats: Beat[]): Beat[] {
   if (!Array.isArray(beats) || beats.length <= 1) return beats;
   const materialRegex =
-    /\b(ceramic|porcelain|wooden|wood|clay|glass|brass|copper|iron|steel|metal|stone|earthenware|lacquered)\s+(bowl|cup|teacup|mug|pot|kettle|cauldron|lantern|box|chest|tray)\b/gi;
+    /\b(ceramic|porcelain|wooden|wood|clay|glass|brass|copper|iron|steel|metal|stone|earthenware|lacquered)\s+(bowl|cup|teacup|mug|pot|kettle|cauldron|lantern(?!\s+(?:room|tower|chamber|wall|pane|window|glass|housing))|box|chest|tray)\b/gi;
   const establishedMaterial = new Map<string, string>();
 
   return beats.map((beat) => {
@@ -2886,8 +2941,62 @@ function enforceOptionBPhraseBeatsInScene(
       const v = shotVariants[(bIdx + subIdx) % shotVariants.length];
       const baseBody = stripLeadingOrientationPrefixes(beat.imagePrompt || '')
         .replace(/\s*--ar\s+[0-9:]+.*$/i, '')
-        .replace(/^(?:Extreme\s+Wide\s+Shot|Wide\s+Establishing\s+Shot|Wide|Medium\s+Close-Up|Medium\s+Shot|Extreme\s+Close-Up|Close-Up|Over-the-Shoulder\s*\(OTS\)|Point-of-View\s*\(POV\)|Whip[-\s]*Pan)(?:\s*,\s*[a-z-]+)?(?:\s*(?:,|of|:)\s*)?/i, '')
+        .replace(/\s*(?:Featuring|Visual Style):\s*[^.]+\.?/gi, '')
+        .replace(/\s*(?:Shot on|Fixed)\s+\d{1,3}mm[^.]*\.?/gi, '')
+        .replace(/^(?:Extreme\s+Wide\s+Shot|Wide\s+Establishing\s+Shot|Wide|Medium\s+Close-Up|Medium\s+Shot|Extreme\s+Close-Up|Close-Up|Over-the-Shoulder\s*\(OTS\)|Point-of-View\s*\(POV\)|Whip[-\s]*Pan)(?:\s*,\s*[a-z-]+)?(?:\s*(?:,|of|on|across|within|:)\s*)?/i, '')
+        .replace(/[.!?]+$/, '')
         .trim();
+
+      const rawSubPhrase = subText.replace(/^[.,;:!?'"-]+|[.,;:!?'"-]+$/g, '').trim();
+      const cleanSubPhrase =
+        rawSubPhrase
+          .replace(/^(?:like|of|for|in|on|at|to|from|through|with|by)\s+(?=[a-z])/i, '')
+          .trim() || rawSubPhrase;
+      const hasConcreteDetailCue =
+        /\b(?:journal|book|books|map|lamp|lantern|blade|beam|pages|ink|barnacles|salt|tree|pencil|sketchbook|lock|key|photo|mirror|coin|glass|hand|hands|eyes|match|flame)\b/i.test(
+          cleanSubPhrase
+        );
+
+      if (baseBody && baseBody.length >= 20) {
+        const pickedShot = hasConcreteDetailCue ? (subIdx % 2 === 1 ? 'Close-Up' : 'Extreme Close-Up') : v.shotType;
+        const pickedAngle = hasConcreteDetailCue ? 'eye-level' : v.cameraAngle;
+        const fixedLensMatch = (styleProfile.lensAndFilmStock || '').match(
+          /\bfixed\s+(\d{1,3}mm(?:\s+(?:prime|anamorphic|wide(?:-angle)?|macro))?)\s+lens\b/i
+        );
+        const lensNote = fixedLensMatch
+          ? `Fixed ${fixedLensMatch[1]} lens perspective`
+          : pickedShot.includes('Close-Up')
+            ? 'Shot on 85mm portrait prime lens'
+            : 'Shot on 35mm cinema lens';
+        const primaryLocName = Object.keys(locationSheet || {})[0] || styleProfile.eraAndSetting || 'the surrounding setting';
+        const compactSetting = buildCompactCharacterAnchor(primaryLocName, 10).replace(/[.!?]+$/, '').trim() || 'the scene setting';
+        const focusedBody = hasConcreteDetailCue
+          ? `${pickedShot}, ${pickedAngle} isolating crisp surface details of ${cleanSubPhrase} inside ${compactSetting}. ${lensNote}.`
+          : `${pickedShot}, ${pickedAngle} shifting perspective toward ${cleanSubPhrase} set across ${compactSetting}. ${lensNote}.`;
+
+        const formattedSub = formatFinalBeatPrompt(
+          {
+            ...beat,
+            beatIndex: bIdx + subIdx + 1,
+            textSpan: subText,
+            shotType: pickedShot,
+            cameraAngle: pickedAngle,
+            cameraMovement: 'Static Frame',
+            estimatedSeconds: subSec,
+            imagePrompt: focusedBody,
+          },
+          isLongForm,
+          false,
+          { styleProfile, characterSheet, locationSheet }
+        );
+
+        expandedBeats.push({
+          ...formattedSub,
+          textSpan: subText,
+          estimatedSeconds: subSec,
+        });
+        return;
+      }
 
       const progressedSub = buildContextPreservingProgressionBeat(
         {
@@ -2898,9 +3007,7 @@ function enforceOptionBPhraseBeatsInScene(
           cameraAngle: v.cameraAngle,
           cameraMovement: 'Static Frame',
           estimatedSeconds: subSec,
-          imagePrompt: baseBody
-            ? `${v.shotType}, ${v.cameraAngle} shifting focus within ${baseBody}`
-            : '',
+          imagePrompt: '',
         },
         bIdx + subIdx + 1,
         scene,

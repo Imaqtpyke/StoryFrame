@@ -65,7 +65,15 @@ export function sanitizeKineticMotionForImage(prompt: string): string {
   // Replace process verbs with frozen static states
   cleaned = cleaned.replace(/\bswirling\s+vortex\s+of\b/gi, 'radiant spiral pattern of');
   cleaned = cleaned.replace(/\b(?:clouds?\s+)?swirls?\s+above\b/gi, 'dense curved storm-cloud formations hang frozen above');
+  cleaned = cleaned.replace(
+    /\b(the\s+|a\s+|an\s+)?swirling\s+((?:storm\s+)?(?:rain|snow|mist|fog|smoke|dust|ash|clouds?|leaves|water|petals|sparks|embers|wind|spray))\b/gi,
+    '$1$2 frozen in curved spiral patterns'
+  );
   cleaned = cleaned.replace(/\bswirling\b/gi, 'frozen in curved spiral patterns');
+  cleaned = cleaned.replace(/\blashing\s+violently\s+against\b/gi, 'frozen mid-lash against');
+  cleaned = cleaned.replace(/\blashing\s+against\b/gi, 'pressed mid-splash against');
+  cleaned = cleaned.replace(/\bsweeping\s+out\s+over\b/gi, 'stretching across');
+  cleaned = cleaned.replace(/\bslicing\s+through\b/gi, 'cutting sharply through');
   cleaned = cleaned.replace(/\bflickers?\b/gi, 'captured in a single frozen lightning strike');
   cleaned = cleaned.replace(/\bflickering\s+((?:[a-z]+\s+){0,2}?(?:bulb|lamp|light|candle|lantern|flame|sign|screen|monitor|neon|tube))\b/gi, 'still-lit $1');
   cleaned = cleaned.replace(/\bflickering\b/gi, 'frozen in mid-glow');
@@ -772,12 +780,17 @@ export function compileThumbnailPrompt(params: {
     cleanHeroMoment = sanitizeMonochromeLighting(cleanHeroMoment, params.styleProfile);
   }
 
+  const inlineBgDescription = /^(?:A|An|The|Obsidian|Pitch|Dark|Deep|Stormy|Dense|Heavy|Swirling|Frozen|Crashing|Glowing)\b/.test(
+    cleanBgDescription
+  )
+    ? cleanBgDescription[0].toLowerCase() + cleanBgDescription.slice(1)
+    : cleanBgDescription;
   const bgAlreadyHasRimOrSeparating = /\b(?:rim\s+light|rim\s+lighting|separat(?:ing|ion))\b/i.test(
     cleanBgDescription
   );
   const bgLightingSentence = bgAlreadyHasRimOrSeparating
     ? `Background setting: ${cleanBgDescription}, accented with deep shadows and ${cleanAccentColor} highlights.`
-    : `Deep shadows, ${rimLightPhrase}: ${cleanBgDescription}.`;
+    : `Deep shadows, ${rimLightPhrase}: ${inlineBgDescription}.`;
 
   // Full compiled prompt with typography
   const compiledPrompt = normalizeUnicodeAndDashes([
@@ -1064,9 +1077,45 @@ export function inferStoryAdaptiveCtaQuestion(storyPremise?: string, characterNa
     };
   }
 
+  // Final Watch / Lighthouse / Guiding Light / Quiet Duty
+  if (
+    /\b(?:lighthouse|final\s+watch|watch\s+was\s+over|guide\s+the\s+lost\s+souls|fresnel\s+lens|light\s+would\s+guide|lit\s+the\s+lamp)\b/i.test(
+      text
+    )
+  ) {
+    return {
+      primaryQuestion:
+        'Even if nobody ever knew your name, would you stay behind to keep the light burning for others?',
+      alternateQuestions: [
+        'What does the light mean to you in those final moments?',
+        `Do you think ${char}'s final watch saved someone out in that storm?`,
+        'Who in your life has been a quiet guiding light when everything went dark?',
+        'Should some sacrifices stay quiet, or deserve to be remembered forever?',
+      ],
+    };
+  }
+
+  // Lost Archive / Submerged Library / Relic Preservation
+  if (
+    /\b(?:submerged\s+library|coastal\s+library|world\s+lost\s+to\s+water|surviving\s+paper\s+books|sealed\s+leather\s+journal|lost\s+(?:knowledge|books|library|archive)|flooded\s+ruins)\b/i.test(
+      text
+    )
+  ) {
+    return {
+      primaryQuestion:
+        'If the world drowned tomorrow and you could save only one dry book from the ruins, what would it be?',
+      alternateQuestions: [
+        'What secret from a lost world do you think is written inside that sealed journal?',
+        'How far would you search through flooded ruins just to hold real paper again?',
+        'What piece of human knowledge would hurt most to lose forever?',
+        'If someone found your journal centuries later, what would you want them to read?',
+      ],
+    };
+  }
+
   // Nostalgic / Memory / Comfort Sanctuary / Spirit Folklore
   if (
-    /\b(?:restores?\s+mortal\s+memor(?:y|ies)|forgotten\s+memor(?:y|ies)|lost\s+memor(?:y|ies)|nostalg|warm\s+broth|ramen|lantern|wandering\s+ghosts?|spirits?\s+and\s+wandering|comfort\s+food|healing\s+meal)\b/i.test(
+    /\b(?:restores?\s+mortal\s+memor(?:y|ies)|forgotten\s+memor(?:y|ies)|lost\s+memor(?:y|ies)|nostalg|warm\s+broth|ramen|(?:paper\s+|glowing\s+|wooden\s+|warm\s+)?lantern(?!\s+(?:room|tower|chamber|housing))|wandering\s+ghosts?|spirits?\s+and\s+wandering|comfort\s+food|healing\s+meal)\b/i.test(
       text
     )
   ) {
