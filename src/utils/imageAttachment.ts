@@ -1,6 +1,6 @@
 import { AssistantImageAttachment, AssistantImageRole } from '../types';
 
-export const MAX_ASSISTANT_IMAGES = 2;
+export const MAX_ASSISTANT_IMAGES = 5;
 export const MAX_RAW_IMAGE_BYTES = 20 * 1024 * 1024; // 20 MB raw upload ceiling
 export const TARGET_MAX_IMAGE_EDGE = 1024;
 export const TARGET_IMAGE_QUALITY = 0.82;

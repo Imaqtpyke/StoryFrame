@@ -101,14 +101,15 @@ import {
   formatCompactTokenCount,
 } from '../services/aiUsageStorage';
 import {
+  MAX_ASSISTANT_IMAGES,
   calculateScaledDimensions,
   extractBase64FromDataUrl,
-  formatAttachmentRoleLabel,
 } from '../utils/imageAttachment';
 import {
   parseMessageSegments,
   buildDefaultImagePrompt,
   isGroqVisionModel,
+  getMaxImagesForProvider,
   selectSendableAttachmentIds,
   sendChatMessage,
 } from '../services/assistantChatService';
@@ -5301,29 +5302,27 @@ async function runTestSuite44() {
 // TEST SUITE 45: AI Assistant Reference Image (Character & Visual Style)
 // ============================================================================
 async function runTestSuite45() {
-  // 45.1 Image scaling, base64 extraction, and role formatting helpers
+  // 45.1 Image scaling, base64 extraction, and 5-image cap
   const wideScaled = calculateScaledDimensions(4000, 2000, 1024);
   const tallScaled = calculateScaledDimensions(1080, 2400, 1024);
   const smallKept = calculateScaledDimensions(800, 600, 1024);
   const rawB64 = extractBase64FromDataUrl('data:image/webp;base64,UklGRh4AAABXRUJQVlA4');
 
   assert(
-    wideScaled.width === 1024 &&
+    MAX_ASSISTANT_IMAGES === 5 &&
+      wideScaled.width === 1024 &&
       wideScaled.height === 512 &&
       tallScaled.width === 461 &&
       tallScaled.height === 1024 &&
       smallKept.width === 800 &&
       smallKept.height === 600 &&
-      rawB64 === 'UklGRh4AAABXRUJQVlA4' &&
-      formatAttachmentRoleLabel('character') === 'Character' &&
-      formatAttachmentRoleLabel('style') === 'Visual Style' &&
-      formatAttachmentRoleLabel('both') === 'Character & Style',
+      rawB64 === 'UklGRh4AAABXRUJQVlA4',
     'Suite 45: AI Assistant Reference Image (Character & Visual Style)',
-    '45.1 Scales Oversized Photos Proportionally, Extracts Clean Base64, & Formats Reference Roles',
-    `wide=${JSON.stringify(wideScaled)} | tall=${JSON.stringify(tallScaled)} | small=${JSON.stringify(smallKept)} | b64=${rawB64}`
+    '45.1 Scales Oversized Photos Proportionally, Extracts Clean Base64, & Supports Up to 5 Images',
+    `max=${MAX_ASSISTANT_IMAGES} | wide=${JSON.stringify(wideScaled)} | tall=${JSON.stringify(tallScaled)} | small=${JSON.stringify(smallKept)} | b64=${rawB64}`
   );
 
-  // 45.2 [APPLY_CHARACTER_STYLE] segment parsing + coexistence with [REVISE_BEAT] + default prompts
+  // 45.2 [APPLY_CHARACTER_STYLE] segment parsing + coexistence with [REVISE_BEAT] + combined default prompt
   const parsedSegments = parseMessageSegments(
     `This painting uses warm oil brushwork.\n\n[APPLY_CHARACTER_STYLE]\nImpasto oil painting on linen canvas, warm 3200K candlelight rim shadows, weathered crimson wool cloak.\n[/APPLY_CHARACTER_STYLE]\n\nUpdated beat below:\n[REVISE_BEAT scene=1 beat=2]\nMedium Shot, eye-level of the traveler in a weathered crimson wool cloak.\n[/REVISE_BEAT]`,
     'msg-45'
@@ -5331,21 +5330,21 @@ async function runTestSuite45() {
   const styleSeg = parsedSegments.find((s) => s.type === 'apply_character_style');
   const beatSeg = parsedSegments.find((s) => s.type === 'revise_beat');
 
-  const charOnlyAtt: AssistantImageAttachment = {
-    id: 'att-char',
+  const refImgA: AssistantImageAttachment = {
+    id: 'att-1',
     name: 'hero.png',
     mimeType: 'image/webp',
     dataUrl: 'data:image/webp;base64,AAA=',
     base64Data: 'AAA=',
-    role: 'character',
+    role: 'both',
   };
-  const styleOnlyAtt: AssistantImageAttachment = {
-    id: 'att-style',
+  const refImgB: AssistantImageAttachment = {
+    id: 'att-2',
     name: 'style.jpg',
     mimeType: 'image/jpeg',
     dataUrl: 'data:image/jpeg;base64,BBB=',
     base64Data: 'BBB=',
-    role: 'style',
+    role: 'both',
   };
 
   assert(
@@ -5354,15 +5353,14 @@ async function runTestSuite45() {
       beatSeg?.type === 'revise_beat' &&
       beatSeg.scene === 1 &&
       beatSeg.beat === 2 &&
-      buildDefaultImagePrompt([charOnlyAtt]).includes('character appearance') &&
-      buildDefaultImagePrompt([styleOnlyAtt]).includes('visual style') &&
-      buildDefaultImagePrompt([charOnlyAtt, styleOnlyAtt]).includes('character and visual style'),
+      buildDefaultImagePrompt([refImgA]).includes('character and visual style') &&
+      buildDefaultImagePrompt([refImgA, refImgB]).includes('character and visual style'),
     'Suite 45: AI Assistant Reference Image (Character & Visual Style)',
-    '45.2 Parses [APPLY_CHARACTER_STYLE] Alongside Revision Cards & Builds Role-Aware Default Prompts',
+    '45.2 Parses [APPLY_CHARACTER_STYLE] Alongside Revision Cards & Defaults All Images to Character & Style',
     `segs=${JSON.stringify(parsedSegments.map((s) => s.type))}`
   );
 
-  // 45.3 Rolling 3-image window & Groq vision gating (rejects gpt-oss text-only, allows qwen3.8-27b)
+  // 45.3 Rolling 5-image Gemini window & Groq vision limits (text-only blocked, Qwen capped at 3)
   const historyWithImages: AssistantChatMessage[] = [
     {
       id: 'u1',
@@ -5370,15 +5368,18 @@ async function runTestSuite45() {
       content: 'Ref 1',
       timestamp: 1,
       attachments: [
-        { ...charOnlyAtt, id: 'old-1' },
-        { ...styleOnlyAtt, id: 'old-2' },
+        { ...refImgA, id: 'old-1' },
+        { ...refImgB, id: 'old-2' },
+        { ...refImgA, id: 'old-3' },
       ],
     },
     { id: 'a1', role: 'assistant', content: 'Noted.', timestamp: 2 },
   ];
-  const newImgA: AssistantImageAttachment = { ...charOnlyAtt, id: 'new-1' };
-  const newImgB: AssistantImageAttachment = { ...styleOnlyAtt, id: 'new-2' };
-  const selectedIds = selectSendableAttachmentIds(historyWithImages, [newImgA, newImgB], 3);
+  const newImg1: AssistantImageAttachment = { ...refImgA, id: 'new-1' };
+  const newImg2: AssistantImageAttachment = { ...refImgB, id: 'new-2' };
+  const newImg3: AssistantImageAttachment = { ...refImgA, id: 'new-3' };
+  const newImg4: AssistantImageAttachment = { ...refImgB, id: 'new-4' };
+  const selectedIdsGemini = selectSendableAttachmentIds(historyWithImages, [newImg1, newImg2, newImg3], 5);
 
   let rejectedTextOnlyGroq = false;
   try {
@@ -5390,24 +5391,45 @@ async function runTestSuite45() {
       'groq',
       'openai/gpt-oss-120b',
       '',
-      [newImgA]
+      [newImg1]
     );
   } catch (err: any) {
     rejectedTextOnlyGroq = /only supports text/i.test(err?.message || '');
   }
 
+  let rejectedExcessGroq = false;
+  try {
+    await sendChatMessage(
+      [],
+      'Analyze these 4 references',
+      'gsk_test_fake_key_123456',
+      'standard',
+      'groq',
+      'qwen/qwen3.8-27b',
+      '',
+      [newImg1, newImg2, newImg3, newImg4]
+    );
+  } catch (err: any) {
+    rejectedExcessGroq = /accepts up to 3 reference images/i.test(err?.message || '');
+  }
+
   assert(
-    selectedIds.size === 3 &&
-      selectedIds.has('new-1') &&
-      selectedIds.has('new-2') &&
-      selectedIds.has('old-2') &&
-      !selectedIds.has('old-1') &&
+    selectedIdsGemini.size === 5 &&
+      selectedIdsGemini.has('new-1') &&
+      selectedIdsGemini.has('new-2') &&
+      selectedIdsGemini.has('new-3') &&
+      selectedIdsGemini.has('old-3') &&
+      selectedIdsGemini.has('old-2') &&
+      !selectedIdsGemini.has('old-1') &&
+      getMaxImagesForProvider('gemini') === 5 &&
+      getMaxImagesForProvider('groq', 'qwen/qwen3.8-27b') === 3 &&
       isGroqVisionModel('qwen/qwen3.8-27b') === true &&
       isGroqVisionModel('openai/gpt-oss-120b') === false &&
-      rejectedTextOnlyGroq === true,
+      rejectedTextOnlyGroq === true &&
+      rejectedExcessGroq === true,
     'Suite 45: AI Assistant Reference Image (Character & Visual Style)',
-    '45.3 Caps Active Reference Images at 3 Most Recent & Blocks Text-Only Groq Models Cleanly',
-    `selected=${Array.from(selectedIds).join(',')} | rejectedGroq=${rejectedTextOnlyGroq}`
+    '45.3 Supports 5-Image Gemini Context & Enforces Groq Text-Only and 3-Image Qwen Guardrails',
+    `selected=${Array.from(selectedIdsGemini).join(',')} | rejectedText=${rejectedTextOnlyGroq} | rejectedExcess=${rejectedExcessGroq}`
   );
 }
 

@@ -21,7 +21,6 @@ import {
 import {
   AssistantChatMessage,
   AssistantImageAttachment,
-  AssistantImageRole,
   StoryGenerationResult,
   StoryFormat
 } from '../types';
@@ -32,12 +31,12 @@ import {
   sendChatMessage,
   buildDefaultImagePrompt,
   isGroqVisionModel,
+  getMaxImagesForProvider,
   parseMessageSegments
 } from '../services/assistantChatService';
 import {
   MAX_ASSISTANT_IMAGES,
-  processReferenceImageFile,
-  formatAttachmentRoleLabel
+  processReferenceImageFile
 } from '../utils/imageAttachment';
 import { useApiKey } from '../context/ApiKeyContext';
 
@@ -253,12 +252,6 @@ export default function AssistantChatDrawer({
     }
   };
 
-  const handleUpdateAttachmentRole = (attachmentId: string, role: AssistantImageRole) => {
-    setPendingAttachments((prev) =>
-      prev.map((att) => (att.id === attachmentId ? { ...att, role } : att))
-    );
-  };
-
   const handleRemovePendingAttachment = (attachmentId: string) => {
     setPendingAttachments((prev) => prev.filter((att) => att.id !== attachmentId));
     setErrorMessage(null);
@@ -297,6 +290,11 @@ export default function AssistantChatDrawer({
       const activeGroqModel = groqModel || (modelQuality === 'high' ? 'openai/gpt-oss-120b' : 'qwen/qwen3.8-27b');
       if (!isGroqVisionModel(activeGroqModel)) {
         setErrorMessage(`The active Groq model (${activeGroqModel}) only supports text. Switch to Gemini or select Qwen 3.8 27B under Model Options to analyze reference images.`);
+        return;
+      }
+      const maxGroqImages = getMaxImagesForProvider('groq', activeGroqModel);
+      if (attachmentsToSend.length > maxGroqImages) {
+        setErrorMessage(`The active Groq model (${activeGroqModel}) accepts up to ${maxGroqImages} reference images per message. Remove extra images or switch to Gemini for up to ${MAX_ASSISTANT_IMAGES} images.`);
         return;
       }
     }
@@ -479,6 +477,7 @@ export default function AssistantChatDrawer({
         previousStyle,
       },
     }));
+    onClose();
   };
 
   const handleUndoCharacterStyleRevision = (tagId: string) => {
@@ -664,27 +663,20 @@ export default function AssistantChatDrawer({
                               {msg.attachments.map((att) => (
                                 <div
                                   key={att.id}
-                                  className="flex items-center gap-2 p-1.5 bg-[#121211] border border-white/15 rounded-[2px]"
+                                  className="relative group rounded-[2px] border border-white/15 bg-[#121211] overflow-hidden"
+                                  title={att.name}
                                 >
                                   {att.dataUrl ? (
                                     <img
                                       src={att.dataUrl}
                                       alt={att.name}
-                                      className="w-11 h-11 object-cover rounded-[2px] border border-white/10 shrink-0"
+                                      className="w-14 h-14 object-cover block shrink-0"
                                     />
                                   ) : (
-                                    <div className="w-11 h-11 flex items-center justify-center bg-[#181816] border border-white/10 rounded-[2px] shrink-0">
+                                    <div className="w-14 h-14 flex items-center justify-center bg-[#181816] shrink-0">
                                       <ImageIcon className="w-4 h-4 text-[#8C8C86]" />
                                     </div>
                                   )}
-                                  <div className="min-w-0 pr-1">
-                                    <div className="text-[10px] font-mono text-white truncate max-w-[130px]">
-                                      {formatAttachmentRoleLabel(att.role)}
-                                    </div>
-                                    <div className="text-[10px] text-[#8C8C86] truncate max-w-[130px]">
-                                      {att.name}
-                                    </div>
-                                  </div>
                                 </div>
                               ))}
                             </div>
@@ -1116,60 +1108,32 @@ export default function AssistantChatDrawer({
 
               {/* Attached Reference Images Preview Bar */}
               {pendingAttachments.length > 0 && (
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {pendingAttachments.map((att) => (
                     <div
                       key={att.id}
-                      className="flex items-center gap-2 p-1.5 bg-[#181816] border border-white/15 rounded-[2px] max-w-full"
+                      className="relative group bg-[#181816] border border-white/20 rounded-[2px] p-1 flex items-center gap-1.5"
+                      title={att.name}
                     >
                       <img
                         src={att.dataUrl}
                         alt={att.name}
-                        className="w-11 h-11 object-cover rounded-[2px] border border-white/10 shrink-0"
+                        className="w-12 h-12 object-cover rounded-[2px] border border-white/10 shrink-0"
                       />
-                      <div className="flex flex-col gap-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[10px] font-mono text-[#D4D4CE] truncate max-w-[120px]">
-                            {att.name}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemovePendingAttachment(att.id)}
-                            aria-label="Remove Image"
-                            title="Remove reference image"
-                            className="p-0.5 text-[#8C8C86] hover:text-white rounded-[2px] cursor-pointer"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                        <div className="flex items-center gap-1" role="group" aria-label="Reference image role">
-                          {(['both', 'character', 'style'] as AssistantImageRole[]).map((roleOption) => {
-                            const isActive = att.role === roleOption;
-                            const label =
-                              roleOption === 'both'
-                                ? 'Both'
-                                : roleOption === 'character'
-                                  ? 'Character'
-                                  : 'Style';
-                            return (
-                              <button
-                                key={roleOption}
-                                type="button"
-                                onClick={() => handleUpdateAttachmentRole(att.id, roleOption)}
-                                className={`px-1.5 py-0.5 text-[10px] font-mono rounded-[2px] border transition-colors cursor-pointer ${
-                                  isActive
-                                    ? 'bg-white text-black border-white font-semibold'
-                                    : 'bg-[#111110] text-[#9C9C96] border-white/15 hover:text-white hover:border-white/35'
-                                }`}
-                              >
-                                {label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemovePendingAttachment(att.id)}
+                        aria-label={`Remove ${att.name}`}
+                        title="Remove image"
+                        className="p-1 text-[#9C9C96] hover:text-white hover:bg-white/10 rounded-[2px] transition-colors cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   ))}
+                  <span className="text-[10px] font-mono text-[#8C8C86] ml-auto">
+                    {pendingAttachments.length}/{MAX_ASSISTANT_IMAGES} images
+                  </span>
                 </div>
               )}
 

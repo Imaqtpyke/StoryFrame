@@ -15,11 +15,19 @@ import {
 } from './unifiedAiService';
 
 const CHAT_STORAGE_KEY = 'storyframe_assistant_chat_history_v1';
-const MAX_ACTIVE_IMAGES_PER_REQUEST = 3;
+const MAX_ACTIVE_IMAGES_GEMINI = 5;
+const MAX_ACTIVE_IMAGES_GROQ_QWEN = 3;
 
 export function isGroqVisionModel(model: string): boolean {
   const m = (model || '').toLowerCase();
   return /(?:qwen3\.[68]|qwen.*vl|vision|llava|scout|maverick|muse-spark)/i.test(m);
+}
+
+export function getMaxImagesForProvider(provider: AiProvider, model?: string): number {
+  if (provider !== 'groq') return MAX_ACTIVE_IMAGES_GEMINI;
+  if (!isGroqVisionModel(model || '')) return 0;
+  if (/muse-spark|scout|maverick/i.test(model || '')) return MAX_ACTIVE_IMAGES_GEMINI;
+  return MAX_ACTIVE_IMAGES_GROQ_QWEN;
 }
 
 function stripHeavyAttachmentPayloads(
@@ -183,16 +191,17 @@ When the user asks to modify, rewrite, or replace a visual prompt for a specific
 - Precede the action tag with a brief 1-sentence explanation of what changed to eliminate duplication while maintaining continuous style.
 
 9. REFERENCE IMAGE ANALYSIS (CHARACTER AND VISUAL STYLE EXTRACTION):
-When the user attaches one or more reference images (each labeled with a role such as Character, Visual Style, or Character & Style):
-- Study only what is clearly visible in the image. Never invent unseen details, hidden props, or random guesses.
-- If the image role is Visual Style or Character & Style: carefully identify the art medium or rendering style (for example: 3D claymation, 90s anime cel animation, impasto oil painting, 35mm film photography, stop-motion felt, graphic comic ink), surface textures, primary and accent colors, lighting setup and warmth/coolness, shadow contrast, and camera/lens look.
-- If the image role is Character or Character & Style: carefully identify visible subject type, approximate age or build, facial features, expression, hair color and hairstyle, and exact clothing, materials, and accessories with colors so StoryFrame can lock them across scenes.
+When the user attaches one or more reference images:
+- Treat every reference image as guidance for both Character and Visual Style unless the user asks specifically about one aspect in their message.
+- Study only what is clearly visible in the image(s). Never invent unseen details, hidden props, or random guesses.
+- Identify the art medium or rendering style (for example: 3D claymation, 90s anime cel animation, impasto oil painting, 35mm film photography, stop-motion felt, graphic comic ink), surface textures, primary and accent colors, lighting setup and warmth/coolness, shadow contrast, and camera/lens look.
+- Identify any visible character traits: subject type, approximate age or build, facial features, expression, hair color and hairstyle, and exact clothing, materials, and accessories with colors so StoryFrame can lock them across scenes.
 - Keep your explanation clear, simple, and free of asterisks, em dashes, or emojis.
-- Whenever the user asks to analyze, extract, match, or use the reference image for character or visual style (or asks what style or character is shown), always include a clean, ready-to-apply block formatted exactly like this:
+- Whenever the user asks to analyze, extract, match, or use the reference image(s) (or sends images with no specific text request), always include a clean, ready-to-apply block formatted exactly like this:
   [APPLY_CHARACTER_STYLE]
-  Single cohesive paragraph combining the locked visual style and/or character traits ready to paste directly into StoryFrame's Character & Visual Style field.
+  Single cohesive paragraph combining the locked visual style and character traits ready to paste directly into StoryFrame's Character & Visual Style field.
   [/APPLY_CHARACTER_STYLE]
-- Inside [APPLY_CHARACTER_STYLE]...[/APPLY_CHARACTER_STYLE], write only descriptive style and/or character traits as a single plain-text paragraph (no headings, no bullet lists, no asterisks, no em dashes).
+- Inside [APPLY_CHARACTER_STYLE]...[/APPLY_CHARACTER_STYLE], write only descriptive style and character traits as a single plain-text paragraph (no headings, no bullet lists, no asterisks, no em dashes).
 - If the user asks follow-up questions about story concepts or asks to revise a beat, thumbnail, or CTA prompt while an image reference is in the conversation, carry that exact visual style and character look into those prompts and action tags.`;
 
 export interface AssistantTextSegment {
@@ -302,21 +311,13 @@ export function parseMessageSegments(content: string, messageId: string): Assist
 
 export function buildDefaultImagePrompt(attachments: AssistantImageAttachment[]): string {
   if (attachments.length === 0) return '';
-  const hasCharacter = attachments.some((a) => a.role === 'character' || a.role === 'both');
-  const hasStyle = attachments.some((a) => a.role === 'style' || a.role === 'both');
-  if (hasCharacter && hasStyle) {
-    return 'Analyze the attached reference image(s) thoroughly and extract a consistent character and visual style description for StoryFrame.';
-  }
-  if (hasCharacter) {
-    return 'Analyze the attached character reference image thoroughly and extract a locked character appearance description for StoryFrame.';
-  }
-  return 'Analyze the attached style reference image thoroughly and extract a visual style description for StoryFrame.';
+  return 'Analyze the attached reference image(s) thoroughly and extract a consistent character and visual style description for StoryFrame.';
 }
 
 export function selectSendableAttachmentIds(
   recentHistory: AssistantChatMessage[],
   newAttachments: AssistantImageAttachment[],
-  maxImages: number = MAX_ACTIVE_IMAGES_PER_REQUEST
+  maxImages: number = MAX_ACTIVE_IMAGES_GEMINI
 ): Set<string> {
   const allowedIds = new Set<string>();
   // Prioritize newest turn attachments first, then walk backward through recent turns
@@ -340,10 +341,9 @@ export function buildAttachmentContextPrefix(
   omittedFromBinary: boolean = false
 ): string {
   if (!attachments || attachments.length === 0) return '';
-  const labels = attachments.map((att, idx) => {
-    const roleLabel = formatAttachmentRoleLabel(att.role);
-    const stateNote = omittedFromBinary ? ', image binary omitted to fit model window' : '';
-    return `[Reference Image ${idx + 1}: Role = ${roleLabel}${stateNote}]`;
+  const labels = attachments.map((_att, idx) => {
+    const stateNote = omittedFromBinary ? ' (image binary omitted to fit model window)' : '';
+    return `[Reference Image ${idx + 1}: Character & Visual Style${stateNote}]`;
   });
   return `${labels.join(' ')}\n`;
 }
@@ -379,15 +379,23 @@ export async function sendChatMessage(
 
   // Format message history (keep last 6 messages to minimize token usage)
   const recentHistory = history.slice(-6);
-  const sendableAttachmentIds = selectSendableAttachmentIds(recentHistory, newAttachments, MAX_ACTIVE_IMAGES_PER_REQUEST);
+  const resolvedGroqModel = groqModel || (modelQuality === 'high' ? 'openai/gpt-oss-120b' : 'qwen/qwen3.8-27b');
+  const maxProviderImages = getMaxImagesForProvider(provider, resolvedGroqModel);
+  const sendableAttachmentIds = selectSendableAttachmentIds(recentHistory, newAttachments, maxProviderImages);
 
   if (provider === 'groq') {
-    const targetModel = groqModel || (modelQuality === 'high' ? 'openai/gpt-oss-120b' : 'qwen/qwen3.8-27b');
+    const targetModel = resolvedGroqModel;
     const supportsVision = isGroqVisionModel(targetModel);
 
     if (newAttachments.length > 0 && !supportsVision) {
       throw new Error(
         `The active Groq model (${targetModel}) only supports text. Switch to Gemini or select Qwen 3.8 27B under Model Options to analyze reference images.`
+      );
+    }
+
+    if (newAttachments.length > maxProviderImages) {
+      throw new Error(
+        `The active Groq model (${targetModel}) accepts up to ${maxProviderImages} reference images per message. Remove extra images or switch to Gemini for up to ${MAX_ACTIVE_IMAGES_GEMINI} images.`
       );
     }
 

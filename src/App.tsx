@@ -380,10 +380,21 @@ function StoryFrameMain() {
         format={lastRequest?.format}
         currentCharacterStyle={assistantCharacterStyleOverride?.style ?? lastRequest?.characterStyle ?? ''}
         onApplyCharacterStyle={(style) => {
+          setIsAssistantOpen(false);
+          const wasAwayFromGeneratorForm = result !== null || activePage !== 'generator';
+          setActivePage('generator');
+          setResult(null);
           setAssistantCharacterStyleOverride({ style, nonce: Date.now() });
-          if (result !== null || activePage !== 'generator') {
+          if (wasAwayFromGeneratorForm) {
             setLastRequest((prev) => (prev ? { ...prev, characterStyle: style } : prev));
           }
+          setTimeout(() => {
+            const styleEl = document.getElementById('character-prompt-input');
+            if (styleEl) {
+              styleEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              (styleEl as HTMLInputElement).focus();
+            }
+          }, 150);
         }}
         onUpdateBeatPrompt={handleUpdateBeatPrompt}
         onUpdateThumbnailPrompt={handleUpdateThumbnailPrompt}
