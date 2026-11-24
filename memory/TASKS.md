@@ -300,6 +300,8 @@
 
 - [x] **Submerged Library & Lighthouse Keeper Fixes (Suite 44, 261/261 passing):** Preserved prop context and fixed lenses in Option B sub-beat splits without Pass 3 overwrites, fixed pre-noun `swirling` / `lashing` / `sweeping` still-motion grammar, shielded `glass lantern room` from `brass lantern` material swaps, expanded participle verbs (`ascends`/`strikes`/`ignites`/`amidst`) + angle syncing + multi-word sheet casing (`The Keeper`), added plural location article guard, lowercased Thumbnail post-colon background text, and added Final Watch / Lighthouse & Lost Archive CTA branches.
 
+- [x] **AI Assistant Reference Image Upload for Character & Visual Style (Suite 45, 264/264 passing):** Added client-side EXIF-aware image resizing/compression (`src/utils/imageAttachment.ts`), multimodal `inlineData` (Gemini) and `image_url` (Groq `qwen/qwen3.8-27b` with text-only model guard) plus quota-safe `sessionStorage` trimming (`assistantChatService.ts`), composer file picker + clipboard paste + `Both`/`Character`/`Style` role tags + error banner (`AssistantChatDrawer.tsx`), and one-click `[APPLY_CHARACTER_STYLE]` card (`Use Character & Style` / `Undo Change`) wired cleanly into `GeneratorForm` via `App.tsx` without overwriting unsaved story drafts.
+
 ## Active Testing & Planned Future Roadmap (Post-Testing)
 - [ ] **Genre Stress-Testing Loop (In Progress):**
   - Completed: **Sci-Fi**, **Documentary / History**, **Horror / Psychological Thriller**, **Stylized Art**, **Multi-Character + Flashbacks**, **130-Word Finance/Diorama (Text-to-Image)**, and **Text-to-Video (4s Clip Mode)**.

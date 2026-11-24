@@ -1,8 +1,46 @@
-import { AssistantChatMessage, GeminiModelQuality } from '../types';
+import {
+  AiProvider,
+  AssistantChatMessage,
+  AssistantImageAttachment,
+  GeminiModelQuality,
+} from '../types';
 import { fetchWithExponentialBackoff } from '../utils/retryFetch';
 import { extractAndRecordGeminiUsage } from './aiUsageStorage';
+import { formatAttachmentRoleLabel } from '../utils/imageAttachment';
+import { callGroqChatCompletion, GroqChatContentPart, GroqChatMessage } from './groqClient';
+import {
+  extractGeminiResponseText,
+  resolveGeminiModelId,
+  sanitizeGenericErrorMessage,
+} from './unifiedAiService';
 
 const CHAT_STORAGE_KEY = 'storyframe_assistant_chat_history_v1';
+const MAX_ACTIVE_IMAGES_PER_REQUEST = 3;
+
+export function isGroqVisionModel(model: string): boolean {
+  const m = (model || '').toLowerCase();
+  return /(?:qwen3\.[68]|qwen.*vl|vision|llava|scout|maverick|muse-spark)/i.test(m);
+}
+
+function stripHeavyAttachmentPayloads(
+  messages: AssistantChatMessage[],
+  keepPayloadsFromTailCount: number
+): AssistantChatMessage[] {
+  const cutoff = Math.max(0, messages.length - keepPayloadsFromTailCount);
+  return messages.map((msg, idx) => {
+    if (!msg.attachments || msg.attachments.length === 0 || idx >= cutoff) {
+      return msg;
+    }
+    return {
+      ...msg,
+      attachments: msg.attachments.map((att) => ({
+        ...att,
+        dataUrl: '',
+        base64Data: '',
+      })),
+    };
+  });
+}
 
 export function getStoredChatHistory(): AssistantChatMessage[] {
   try {
@@ -16,10 +54,23 @@ export function getStoredChatHistory(): AssistantChatMessage[] {
 }
 
 export function saveStoredChatHistory(messages: AssistantChatMessage[]): void {
+  const sliced = messages.slice(-20);
   try {
-    sessionStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages.slice(-20)));
+    sessionStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(sliced));
   } catch {
-    // Ignore storage quota errors
+    // Fallback 1: keep image payloads only on the most recent 2 messages
+    try {
+      const compact = stripHeavyAttachmentPayloads(sliced, 2);
+      sessionStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(compact));
+    } catch {
+      // Fallback 2: keep text history + attachment metadata only if quota is still tight
+      try {
+        const textOnly = stripHeavyAttachmentPayloads(sliced, 0);
+        sessionStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(textOnly));
+      } catch {
+        // Ignore remaining storage errors
+      }
+    }
   }
 }
 
@@ -129,15 +180,173 @@ When the user asks to modify, rewrite, or replace a visual prompt for a specific
   Full revised CTA outro prompt text here...
   [/REVISE_CTA]
 
-- Precede the action tag with a brief 1-sentence explanation of what changed to eliminate duplication while maintaining continuous style.`;
+- Precede the action tag with a brief 1-sentence explanation of what changed to eliminate duplication while maintaining continuous style.
 
-import { AiProvider } from '../types';
-import { callGroqChatCompletion } from './groqClient';
-import {
-  extractGeminiResponseText,
-  resolveGeminiModelId,
-  sanitizeGenericErrorMessage,
-} from './unifiedAiService';
+9. REFERENCE IMAGE ANALYSIS (CHARACTER AND VISUAL STYLE EXTRACTION):
+When the user attaches one or more reference images (each labeled with a role such as Character, Visual Style, or Character & Style):
+- Study only what is clearly visible in the image. Never invent unseen details, hidden props, or random guesses.
+- If the image role is Visual Style or Character & Style: carefully identify the art medium or rendering style (for example: 3D claymation, 90s anime cel animation, impasto oil painting, 35mm film photography, stop-motion felt, graphic comic ink), surface textures, primary and accent colors, lighting setup and warmth/coolness, shadow contrast, and camera/lens look.
+- If the image role is Character or Character & Style: carefully identify visible subject type, approximate age or build, facial features, expression, hair color and hairstyle, and exact clothing, materials, and accessories with colors so StoryFrame can lock them across scenes.
+- Keep your explanation clear, simple, and free of asterisks, em dashes, or emojis.
+- Whenever the user asks to analyze, extract, match, or use the reference image for character or visual style (or asks what style or character is shown), always include a clean, ready-to-apply block formatted exactly like this:
+  [APPLY_CHARACTER_STYLE]
+  Single cohesive paragraph combining the locked visual style and/or character traits ready to paste directly into StoryFrame's Character & Visual Style field.
+  [/APPLY_CHARACTER_STYLE]
+- Inside [APPLY_CHARACTER_STYLE]...[/APPLY_CHARACTER_STYLE], write only descriptive style and/or character traits as a single plain-text paragraph (no headings, no bullet lists, no asterisks, no em dashes).
+- If the user asks follow-up questions about story concepts or asks to revise a beat, thumbnail, or CTA prompt while an image reference is in the conversation, carry that exact visual style and character look into those prompts and action tags.`;
+
+export interface AssistantTextSegment {
+  type: 'text';
+  content: string;
+}
+
+export interface AssistantReviseBeatSegment {
+  type: 'revise_beat';
+  scene: number;
+  beat: number;
+  prompt: string;
+  tagId: string;
+}
+
+export interface AssistantReviseThumbnailSegment {
+  type: 'revise_thumbnail';
+  prompt: string;
+  tagId: string;
+}
+
+export interface AssistantReviseCtaSegment {
+  type: 'revise_cta';
+  prompt: string;
+  tagId: string;
+}
+
+export interface ApplyCharacterStyleSegment {
+  type: 'apply_character_style';
+  style: string;
+  tagId: string;
+}
+
+export type AssistantMessageSegment =
+  | AssistantTextSegment
+  | AssistantReviseBeatSegment
+  | AssistantReviseThumbnailSegment
+  | AssistantReviseCtaSegment
+  | ApplyCharacterStyleSegment;
+
+export function parseMessageSegments(content: string, messageId: string): AssistantMessageSegment[] {
+  const segments: AssistantMessageSegment[] = [];
+  const regex = /\[(REVISE_BEAT\s+scene=(\d+)\s+beat=(\d+)|REVISE_THUMBNAIL|REVISE_CTA|APPLY_CHARACTER_STYLE)\]([\s\S]*?)\[\/(?:REVISE_BEAT|REVISE_THUMBNAIL|REVISE_CTA|APPLY_CHARACTER_STYLE)\]/gi;
+
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let indexCounter = 0;
+
+  while ((match = regex.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      const textChunk = content.slice(lastIndex, match.index).trim();
+      if (textChunk) {
+        segments.push({ type: 'text', content: textChunk });
+      }
+    }
+
+    const fullTag = match[1];
+    const promptBody = (match[4] || '').trim();
+    const tagId = `${messageId}-rev-${indexCounter++}`;
+
+    if (fullTag.toUpperCase().startsWith('REVISE_BEAT')) {
+      const sceneNum = parseInt(match[2], 10);
+      const beatNum = parseInt(match[3], 10);
+      segments.push({
+        type: 'revise_beat',
+        scene: sceneNum,
+        beat: beatNum,
+        prompt: promptBody,
+        tagId,
+      });
+    } else if (fullTag.toUpperCase() === 'REVISE_THUMBNAIL') {
+      segments.push({
+        type: 'revise_thumbnail',
+        prompt: promptBody,
+        tagId,
+      });
+    } else if (fullTag.toUpperCase() === 'REVISE_CTA') {
+      segments.push({
+        type: 'revise_cta',
+        prompt: promptBody,
+        tagId,
+      });
+    } else if (fullTag.toUpperCase() === 'APPLY_CHARACTER_STYLE') {
+      segments.push({
+        type: 'apply_character_style',
+        style: promptBody,
+        tagId,
+      });
+    }
+
+    lastIndex = regex.lastIndex;
+  }
+
+  if (lastIndex < content.length) {
+    const trailing = content.slice(lastIndex).trim();
+    if (trailing) {
+      segments.push({ type: 'text', content: trailing });
+    }
+  }
+
+  if (segments.length === 0 && content.trim().length > 0) {
+    segments.push({ type: 'text', content });
+  }
+
+  return segments;
+}
+
+export function buildDefaultImagePrompt(attachments: AssistantImageAttachment[]): string {
+  if (attachments.length === 0) return '';
+  const hasCharacter = attachments.some((a) => a.role === 'character' || a.role === 'both');
+  const hasStyle = attachments.some((a) => a.role === 'style' || a.role === 'both');
+  if (hasCharacter && hasStyle) {
+    return 'Analyze the attached reference image(s) thoroughly and extract a consistent character and visual style description for StoryFrame.';
+  }
+  if (hasCharacter) {
+    return 'Analyze the attached character reference image thoroughly and extract a locked character appearance description for StoryFrame.';
+  }
+  return 'Analyze the attached style reference image thoroughly and extract a visual style description for StoryFrame.';
+}
+
+export function selectSendableAttachmentIds(
+  recentHistory: AssistantChatMessage[],
+  newAttachments: AssistantImageAttachment[],
+  maxImages: number = MAX_ACTIVE_IMAGES_PER_REQUEST
+): Set<string> {
+  const allowedIds = new Set<string>();
+  // Prioritize newest turn attachments first, then walk backward through recent turns
+  const ordered: AssistantImageAttachment[] = [...newAttachments];
+  for (let i = recentHistory.length - 1; i >= 0; i--) {
+    const atts = recentHistory[i].attachments || [];
+    for (let j = atts.length - 1; j >= 0; j--) {
+      ordered.push(atts[j]);
+    }
+  }
+  for (const att of ordered) {
+    if (!att.base64Data && !att.dataUrl) continue;
+    if (allowedIds.size >= maxImages) break;
+    allowedIds.add(att.id);
+  }
+  return allowedIds;
+}
+
+export function buildAttachmentContextPrefix(
+  attachments: AssistantImageAttachment[],
+  omittedFromBinary: boolean = false
+): string {
+  if (!attachments || attachments.length === 0) return '';
+  const labels = attachments.map((att, idx) => {
+    const roleLabel = formatAttachmentRoleLabel(att.role);
+    const stateNote = omittedFromBinary ? ', image binary omitted to fit model window' : '';
+    return `[Reference Image ${idx + 1}: Role = ${roleLabel}${stateNote}]`;
+  });
+  return `${labels.join(' ')}\n`;
+}
 
 export async function sendChatMessage(
   history: AssistantChatMessage[],
@@ -146,7 +355,8 @@ export async function sendChatMessage(
   modelQuality: GeminiModelQuality = 'standard',
   provider: AiProvider = 'gemini',
   groqModel?: string,
-  storyContext?: string
+  storyContext?: string,
+  newAttachments: AssistantImageAttachment[] = []
 ): Promise<string> {
   const trimmedKey = (apiKey || '').trim();
   if (!trimmedKey) {
@@ -157,6 +367,11 @@ export async function sendChatMessage(
     );
   }
 
+  const effectiveMessage = newMessage.trim() || buildDefaultImagePrompt(newAttachments);
+  if (!effectiveMessage) {
+    throw new Error('Please enter a message or attach a reference image.');
+  }
+
   // Build effective system instruction with active story context if present
   const effectiveSystemInstruction = storyContext && storyContext.trim().length > 0
     ? `${SYSTEM_INSTRUCTION}\n\n================================================================================\nACTIVE STORYBOARD CONTEXT (CURRENT STORY LOADED IN THE APP):\n================================================================================\n${storyContext.trim()}`
@@ -164,16 +379,58 @@ export async function sendChatMessage(
 
   // Format message history (keep last 6 messages to minimize token usage)
   const recentHistory = history.slice(-6);
+  const sendableAttachmentIds = selectSendableAttachmentIds(recentHistory, newAttachments, MAX_ACTIVE_IMAGES_PER_REQUEST);
 
   if (provider === 'groq') {
     const targetModel = groqModel || (modelQuality === 'high' ? 'openai/gpt-oss-120b' : 'qwen/qwen3.8-27b');
-    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+    const supportsVision = isGroqVisionModel(targetModel);
+
+    if (newAttachments.length > 0 && !supportsVision) {
+      throw new Error(
+        `The active Groq model (${targetModel}) only supports text. Switch to Gemini or select Qwen 3.8 27B under Model Options to analyze reference images.`
+      );
+    }
+
+    const buildGroqUserContent = (
+      text: string,
+      attachments: AssistantImageAttachment[] = []
+    ): string | GroqChatContentPart[] => {
+      const activeImages = supportsVision
+        ? attachments.filter((att) => sendableAttachmentIds.has(att.id) && att.dataUrl)
+        : [];
+      const prefix = buildAttachmentContextPrefix(
+        attachments,
+        attachments.length > 0 && activeImages.length < attachments.length
+      );
+      const combinedText = `${prefix}${text}`.trim();
+
+      if (activeImages.length === 0) {
+        return combinedText;
+      }
+
+      const parts: GroqChatContentPart[] = [{ type: 'text', text: combinedText }];
+      for (const img of activeImages) {
+        parts.push({
+          type: 'image_url',
+          image_url: { url: img.dataUrl },
+        });
+      }
+      return parts;
+    };
+
+    const messages: GroqChatMessage[] = [
       { role: 'system', content: effectiveSystemInstruction },
       ...recentHistory.map((msg) => ({
         role: msg.role === 'user' ? ('user' as const) : ('assistant' as const),
-        content: msg.content,
+        content:
+          msg.role === 'user'
+            ? buildGroqUserContent(msg.content, msg.attachments || [])
+            : msg.content,
       })),
-      { role: 'user', content: newMessage.trim() },
+      {
+        role: 'user',
+        content: buildGroqUserContent(effectiveMessage, newAttachments),
+      },
     ];
 
     try {
@@ -181,7 +438,7 @@ export async function sendChatMessage(
         model: targetModel,
         jsonMode: false,
         temperature: 0.6,
-        maxTokens: 1200,
+        maxTokens: 1400,
       });
 
       if (!content || !content.trim()) {
@@ -196,20 +453,48 @@ export async function sendChatMessage(
   }
 
   // Provider: Gemini
+  const buildGeminiUserParts = (
+    text: string,
+    attachments: AssistantImageAttachment[] = []
+  ): Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> => {
+    const activeImages = attachments.filter(
+      (att) => sendableAttachmentIds.has(att.id) && att.base64Data
+    );
+    const prefix = buildAttachmentContextPrefix(
+      attachments,
+      attachments.length > 0 && activeImages.length < attachments.length
+    );
+    const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [
+      { text: `${prefix}${text}`.trim() },
+    ];
+    for (const img of activeImages) {
+      parts.push({
+        inlineData: {
+          mimeType: img.mimeType || 'image/jpeg',
+          data: img.base64Data,
+        },
+      });
+    }
+    return parts;
+  };
+
   const contents: any[] = [];
 
   // Add conversation turns
   for (const msg of recentHistory) {
     contents.push({
       role: msg.role === 'user' ? 'user' : 'model',
-      parts: [{ text: msg.content }],
+      parts:
+        msg.role === 'user'
+          ? buildGeminiUserParts(msg.content, msg.attachments || [])
+          : [{ text: msg.content }],
     });
   }
 
   // Add latest user query
   contents.push({
     role: 'user',
-    parts: [{ text: newMessage.trim() }],
+    parts: buildGeminiUserParts(effectiveMessage, newAttachments),
   });
 
   // Use the exact model chosen by the user in Model Options (no fallback switching)
@@ -217,7 +502,7 @@ export async function sendChatMessage(
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${trimmedKey}`;
 
   const generationConfig: Record<string, any> = {
-    maxOutputTokens: 1200,
+    maxOutputTokens: 1400,
   };
   if (targetModel !== 'gemini-4-hydrogen') {
     generationConfig.temperature = 0.6;

@@ -42,6 +42,7 @@ function StoryFrameMain() {
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
   const [openModelOptionsTrigger, setOpenModelOptionsTrigger] = useState(0);
   const [generationStatusMessage, setGenerationStatusMessage] = useState<string | null>(null);
+  const [assistantCharacterStyleOverride, setAssistantCharacterStyleOverride] = useState<{ style: string; nonce: number } | null>(null);
   const activeAbortControllerRef = useRef<AbortController | null>(null);
 
   // Load history on initial mount
@@ -170,6 +171,7 @@ function StoryFrameMain() {
     setIsLoading(false);
     setResult(null);
     setLastRequest(null);
+    setAssistantCharacterStyleOverride(null);
     setErrorMessage(null);
     setActivePage('generator');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -339,6 +341,7 @@ function StoryFrameMain() {
               initialValues={lastRequest}
               openModelOptionsTrigger={openModelOptionsTrigger}
               onDirectResult={handleDirectResult}
+              externalCharacterStyle={assistantCharacterStyleOverride}
             />
           )
         ) : activePage === 'ai-usage' ? (
@@ -375,6 +378,13 @@ function StoryFrameMain() {
         onClose={() => setIsAssistantOpen(false)}
         currentResult={result}
         format={lastRequest?.format}
+        currentCharacterStyle={assistantCharacterStyleOverride?.style ?? lastRequest?.characterStyle ?? ''}
+        onApplyCharacterStyle={(style) => {
+          setAssistantCharacterStyleOverride({ style, nonce: Date.now() });
+          if (result !== null || activePage !== 'generator') {
+            setLastRequest((prev) => (prev ? { ...prev, characterStyle: style } : prev));
+          }
+        }}
         onUpdateBeatPrompt={handleUpdateBeatPrompt}
         onUpdateThumbnailPrompt={handleUpdateThumbnailPrompt}
         onUpdateCtaPrompt={handleUpdateCtaPrompt}
@@ -384,7 +394,7 @@ function StoryFrameMain() {
           setResult(null);
           setLastRequest((prev) => ({
             story: idea,
-            characterStyle: prev?.characterStyle || '',
+            characterStyle: assistantCharacterStyleOverride?.style ?? prev?.characterStyle ?? '',
             format: prev?.format || 'short',
             platform: prev?.platform || 'TikTok',
             durationMode: prev?.durationMode || 'automatic',

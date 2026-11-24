@@ -193,10 +193,24 @@ export interface HistoryItem {
   result: StoryGenerationResult;
 }
 
+export type AssistantImageRole = 'both' | 'character' | 'style';
+
+export interface AssistantImageAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  dataUrl: string;
+  base64Data: string;
+  role: AssistantImageRole;
+  width?: number;
+  height?: number;
+}
+
 export interface AssistantChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  attachments?: AssistantImageAttachment[];
   timestamp: number;
 }
 

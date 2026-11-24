@@ -7,9 +7,13 @@ import { extractAndRecordGroqUsage } from './aiUsageStorage';
 
 export const GROQ_API_BASE_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
+export type GroqChatContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } };
+
 export interface GroqChatMessage {
   role: 'system' | 'user' | 'assistant';
-  content: string;
+  content: string | GroqChatContentPart[];
 }
 
 export interface GroqChatOptions {
@@ -186,10 +190,16 @@ export async function callGroqChatCompletion(
   // Default to 8192 max tokens to prevent premature JSON truncation on multi-scene storyboards
   const maxTokens = options.maxTokens || 8192;
 
-  // Sanitize non-breaking hyphens and unusual whitespace in user prompts
+  // Sanitize non-breaking hyphens and unusual whitespace in user prompts (handles string or multimodal parts)
   const sanitizedMessages = messages.map((m) => ({
     role: m.role,
-    content: sanitizePromptText(m.content),
+    content: Array.isArray(m.content)
+      ? m.content.map((part) =>
+          part.type === 'text'
+            ? { type: 'text' as const, text: sanitizePromptText(part.text) }
+            : part
+        )
+      : sanitizePromptText(m.content),
   }));
 
   const payload: Record<string, any> = {

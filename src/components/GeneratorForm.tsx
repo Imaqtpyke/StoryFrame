@@ -1,4 +1,4 @@
-import { useState, FormEvent, MouseEvent, useEffect } from 'react';
+import { useState, FormEvent, MouseEvent, useEffect, useRef } from 'react';
 import CustomDropdown, { DropdownOption } from './CustomDropdown';
 import { useApiKey } from '../context/ApiKeyContext';
 import {
@@ -42,6 +42,7 @@ interface GeneratorFormProps {
   initialValues?: GenerateStoryRequest | null;
   openModelOptionsTrigger?: number;
   onDirectResult?: (result: StoryGenerationResult, request: GenerateStoryRequest) => void;
+  externalCharacterStyle?: { style: string; nonce: number } | null;
 }
 
 const RANDOM_STORIES: string[] = [
@@ -188,6 +189,7 @@ export default function GeneratorForm({
   initialValues,
   openModelOptionsTrigger,
   onDirectResult,
+  externalCharacterStyle,
 }: GeneratorFormProps) {
   const {
     apiKey,
@@ -210,7 +212,10 @@ export default function GeneratorForm({
   const [beatMode, setBeatMode] = useState<'automatic' | 'custom'>(initialValues?.beatMode || 'automatic');
   const [customScenes, setCustomScenes] = useState<CustomSceneDefinition[]>(initialValues?.customScenes || []);
   const [story, setStory] = useState(initialValues?.story || '');
-  const [characterStyle, setCharacterStyle] = useState(initialValues?.characterStyle || '');
+  const [characterStyle, setCharacterStyle] = useState(
+    externalCharacterStyle ? externalCharacterStyle.style : (initialValues?.characterStyle || '')
+  );
+  const appliedExternalStyleNonceRef = useRef<number>(externalCharacterStyle?.nonce || 0);
   const [format, setFormat] = useState<StoryFormat>(initialValues?.format || 'short');
   const [platform, setPlatform] = useState(initialValues?.platform || 'TikTok');
   const [durationValue, setDurationValue] = useState(
@@ -226,6 +231,13 @@ export default function GeneratorForm({
   const [customNumeric, setCustomNumeric] = useState('');
   const [customVideoSeconds, setCustomVideoSeconds] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(!hasCustomKey);
+
+  useEffect(() => {
+    if (externalCharacterStyle && externalCharacterStyle.nonce > appliedExternalStyleNonceRef.current) {
+      setCharacterStyle(externalCharacterStyle.style);
+      appliedExternalStyleNonceRef.current = externalCharacterStyle.nonce;
+    }
+  }, [externalCharacterStyle]);
 
   useEffect(() => {
     if (openModelOptionsTrigger && openModelOptionsTrigger > 0) {
