@@ -302,7 +302,16 @@
 
 - [x] **AI Assistant Reference Image Upload for Character & Visual Style (Suite 45, 264/264 passing):** Added client-side EXIF-aware resizing/compression up to 5 reference images (`src/utils/imageAttachment.ts`), defaulted all images to combined Character & Visual Style with no role picker clutter, enforced Gemini 5-image / Groq Qwen 3-image limits and quota-safe `sessionStorage` trimming (`assistantChatService.ts`), composer file picker + clipboard paste + error banner (`AssistantChatDrawer.tsx`), and one-click `Use Character & Style` redirect to the Home generator with `#character-prompt-input` pre-filled and focused (`App.tsx`).
 
+- [x] **Core Upgrade: Universal Grounded Pipeline, Style-Native Prompts & 4s Clip Cohesion (Suite 46, 268/268 passing):** Classified 5 visual style families (`photoreal`, `stylized_3d`, `stop_motion`, `illustration_2d`, `minimalist_flat`) to replace live-action 35mm boilerplate with medium-native craft, expanded Story Bible continuity (`permanentAnatomy`, `eraWardrobe`, `spatialMap`, `lightingArc`, `parallelCast`), routed all `generateOriginalStory` requests (including Custom Beat Mode and Short/Video) through `executeGroundedPipeline()` with style-and-duration-keyed checkpoints, kept Option B 2-to-6 word T2I beat segmentation untouched, enforced 4s clip cohesion (`<= 2` beats / `<= 4s`) plus universal `SCENE CLIP PROMPT` copy cards in `ResultsView.tsx` with zero external tool names, and added Stage 4 dynamic threat, video camera-vector conflict, and `parallelCast` checks.
+
 ## Active Testing & Planned Future Roadmap (Post-Testing)
+- [ ] **Deferred Optional Extras (Core Upgrade Follow-Ups):**
+  1. Cross-scene Copy & Next navigation + Copied state checkmarks for rapid phone copy-pasting.
+  2. Saveable Channel Style DNA Presets (1-tap reusable character, palette, and art-style profiles).
+  3. Paste `.SRT` / Audio Runtime Timing Sync for locking beat lengths directly to external voiceover timings.
+  4. Copy Clean Voiceover Script button (plain TTS-ready narration without beat markers or camera notes).
+  5. Single-beat Quick Rewrite (re-roll one weak beat prompt in place without regenerating the storyboard).
+  6. Opening 3s Visual Hook Priority toggle for aggressive scroll-stopping cold opens.
 - [ ] **Genre Stress-Testing Loop (In Progress):**
   - Completed: **Sci-Fi**, **Documentary / History**, **Horror / Psychological Thriller**, **Stylized Art**, **Multi-Character + Flashbacks**, **130-Word Finance/Diorama (Text-to-Image)**, and **Text-to-Video (4s Clip Mode)**.
   - Remaining stress categories:

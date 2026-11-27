@@ -44,7 +44,11 @@ import {
   sanitizeGenericErrorMessage,
   streamJsonLlmWithSceneProgress,
 } from './unifiedAiService';
-import { compileThumbnailPrompt } from './promptCompiler';
+import {
+  compileThumbnailPrompt,
+  classifyVisualStyleFamily,
+  getStyleNativeRenderCue,
+} from './promptCompiler';
 
 function removeEmDashes(text: string): string {
   return normalizeUnicodeAndDashes(text);
@@ -195,9 +199,12 @@ export async function generateEnhancedStory(
     );
   }
 
+  const requestedStyleFamily = classifyVisualStyleFamily(characterStyle);
+  const nativeRenderCue = getStyleNativeRenderCue(requestedStyleFamily, isVideoMode);
+
   let durationInstruction = '';
   if (isVideoMode) {
-    durationInstruction = `Generation mode is Text to Video (Google Flow / Veo / Kling). Target single video clip cadence is ${targetVideoDuration} seconds per scene. Break the story into distinct visual scenes with self-contained standalone video beat prompts in beats[].imagePrompt.`;
+    durationInstruction = `Generation mode is pure Text to Video. Target single video clip cadence is ${targetVideoDuration} seconds per scene. Break the story into distinct visual scenes with a cohesive linear clip prompt in scenes[].videoPrompt plus self-contained beat prompts in beats[].imagePrompt.`;
   } else if (durationMode === 'automatic') {
     durationInstruction = `Duration mode is Automatic. Break the story into however many scenes it naturally requires. Estimate realistic narration pacing with a floor of 3 to 6 seconds of spoken narration per scene. Calculate and return totalDurationSeconds accurately based on the scene pacing.`;
   } else if (durationSeconds && durationSeconds > 0) {
@@ -253,9 +260,9 @@ You MUST take their raw premise, question, draft, or concept and perform compreh
 
 6. DYNAMIC VISUAL-EVENT & SELECTIVE MONTAGE BREAKDOWN & 100% NARRATION COVERAGE:
    ${isVideoMode
-     ? `- MANDATORY MULTI-BEAT RULE: A single beat spanning an entire ${targetVideoDuration}-second video clip is STRICTLY FORBIDDEN.
-   - Every ${targetVideoDuration}-second scene MUST be subdivided into ${targetVideoDuration <= 5 ? '2 to 3' : '3 to 4'} cohesive visual-event micro-beats whose "estimatedSeconds" add up cleanly to ${targetVideoDuration}.0s.
-   - If a line stacks a semantic-anchor origin flashback ("It's an entity that has studied you since birth" with infant inside wooden crib) AND an action triplet ("every blink, every breath, every move"), repeated negations, or climax turns, SPILL across consecutive ${targetVideoDuration}-second clips (max <=${maxSpokenWordsPerScene} spoken words and <=3 cuts per clip) instead of cramming 5-6 cuts into one ${targetVideoDuration}s AI video clip.`
+     ? `- CLIP COHESION & MICRO-BEAT PACING: Every ${targetVideoDuration}-second scene clip MUST use ${targetVideoDuration <= 4.5 ? '1 to 2 cohesive beats' : '2 to 3 cohesive micro-beats'} whose "estimatedSeconds" add up cleanly to ${targetVideoDuration}.0s within one continuous spatial setting.
+   - ALSO output a top-level "videoPrompt" (45 to 85 words) on each Scene object uniting the entire ${targetVideoDuration}-second clip linearly: Framing -> Subject with permanent outfit -> Continuous action into settling hold -> Location & Lighting -> Single camera vector settling cleanly -> Style-native craft (${nativeRenderCue}) -> "Audio: [ambient foley], no dialogue."
+   - If a line stacks a semantic-anchor origin flashback ("It's an entity that has studied you since birth" with infant inside wooden crib) AND an action triplet ("every blink, every breath, every move"), repeated negations, or climax turns, SPILL across consecutive ${targetVideoDuration}-second clips (max <=${maxSpokenWordsPerScene} spoken words and <=2-3 cuts per clip) instead of cramming 5-6 cuts into one ${targetVideoDuration}s AI video clip.`
      : `- OPTION B PHRASE-LEVEL VISUAL SEGMENTATION (2 TO 6 WORDS PER BEAT, NATURAL GRAMMAR, ~0.7s TO 2.0s PER CUT): Partition spoken narration into crisp 2 to 6 word visual phrases along natural grammatical boundaries so every short phrase receives its own distinct image!
      * Example: "If you pay off your mortgage ten years early, your lender might hit you with a massive penalty" ->
        - Beat 1 ("If you pay off"): Close-Up on hands sliding coins across a desk.
@@ -335,40 +342,39 @@ Your task is to take a story and generate a production-ready, scene-by-scene vid
 TARGET DURATION & SMART BEAT ADAPTATION:
 The target video duration is ${targetVideoDuration} seconds per scene clip (e.g., ${targetVideoDuration}s).
 You MUST analyze the narrator sentence and narrative action of each scene and break it into sequential visual video shot beats that TOGETHER precisely span and cover the ${targetVideoDuration}-second duration:
-- For a ${targetVideoDuration}-second clip: create ${targetVideoDuration <= 6 ? '2 to 3 concise video shot beats (~1.0s to 2.0s each, precisely totaling ' + targetVideoDuration + 's)' : '3 to 5 developmental video shot beats (~1.5s to 2.5s each, precisely totaling ' + targetVideoDuration + 's)'}.
-- SINGLE-BEAT SCENES ARE STRICTLY FORBIDDEN. Every scene clip MUST feature multiple progressive shot beats.
-- Each beat covers a phrase fragment of 2 to 4 words from the narratorLine, with distinct camera shotType, cameraAngle, and cameraMovement.
+- For a ${targetVideoDuration}-second clip: create ${targetVideoDuration <= 4.5 ? '1 to 2 cohesive shot beats (totaling ' + targetVideoDuration + 's)' : '2 to 3 developmental shot beats (~1.5s to 2.5s each, totaling ' + targetVideoDuration + 's)'}, plus ONE unified linear scene "videoPrompt" (45-85 words).
+- Each beat covers a natural spoken phrase from the narratorLine, with clear shotType, cameraAngle, and single-vector cameraMovement that settles cleanly.
 
 SCHEMA AND STRUCTURE REQUIREMENTS:
 1. Style Profile:
    Analyze the whole story to generate a top-level "styleProfile" object containing:
    - "artStyle": visual art medium or cinematic style adapting to: "${characterStyle || 'cinematic hyperrealism'}"
    - "colorPalette": harmonious color palette matching the specific mood of this story
-   - "lighting": lighting style and atmospheric quality
+   - "lighting": lighting style and atmospheric quality described cleanly in natural words
    - "eraAndSetting": historical or fictional period, geography, and environmental backdrop
-   - "lensAndFilmStock": lens and film stock descriptor (e.g., "Shot on 35mm anamorphic prime lens, subtle 35mm Kodak 5219 film grain, high dynamic range")
+   - "lensAndFilmStock": style-native rendering craft matching "${nativeRenderCue}" (use camera optics ONLY for photorealistic styles; use tactile clay, 3D rendering, 2D brushwork, or geometric texture cues for non-photoreal styles)
 
 2. Continuity Sheets & Locked Wardrobe Token (MANDATORY RESOLUTION):
    Generate the full breakdown in one model call that has the entire story in view.
    - "characterSheet": Create a top-level object mapping EVERY recurring human character, secondary role/antagonist (e.g. both "Homeowner" AND "Bank Lender" / "Bank Clerk"), AND recurring non-human entity/creature to ONE fixed, highly detailed expression-free visual description resolving face, hair, eyewear, and PERMANENT WARDROBE/SILHOUETTE without "neutral facial features" or stance sentences ("Stance is natural..."). Keep infant flashbacks free of adult clothing!
    - "locationSheet": Create a top-level object mapping any specific place returned to more than once to ONE fixed, highly detailed visual description.
     - CRITICAL WARDROBE LOCK & STRICT BAN ON "MATCHING ESTABLISHED LOOK":
-      * Downstream AI video generators (Google Flow, Veo, Kling, Runway, Sora) render each shot independently and have NO memory of prior scenes.
+      * Downstream AI video generators render each shot independently and have NO memory of prior scenes.
       * You are STRICTLY FORBIDDEN from writing shortcut phrases like "(matching established look from Scene 1)" or "(matching established look)"!
-      * In EVERY beat's "imagePrompt" where a character appears, you MUST explicitly repeat the character's locked clothing and eyewear. NEVER allow clothes to morph or change without story reason!
+      * In EVERY beat's "imagePrompt" and scene "videoPrompt" where a character appears, you MUST explicitly repeat the character's locked clothing and eyewear. NEVER allow clothes to morph or change without story reason!
       * NEVER embed hero-pronoun wardrobe sentences ("He wears...", "His face...") inside "styleProfile.artStyle": keep artStyle strictly focused on medium, materials, and rendering aesthetics.
 
 3. Smart Video Beats Array ("beats"):
-   For each scene, provide an array of fine-grained video beats representing the temporal subdivisions of this ${targetVideoDuration}-second clip. Every beat's "imagePrompt" is a standalone Google Flow / AI video generation prompt.
+   For each scene, provide a scene-level "videoPrompt" plus an array of video beats representing the temporal subdivisions of this ${targetVideoDuration}-second clip.
    Each beat MUST contain:
    - "beatIndex": integer (1, 2, 3...)
-   - "textSpan": specific phrase or spoken clause from the narrator line. Every beat MUST correspond to actual spoken words from the narrator line. DO NOT create artificial extra beats with empty textSpan ("") or ghost beats. Distribute the ${targetVideoDuration} seconds across the actual phrases of the sentence (e.g. 2 beats of 2.0s each for a 4-second clip).
+   - "textSpan": specific phrase or spoken clause from the narrator line. Every beat MUST correspond to actual spoken words from the narrator line. DO NOT create artificial extra beats with empty textSpan (""). Distribute the ${targetVideoDuration} seconds across the actual phrases of the sentence (e.g. 2 beats of 2.0s each for a 4-second clip).
    - "estimatedSeconds": estimated duration in seconds
    - "shotType": explicit cinematography shot size
    - "cameraAngle": explicit camera angle
-   - "cameraMovement": cinematic camera motion cue
+   - "cameraMovement": single-vector camera motion cue
    - "temporalAnchor": optional string for explicit year/date/duration
-   - "imagePrompt": Self-contained Google Flow / AI text-to-video prompt capturing this specific beat's action (45 to 70 words). Open cleanly once with ONE shot size matching "shotType", ONE camera angle matching "cameraAngle", and camera motion (never repeat framing openers or mix "Close-Up" and "extreme-close-up"), followed by [Subject with locked outfit when character is present] performing [grounded action with velocity], environmental physics, Kelvin lighting, optics, and Audio: [foley, no dialogue]. Do NOT embed "9:16 vertical", "--ar 9:16", or duplicate "Visual Style:" tags.
+   - "imagePrompt": Self-contained Text-to-Video prompt capturing this specific beat's action (45 to 70 words). Open cleanly once with ONE shot size matching "shotType", ONE camera angle matching "cameraAngle", and camera motion (never repeat framing openers or mix "Close-Up" and "extreme-close-up"), followed by [Subject with locked outfit when character is present] performing [grounded action with velocity], environmental physics, descriptive lighting, style-native craft (${nativeRenderCue}), and Audio: [foley, no dialogue]. Do NOT embed "9:16 vertical", "--ar 9:16", or duplicate "Visual Style:" tags.
 
 6. VISUAL INFORMATION BUDGET & REVEAL DISCIPLINE (STRICT NO-LEAKAGE RULE):
    - In multi-beat sentences (e.g. "If you pour tea into a harbor, something terrifying happens"):
@@ -398,6 +404,7 @@ STRICT CONSTRAINTS:
       "index": number,
       "narratorLine": string,
       "estimatedSeconds": number,
+      "videoPrompt": "45 to 85 word cohesive linear T2V clip prompt for this full clip, ambient foley no dialogue",
       "establishedCharacters": ["Name"],
       "establishedSettings": ["Setting"],
       "beats": [
@@ -504,7 +511,7 @@ Rules:
   * "colorPalette": exact dominant palette grounded in this story.
   * "lighting": concrete atmospheric lighting matching this story's mood and eras.
   * "eraAndSetting": exact time period, weather, and world location from the story.
-  * "lensAndFilmStock": specific prime lens/stock profile.
+  * "lensAndFilmStock": style-native rendering craft matching "${nativeRenderCue}" (use camera optics ONLY for photorealistic styles; use tactile clay, 3D rendering, 2D brushwork, or geometric texture cues for non-photoreal styles).
 - "characterSheet": MUST list EVERY recurring character, creature/spirit, parent/relative, and distinct age/flashback variant with permanent expression-free biometric traits, accurate anatomy (e.g. paws vs hooves, never unstated wings), and locked wardrobe/accessories. NEVER add inanimate graphic text, headlines, captions, or props (like "The Headlines") into characterSheet. Never leave empty when characters appear.
 - "locationSheet": EVERY recurring setting with concrete physical surfaces and props.
 - "scriptOutline": concise ordered list of the exact spoken voiceover sentences from Scene 1 to final Scene matching target duration.
@@ -619,7 +626,7 @@ Rules:
 
   const userPrompt = `[PIPELINE: AUTO STORY ARCHITECT & HOOK OPTIMIZER ACTIVE - Step 2 Beat Breakdown using Locked Story Bible & Script Outline]
 
-LOCKED STORY BIBLE (MUST FOLLOW 100% — DO NOT REPEAT THIS OBJECT IN YOUR OUTPUT):
+LOCKED STORY BIBLE (MUST FOLLOW 100% - DO NOT REPEAT THIS OBJECT IN YOUR OUTPUT):
 Hook Analysis: ${JSON.stringify(bibleData?.hookAnalysis || {})}
 Style Profile: ${JSON.stringify(bibleData?.styleProfile || {})}
 Character Sheet: ${JSON.stringify(bibleData?.characterSheet || {})}
@@ -696,12 +703,19 @@ Output ONLY { "scenes": [ ... ] } starting immediately with Scene 1 Beat 1.`;
     // Sanitize styleProfile (strip hero pronoun wardrobe leaks from shared artStyle, and enforce monochrome lighting purity)
     const rawStyleProfile = dataObj.styleProfile || {};
     const cleanedArtStyle = sanitizeSharedVisualStyle(removeEmDashes(rawStyleProfile.artStyle || characterStyle || 'Cinematic Rendering'));
+    const resolvedStyleFamily = classifyVisualStyleFamily(cleanedArtStyle || characterStyle);
+    const nativeCraftFallback = getStyleNativeRenderCue(resolvedStyleFamily, isVideoMode);
     const preliminaryStyleProfile: StyleProfile = {
       artStyle: cleanedArtStyle || removeEmDashes(characterStyle || 'Cinematic Rendering'),
       colorPalette: removeEmDashes(rawStyleProfile.colorPalette || 'Harmonious color grading matching narrative tone'),
-      lighting: removeEmDashes(rawStyleProfile.lighting || 'Cinematic three-point lighting with soft rim fill'),
+      lighting: removeEmDashes(rawStyleProfile.lighting || 'Natural atmospheric lighting with soft rim fill'),
       eraAndSetting: removeEmDashes(rawStyleProfile.eraAndSetting || 'Contemporary atmospheric setting'),
-      lensAndFilmStock: removeEmDashes(rawStyleProfile.lensAndFilmStock || 'Shot on 35mm anamorphic prime lens, subtle film grain'),
+      lensAndFilmStock: removeEmDashes(
+        resolvedStyleFamily === 'photoreal'
+          ? rawStyleProfile.lensAndFilmStock || nativeCraftFallback
+          : nativeCraftFallback
+      ),
+      styleFamily: resolvedStyleFamily,
     };
     const sanitizedStyleProfile: StyleProfile = isMonochromeStyle(preliminaryStyleProfile)
       ? {
@@ -807,6 +821,20 @@ Output ONLY { "scenes": [ ... ] } starting immediately with Scene 1 Beat 1.`;
         };
       });
 
+      const rawMasterVideo = typeof scene.videoPrompt === 'string' ? removeEmDashes(scene.videoPrompt.trim()) : '';
+      const fallbackClipPrompt =
+        isVideoMode && !rawMasterVideo && sanitizedBeats.length > 0
+          ? `${format === 'long' ? 'Wide 16:9 composition' : 'Vertical 9:16 portrait composition'}, ${sanitizedBeats
+              .map((b) =>
+                b.imagePrompt
+                  .replace(/\s*--ar\s+[0-9:]+/gi, '')
+                  .replace(/\bAudio:[^.]*\./gi, '')
+                  .trim()
+              )
+              .slice(0, 2)
+              .join(' Transitioning smoothly, ')}. ${getStyleNativeRenderCue(resolvedStyleFamily, true)}. ${sanitizedStyleProfile.artStyle}. Audio: subtle ambient atmosphere matching scene action, no dialogue.`
+          : rawMasterVideo;
+
       return {
         index: sceneIndex,
         narratorLine,
@@ -815,6 +843,7 @@ Output ONLY { "scenes": [ ... ] } starting immediately with Scene 1 Beat 1.`;
         establishedCharacters: Array.isArray(scene.establishedCharacters) ? scene.establishedCharacters : [],
         establishedSettings: Array.isArray(scene.establishedSettings) ? scene.establishedSettings : [],
         isAnchorScene: sIdx === 0,
+        videoPrompt: isVideoMode ? fallbackClipPrompt || undefined : undefined,
       };
     });
 

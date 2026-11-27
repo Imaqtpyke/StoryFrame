@@ -19,10 +19,19 @@ import {
 } from '../types';
 import { stage0PrepareNarration } from './stage0Prepare';
 import { stage1GenerateStoryBible } from './stage1StoryBible';
-import { stage2GenerateBeatPlan, PlannedScene } from './stage2BeatPlan';
-import { stage3WriteScenePromptsBatch, WrittenPromptBeat } from './stage3PromptWriter';
+import { stage2GenerateBeatPlan, buildPlannedScenesFromCustomScenes, PlannedScene } from './stage2BeatPlan';
+import {
+  stage3WriteScenePromptsBatch,
+  WrittenPromptBeat,
+  SceneStage3Meta,
+  buildFallbackSceneVideoPrompt,
+} from './stage3PromptWriter';
 import { stage4VerifyAndRepairScene } from './stage4VerifyRepair';
-import { compileThumbnailPrompt, buildStoryDerivedHookFallback } from './promptCompiler';
+import {
+  compileThumbnailPrompt,
+  buildStoryDerivedHookFallback,
+  classifyVisualStyleFamily,
+} from './promptCompiler';
 import { paceGeminiStep } from './unifiedAiService';
 import {
   buildCheckpointKey,
@@ -33,22 +42,28 @@ import {
   summarizeGroundedCheckpoint,
 } from './groundedCheckpoint';
 
-const SCENE_BATCH_SIZE = 2;
+const VIDEO_CAMERA_MOTIONS = [
+  'Slow Push-In',
+  'Tracking Subject',
+  'Smooth Pan',
+  'Low Dolly Glide',
+];
 
 export function getGroundedProgressForRequest(req: GenerateStoryRequest | null | undefined): GroundedCheckpointProgress | null {
   if (!req || !req.story || !req.story.trim()) return null;
-  if (req.format !== 'long' || req.generationMode === 'video') return null;
 
   const prepared = stage0PrepareNarration(req.story);
   if (prepared.words.length === 0) return null;
 
+  const isVideo = req.generationMode === 'video';
   const key = buildCheckpointKey(
     prepared.cleanNarration,
     prepared.authorNotes,
     req.format || 'long',
     req.generationMode || 'image',
     req.modelQuality || 'standard',
-    req.characterStyle
+    req.characterStyle,
+    isVideo ? req.targetVideoDuration : undefined
   );
   return summarizeGroundedCheckpoint(key);
 }
@@ -58,13 +73,15 @@ export function clearGroundedProgressForRequest(req: GenerateStoryRequest | null
   const prepared = stage0PrepareNarration(req.story);
   if (prepared.words.length === 0) return;
 
+  const isVideo = req.generationMode === 'video';
   const key = buildCheckpointKey(
     prepared.cleanNarration,
     prepared.authorNotes,
     req.format || 'long',
     req.generationMode || 'image',
     req.modelQuality || 'standard',
-    req.characterStyle
+    req.characterStyle,
+    isVideo ? req.targetVideoDuration : undefined
   );
   clearGroundedCheckpoint(key);
 }
@@ -109,11 +126,15 @@ function assembleGroundedStoryResult(params: {
     locationSheet[l.id] = l.visualLock;
   }
 
+  const styleFamily = bible.styleFamily || classifyVisualStyleFamily(req.characterStyle || bible.worldStyle);
+  const openingLighting = bible.lightingArc?.[0]?.lightingDescription || 'Natural atmospheric lighting';
+
   const styleProfile: StyleProfile = {
     artStyle: bible.worldStyle,
     colorPalette: 'Grounded period tones',
-    lighting: 'Natural atmospheric lighting',
+    lighting: openingLighting,
     eraAndSetting: bible.locations.map((l) => l.id).join(', '),
+    styleFamily,
   };
 
   const totalDurationSeconds = scenes.reduce((acc, sc) => acc + sc.estimatedSeconds, 0);
@@ -192,6 +213,9 @@ export async function executeGroundedPipeline(
   const provider = req.aiProvider || 'gemini';
   const groqModel = req.groqModel;
   const isVideo = generationMode === 'video';
+  const targetVideoDuration = isVideo
+    ? req.targetVideoDuration || (typeof req.durationSeconds === 'number' && req.durationSeconds <= 15 ? req.durationSeconds : 5)
+    : undefined;
 
   // --------------------------------------------------------------------------
   // Stage 0: Preparation (Strip NOTES: from narration, index words, parse timings)
@@ -209,7 +233,8 @@ export async function executeGroundedPipeline(
     format,
     generationMode,
     modelQuality,
-    req.characterStyle
+    req.characterStyle,
+    targetVideoDuration
   );
 
   let checkpoint = getGroundedCheckpoint(checkpointKey);
@@ -223,7 +248,7 @@ export async function executeGroundedPipeline(
       onStatusMessage('Resuming saved Story Bible checkpoint...');
     }
   } else {
-    if (onStatusMessage) onStatusMessage('Stage 1: Architecting Story Bible (Cast, Threat, Referents)...');
+    if (onStatusMessage) onStatusMessage('Stage 1: Architecting Story Bible (Cast, Spatial Map, Lighting Arc)...');
     bible = await stage1GenerateStoryBible(
       prepared.cleanNarration,
       prepared.authorNotes,
@@ -232,7 +257,8 @@ export async function executeGroundedPipeline(
       userSignal,
       onStatusMessage,
       provider,
-      groqModel
+      groqModel,
+      req.characterStyle
     );
     saveGroundedCheckpoint({
       key: checkpointKey,
@@ -266,7 +292,7 @@ export async function executeGroundedPipeline(
   }
 
   // --------------------------------------------------------------------------
-  // Stage 2: Beat Planning (Resumable From Checkpoint)
+  // Stage 2: Beat Planning (Resumable From Checkpoint, supports Custom Beats)
   // --------------------------------------------------------------------------
   let plannedScenes: PlannedScene[] | undefined =
     checkpoint?.plannedScenes && checkpoint.plannedScenes.length > 0 ? checkpoint.plannedScenes : undefined;
@@ -280,17 +306,40 @@ export async function executeGroundedPipeline(
           : `Resuming saved Beat Plan (${plannedScenes.length} scenes)...`
       );
     }
+  } else if (req.beatMode === 'custom' && Array.isArray(req.customScenes) && req.customScenes.length > 0) {
+    if (onStatusMessage) {
+      onStatusMessage('Stage 2: Locking user custom scene and beat cuts...');
+    }
+    plannedScenes = buildPlannedScenesFromCustomScenes(
+      req.customScenes,
+      prepared.words,
+      bible,
+      format,
+      generationMode,
+      targetVideoDuration
+    );
+    saveGroundedCheckpoint({
+      key: checkpointKey,
+      totalWords: prepared.words.length,
+      updatedAt: Date.now(),
+      bible,
+      plannedScenes,
+      completedScenes: checkpoint?.completedScenes || [],
+      lastDepicts: checkpoint?.lastDepicts,
+    });
+    checkpoint = getGroundedCheckpoint(checkpointKey);
   } else {
+    const stage2Label = `Stage 2: Segmenting ${isVideo ? `${targetVideoDuration}s video clip` : 'phrase-level'} beats (${format === 'short' ? '9:16 portrait' : '16:9 widescreen'})...`;
     await paceGeminiStep({
       provider,
       apiKey,
       delayMs: 1500,
       userSignal,
       onStatusMessage,
-      nextStepLabel: `Stage 2: Segmenting phrase-level beats (${format === 'short' ? '9:16 portrait' : '16:9 widescreen'})...`,
+      nextStepLabel: stage2Label,
     });
     if (onStatusMessage) {
-      onStatusMessage(`Stage 2: Segmenting phrase-level beats (${format === 'short' ? '9:16 portrait' : '16:9 widescreen'})...`);
+      onStatusMessage(stage2Label);
     }
     plannedScenes = await stage2GenerateBeatPlan(
       prepared.words,
@@ -302,7 +351,8 @@ export async function executeGroundedPipeline(
       userSignal,
       onStatusMessage,
       provider,
-      groqModel
+      groqModel,
+      targetVideoDuration
     );
     saveGroundedCheckpoint({
       key: checkpointKey,
@@ -345,32 +395,43 @@ export async function executeGroundedPipeline(
   }
 
   const mapWrittenBeatsToSceneBeats = (writtenList: WrittenPromptBeat[]): Beat[] =>
-    writtenList.map((vb) => ({
-      beatIndex: vb.beatIndex,
-      textSpan: vb.textSpan,
-      imagePrompt: vb.imagePrompt,
-      estimatedSeconds: vb.estimatedSeconds,
-      shotType: vb.shotSize,
-      cameraAngle: vb.angle,
-      cameraMovement: isVideo ? 'Continuous Camera Pan' : 'Static',
-      wordRange: vb.wordRange,
-      depicts: vb.depicts,
-      kind: vb.kind,
-      referentId: vb.referentId,
-      intensity: vb.intensity,
-      subjectIds: vb.subjectIds,
-      newInfo: vb.newInfo,
-      overlayText: vb.overlayText,
-      flaggedIssue: vb.flaggedIssue,
-    }));
+    writtenList.map((vb) => {
+      const lowerShot = (vb.shotSize || '').toLowerCase();
+      const videoMotion =
+        lowerShot.includes('extreme close') || lowerShot.includes('macro')
+          ? 'Static Frame'
+          : VIDEO_CAMERA_MOTIONS[(vb.beatIndex - 1) % VIDEO_CAMERA_MOTIONS.length];
 
+      return {
+        beatIndex: vb.beatIndex,
+        textSpan: vb.textSpan,
+        imagePrompt: vb.imagePrompt,
+        estimatedSeconds: vb.estimatedSeconds,
+        shotType: vb.shotSize,
+        cameraAngle: vb.angle,
+        cameraMovement: isVideo ? videoMotion : 'Static Frame',
+        wordRange: vb.wordRange,
+        depicts: vb.depicts,
+        kind: vb.kind,
+        referentId: vb.referentId,
+        intensity: vb.intensity,
+        subjectIds: vb.subjectIds,
+        newInfo: vb.newInfo,
+        overlayText: vb.overlayText,
+        flaggedIssue: vb.flaggedIssue,
+        shotRole: vb.shotRole,
+        clipIndex: vb.clipIndex,
+      };
+    });
+
+  const batchSize = format === 'short' || plannedScenes.length <= 8 ? 4 : 2;
   const cursor = finalScenes.length;
-  for (let bs = cursor; bs < plannedScenes.length; bs += SCENE_BATCH_SIZE) {
+  for (let bs = cursor; bs < plannedScenes.length; bs += batchSize) {
     if (userSignal?.aborted) {
       throw new DOMException('Cancelled by user', 'AbortError');
     }
 
-    const batchSlice = plannedScenes.slice(bs, bs + SCENE_BATCH_SIZE);
+    const batchSlice = plannedScenes.slice(bs, bs + batchSize);
     const firstSceneNum = batchSlice[0].index || bs + 1;
     const lastSceneNum = batchSlice[batchSlice.length - 1].index || bs + batchSlice.length;
 
@@ -393,6 +454,19 @@ export async function executeGroundedPipeline(
       sceneIndex: ps.index || bs + offset + 1,
       beats: ps.beats,
     }));
+
+    const sceneMetaMap = new Map<number, SceneStage3Meta>();
+    batchSlice.forEach((ps, offset) => {
+      const sceneNum = ps.index || bs + offset + 1;
+      sceneMetaMap.set(sceneNum, {
+        narratorLine: ps.narratorLine,
+        estimatedSeconds: ps.estimatedSeconds,
+        timeOfDay: ps.timeOfDay,
+        lightingState: ps.lightingState,
+        beatToClipMap: ps.beatToClipMap,
+      });
+    });
+    const sceneVideoPromptsOut = new Map<number, string>();
 
     const writtenMap = await stage3WriteScenePromptsBatch(
       batchInput,
@@ -427,6 +501,9 @@ export async function executeGroundedPipeline(
                 narratorLine: plannedScene.narratorLine,
                 estimatedSeconds: plannedScene.estimatedSeconds,
                 beats: mapWrittenBeatsToSceneBeats(partialBeats),
+                timeOfDay: plannedScene.timeOfDay,
+                lightingState: plannedScene.lightingState,
+                beatToClipMap: plannedScene.beatToClipMap,
               });
             }
 
@@ -446,10 +523,13 @@ export async function executeGroundedPipeline(
               );
             }
           }
-        : undefined
+        : undefined,
+      sceneMetaMap,
+      targetVideoDuration,
+      isVideo ? sceneVideoPromptsOut : undefined
     );
 
-    // Run deterministic Stage 4 verification sequentially for each scene in this small batch
+    // Run deterministic Stage 4 verification sequentially for each scene in this batch
     for (let offset = 0; offset < batchSlice.length; offset++) {
       const plannedScene = batchSlice[offset];
       const sceneNum = plannedScene.index || bs + offset + 1;
@@ -476,16 +556,31 @@ export async function executeGroundedPipeline(
         onStatusMessage,
         provider,
         groqModel,
-        { runLlmCritic: false, generationMode }
+        { runLlmCritic: false, generationMode, targetVideoDuration }
       );
 
       previousDepicts = verifiedBeats.slice(-2).map((b) => b.depicts);
+
+      const resolvedSceneVideoPrompt = isVideo
+        ? sceneVideoPromptsOut.get(sceneNum) ||
+          buildFallbackSceneVideoPrompt(
+            verifiedBeats,
+            bible,
+            format,
+            targetVideoDuration,
+            sceneMetaMap.get(sceneNum)
+          )
+        : undefined;
 
       finalScenes.push({
         index: sceneNum,
         narratorLine: plannedScene.narratorLine,
         estimatedSeconds: plannedScene.estimatedSeconds,
         beats: mapWrittenBeatsToSceneBeats(verifiedBeats),
+        timeOfDay: plannedScene.timeOfDay,
+        lightingState: plannedScene.lightingState,
+        beatToClipMap: plannedScene.beatToClipMap,
+        videoPrompt: resolvedSceneVideoPrompt,
       });
 
       // Checkpoint and surface each finished scene progressively right after Stage 4

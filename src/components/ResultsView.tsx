@@ -400,6 +400,9 @@ export default function ResultsView({
   const handleCopyAllPrompts = () => {
     const lines: string[] = [];
     normalizedScenes.forEach((scene) => {
+      if (isVideoMode && scene.videoPrompt) {
+        lines.push(`SCENE ${toRomanNumeral(scene.index)} - MASTER CLIP PROMPT (~${scene.estimatedSeconds}s):\n${scene.videoPrompt}`);
+      }
       (scene.beats || []).forEach((b) => {
         const compiled = compileBeatPrompt(
           b,
@@ -559,6 +562,9 @@ export default function ResultsView({
       const isVideoExport = result.generationMode === 'video';
       md += `### SCENE ${toRomanNumeral(scene.index)} (~${effectiveSec}s)\n`;
       md += `**Narrator Line**:\n"${scene.narratorLine}"\n\n`;
+      if (isVideoExport && scene.videoPrompt) {
+        md += `**Master Clip Prompt (~${effectiveSec}s)**:\n\`\`\`text\n${scene.videoPrompt}\n\`\`\`\n\n`;
+      }
 
       md += `| Beat | Duration | Shot Size | Angle | Movement | Spoken Words | ${isVideoExport ? 'Visual Video Prompt' : 'Visual Image Prompt'} |\n`;
       md += `| :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n`;
@@ -965,6 +971,49 @@ export default function ResultsView({
                           </p>
                         </div>
                       </div>
+
+                      {/* Universal Scene Clip Prompt (Video Mode Only) */}
+                      {isVideoMode && scene.videoPrompt && (
+                        <div
+                          id={`scene-video-prompt-${scene.index}`}
+                          className="bg-[#0C0C0B] border border-white/15 rounded-[3px] p-3.5 space-y-2.5"
+                        >
+                          <div className="flex items-center justify-between gap-2 flex-wrap border-b border-white/10 pb-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <Clapperboard size={13} className="text-amber-400 shrink-0" />
+                              <span className="font-editorial-meta text-[10px] text-amber-300 font-medium">
+                                SCENE CLIP PROMPT (~{result.targetVideoDuration || scene.estimatedSeconds || 4}S)
+                              </span>
+                              {scene.timeOfDay && (
+                                <span className="text-[11px] font-mono text-[#8C8C86] truncate">
+                                  · {scene.timeOfDay}
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              id={`copy-scene-clip-btn-${scene.index}`}
+                              onClick={() => copyToClipboard(scene.videoPrompt || '', `scene-clip-${scene.index}`)}
+                              className="inline-flex items-center px-2.5 py-1 bg-white text-black hover:bg-[#EAEAE5] text-xs font-display font-semibold transition-colors rounded-[3px] whitespace-nowrap cursor-pointer"
+                            >
+                              {copiedIndex === `scene-clip-${scene.index}` ? (
+                                <>
+                                  <Check size={11} className="mr-1 text-black" />
+                                  <span>Copied</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy size={11} className="mr-1 text-black" />
+                                  <span>Copy Clip Prompt</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                          <p className="text-xs sm:text-sm leading-relaxed text-[#F0F0EA] font-mono selection:bg-white selection:text-black">
+                            {scene.videoPrompt}
+                          </p>
+                        </div>
+                      )}
 
                       {/* Beats Section */}
                       <div className="space-y-3 pt-1">

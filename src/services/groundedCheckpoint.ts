@@ -27,7 +27,7 @@ export interface GroundedCheckpointProgress {
   updatedAt: number;
 }
 
-const STORAGE_PREFIX = 'storyframe_grounded_ckpt_';
+const STORAGE_PREFIX = 'storyframe_grounded_ckpt_v2_';
 const CHECKPOINT_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const memoryFallbackStore = new Map<string, GroundedPipelineCheckpoint>();
 
@@ -49,10 +49,12 @@ export function buildCheckpointKey(
   format: string,
   generationMode: string,
   modelQuality: string,
-  characterStyle?: string
+  characterStyle?: string,
+  targetVideoDuration?: number
 ): string {
-  const baseHash = hashStoryInput(cleanNarration, authorNotes);
-  return `${baseHash}_${format}_${generationMode}_${modelQuality}_${normalizeStyleForKey(characterStyle)}`;
+  const baseHash = hashStoryInput(cleanNarration, authorNotes, characterStyle);
+  const clipTag = generationMode === 'video' && targetVideoDuration ? `_clip${targetVideoDuration}s` : '';
+  return `${baseHash}_${format}_${generationMode}_${modelQuality}_${normalizeStyleForKey(characterStyle)}${clipTag}`;
 }
 
 export function getGroundedCheckpoint(key: string): GroundedPipelineCheckpoint | null {

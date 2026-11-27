@@ -400,3 +400,12 @@
 - **Fact/Decision:** Switched workflow to direct execution with brief 1-line memory logs on clear bug fixes and audit patches (keeping Plan -> Approval only for major features, UI redesigns, or DB/security changes); fixed Fantasy CTA substring triggers (`seeking`/`solar-powered`), added Desert/Oasis CTA + `Nomad` role formatting, decoupled `chibi` from bittersweet CTA mood, and fixed shadow contradictions and location reveal grammar (`255 / 255` tests passing).
 - **Date:** 2026-11-22
 - **Status:** Active
+
+## Phone-First Pure-Text Core Upgrade & Universal Grounded Pipeline (Suite 46)
+- **Fact/Decision:**
+  1. **Phone-First Pure-Text Workflow & Zero Tool Branding:** Kept prompts 100% pure text (no image-reference uploads or I2V ingredient handoffs) and omitted all external video tool names (`Veo`, `Flow`, `Kling`, `Hailuo`, `Luma`) across compiled prompts and `ResultsView.tsx`, adding a single clean universal `SCENE CLIP PROMPT` copy box for Text to Video scenes alongside Markdown/Copy All exports.
+  2. **Universal Grounded Pipeline & Custom Cut Preservation:** Routed all `generateOriginalStory` requests (`short`/`long`, `image`/`video`, `automatic`/`custom`) through `executeGroundedPipeline()`, enabled universal checkpoints in `groundedCheckpoint.ts` (`storyframe_grounded_ckpt_v2_` keyed with `characterStyle` and `targetVideoDuration`), busted `bibleCache.ts` on style hint changes, preserved Custom Beat Mode cuts via `buildPlannedScenesFromCustomScenes()`, and kept Option B 2-to-6 word T2I beat separation untouched.
+  3. **Style-Native Render Craft, Deeper Bible Continuity & 4s Clip Guards:** Added `classifyVisualStyleFamily()` and `getStyleNativeRenderCue()` across `promptCompiler.ts`, `stage1StoryBible.ts`, `stage3PromptWriter.ts`, and `enhanceStoryArchitect.ts` so non-photoreal styles (`stop_motion`, `stylized_3d`, `illustration_2d`, `minimalist_flat`) omit live-action 35mm lens boilerplate; extended `StoryBible` (`permanentAnatomy`, `eraWardrobe`, `spatialMap`, `lightingArc`, `parallelCast`); capped 4s T2V clip groups at `<= 2` cohesive beats; added dynamic `canonicalLook` threat checks, conflicting camera vector checks, and `parallelCast` whitelist checks in `stage4VerifyRepair.ts` (`268 / 268` tests passing).
+- **Context:** Improves T2V clip cohesion, T2I craft across any visual style/story genre, spatial/lighting continuity, and 4-second clip pacing without adding UI clutter or mobile reference-upload friction.
+- **Date:** 2026-11-27
+- **Status:** Active

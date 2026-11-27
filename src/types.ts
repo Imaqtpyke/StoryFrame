@@ -1,5 +1,7 @@
 export type StoryFormat = 'short' | 'long';
 export type GenerationMode = 'image' | 'video';
+export type VisualStyleFamily = 'photoreal' | 'stylized_3d' | 'stop_motion' | 'illustration_2d' | 'minimalist_flat';
+export type ShotRole = 'story_action' | 'dialogue_acting' | 'explainer_cutaway' | 'visual_simile' | 'match_cut_pair';
 
 export interface StyleProfile {
   artStyle: string;
@@ -7,12 +9,15 @@ export interface StyleProfile {
   lighting: string;
   eraAndSetting: string;
   lensAndFilmStock?: string;
+  styleFamily?: VisualStyleFamily;
 }
 
 export interface StoryBibleCastMember {
   id: string;
   role: string;
   visualLock: string;
+  permanentAnatomy?: string;
+  eraWardrobe?: string;
 }
 
 export interface StoryBibleThreat {
@@ -20,9 +25,16 @@ export interface StoryBibleThreat {
   allowedVariants: string[];
 }
 
+export interface StoryBibleLocationState {
+  phase: string;
+  stateDescription: string;
+}
+
 export interface StoryBibleLocation {
   id: string;
   visualLock: string;
+  spatialPlacement?: string;
+  stateTimeline?: StoryBibleLocationState[];
 }
 
 export interface StoryBibleMotif {
@@ -36,6 +48,18 @@ export interface StoryBibleReferent {
   visualDepiction: string;
 }
 
+export interface StoryBibleLightingPhase {
+  phase: string;
+  timeOfDay: string;
+  lightingDescription: string;
+}
+
+export interface StoryBibleParallelCast {
+  sourceId: string;
+  parallelId: string;
+  continuityBridge: string;
+}
+
 export interface StoryBible {
   cast: StoryBibleCastMember[];
   threat: StoryBibleThreat;
@@ -46,6 +70,10 @@ export interface StoryBible {
   withheld: string[];
   forbidden: string[];
   worldStyle: string;
+  styleFamily?: VisualStyleFamily;
+  spatialMap?: string;
+  lightingArc?: StoryBibleLightingPhase[];
+  parallelCast?: StoryBibleParallelCast[];
   assumptions: string[];
   thumbnailHook?: {
     heroMoment?: string;
@@ -77,6 +105,8 @@ export interface Beat {
   newInfo?: string;
   overlayText?: string;
   flaggedIssue?: string;
+  shotRole?: ShotRole;
+  clipIndex?: number;
 }
 
 export interface Scene {
@@ -89,6 +119,9 @@ export interface Scene {
   establishedCharacters?: string[];
   establishedSettings?: string[];
   isAnchorScene?: boolean;
+  timeOfDay?: string;
+  lightingState?: string;
+  beatToClipMap?: Record<number, number>;
 }
 
 export interface ThumbnailData {

@@ -84,6 +84,8 @@ import {
   compileThumbnailPrompt,
   inferStoryAdaptiveCtaQuestion,
   compileCtaPrompt,
+  classifyVisualStyleFamily,
+  getStyleNativeRenderCue,
 } from '../services/promptCompiler';
 import {
   buildCheckpointKey,
@@ -504,11 +506,19 @@ assert(
 // 12. PORTRAIT MODE & SAFE ZONE VERIFICATION (PORTRAIT FIXTURE)
 // ============================================================================
 console.log('--- Running Test Suite 12: Portrait Mode & Safe Zones ---');
-import { SHORT_FORM_PACING, LONG_FORM_PACING, enforceStage2Pacing, PlannedScene, PlannedBeat } from '../services/stage2BeatPlan';
+import {
+  SHORT_FORM_PACING,
+  LONG_FORM_PACING,
+  enforceStage2Pacing,
+  buildPlannedScenesFromCustomScenes,
+  PlannedScene,
+  PlannedBeat,
+} from '../services/stage2BeatPlan';
 import { verifyEnhancePreservesBible } from '../services/enhanceBibleDiff';
 import { hashStoryInput, getCachedStoryBible, setCachedStoryBible, clearCachedStoryBible } from '../services/bibleCache';
 import { stage0PrepareNarration, extractAuthorNotes } from '../services/stage0Prepare';
 import { verifyBeatCodeChecks } from '../services/stage4VerifyRepair';
+import type { WrittenPromptBeat } from '../services/stage3PromptWriter';
 
 let portraitFixtureText = '';
 try {
@@ -5433,6 +5443,270 @@ async function runTestSuite45() {
   );
 }
 
+// ============================================================================
+// 46. CORE UPGRADE: STYLE-NATIVE CRAFT, 4S CLIP COHESION, CUSTOM BEATS & STAGE 4 GUARDS
+// ============================================================================
+function runTestSuite46() {
+  console.log('\n--- Running Test Suite 46: Core Upgrade (Style-Native, 4s Clips, Universal Checkpoints & Stage 4) ---');
+
+  // 46.1 Visual style families map accurately & omit live-action 35mm boilerplate from non-photoreal video prompts
+  const clayFam = classifyVisualStyleFamily('Handcrafted Claymation Stop-Motion Diorama');
+  const pixarFam = classifyVisualStyleFamily('Stylized 3D Pixar Animated Short');
+  const animeFam = classifyVisualStyleFamily('Studio Ghibli 2D Watercolor Anime');
+  const stickFam = classifyVisualStyleFamily('Minimalist Flat Stickman Vector');
+  const photoFam = classifyVisualStyleFamily('Cinematic Hyperrealism');
+
+  const clayCue = getStyleNativeRenderCue(clayFam, true);
+  const compiledClayVideo = compileBeatPrompt(
+    {
+      beatIndex: 1,
+      textSpan: 'Mia unlocks the gate.',
+      shotType: 'Medium Shot',
+      cameraAngle: 'eye-level',
+      cameraMovement: 'Slow Push-In',
+      imagePrompt: 'Medium shot of Mia wearing a patched wool coat unlocking a rusted iron gate at dusk.',
+      estimatedSeconds: 2.0,
+    },
+    {
+      index: 1,
+      narratorLine: 'Mia unlocks the gate.',
+      estimatedSeconds: 4,
+      timeOfDay: 'Dusk',
+      lightingState: 'Cool slate twilight fading against warm doorway amber glow',
+      beats: [],
+    },
+    {
+      artStyle: 'Handcrafted Claymation Stop-Motion Diorama',
+      colorPalette: 'Slate blue and warm ochre',
+      lighting: 'Soft miniature overhead key',
+      eraAndSetting: 'Autumn courtyard',
+      styleFamily: clayFam,
+    },
+    'universal',
+    'short',
+    'video'
+  );
+
+  assert(
+    clayFam === 'stop_motion' &&
+      pixarFam === 'stylized_3d' &&
+      animeFam === 'illustration_2d' &&
+      stickFam === 'minimalist_flat' &&
+      photoFam === 'photoreal' &&
+      !/35mm|anamorphic/i.test(clayCue) &&
+      !/--ar\s/i.test(compiledClayVideo.promptText) &&
+      !/\b(?:Veo|Flow|Kling|Hailuo|Luma)\b/i.test(compiledClayVideo.promptText) &&
+      compiledClayVideo.promptText.includes('Cool slate twilight fading against warm doorway amber glow') &&
+      compiledClayVideo.promptText.includes('Generate a continuous video clip of:'),
+    'Suite 46: Core Upgrade (Style-Native Craft, 4s Clip Cohesion & Stage 4 Guards)',
+    '46.1 Classifies Visual Style Families, Applies Style-Native Craft & Scene Lighting, and Strips --ar/Tool Names in Video Mode',
+    `fams=${[clayFam, pixarFam, animeFam, stickFam, photoFam].join(',')} | prompt=${compiledClayVideo.promptText}`
+  );
+
+  // 46.2 4-second video clip grouping caps clipCeiling at 4.0s (max 2 beats) & custom scenes preserve exact boundaries
+  const videoScenesInput: PlannedScene[] = [
+    {
+      index: 1,
+      narratorLine: 'Mara stepped inside the quiet archive hallway.',
+      estimatedSeconds: 5.2,
+      averageBeatSeconds: 1.7,
+      fastCutRatio: 0,
+      beats: [
+        {
+          beatIndex: 1,
+          wordRange: [0, 2],
+          textSpan: 'Mara stepped inside',
+          depicts: 'Mara crosses threshold',
+          kind: 'literal',
+          intensity: 'medium',
+          subjectIds: ['mara'],
+          shotSize: 'wide',
+          angle: 'eye level',
+          newInfo: 'Mara enters hallway',
+          estimatedSeconds: 1.8,
+        },
+        {
+          beatIndex: 2,
+          wordRange: [3, 4],
+          textSpan: 'the quiet',
+          depicts: 'Mara pauses by shelves',
+          kind: 'literal',
+          intensity: 'low',
+          subjectIds: ['mara'],
+          shotSize: 'medium',
+          angle: 'eye level',
+          newInfo: 'Mara stops',
+          estimatedSeconds: 1.8,
+        },
+        {
+          beatIndex: 3,
+          wordRange: [5, 6],
+          textSpan: 'archive hallway.',
+          depicts: 'Long dark corridor',
+          kind: 'literal',
+          intensity: 'low',
+          subjectIds: ['mara'],
+          shotSize: 'close-up',
+          angle: 'low',
+          newInfo: 'Corridor stretches ahead',
+          estimatedSeconds: 1.6,
+        },
+      ],
+    },
+  ];
+  const mockWords = 'Mara stepped inside the quiet archive hallway.'
+    .split(/\s+/)
+    .map((word, idx) => ({
+      index: idx,
+      word,
+      cleanWord: word.replace(/[.,!?;:"'()]/g, '').toLowerCase(),
+      startSec: idx * 0.5,
+      endSec: (idx + 1) * 0.5,
+      isEstimated: true,
+    }));
+  const paced4s = enforceStage2Pacing(videoScenesInput, mockWords, 'short', 'video', 4);
+
+  const customBible = {
+    cast: [{ id: 'mara', role: 'Archivist', visualLock: 'Woman in tweed coat', permanentAnatomy: 'Slender build', eraWardrobe: 'Brown tweed coat' }],
+    threat: { canonicalLook: 'hollow brass eyes with soot-stained fingers', allowedVariants: [] },
+    locations: [{ id: 'archive', visualLock: 'Tall oak shelves', spatialPlacement: 'Archive desk at far wall' }],
+    motifs: [],
+    events: ['Mara enters archive'],
+    referents: [],
+    withheld: [],
+    forbidden: [],
+    worldStyle: 'Claymation stop-motion',
+    styleFamily: 'stop_motion' as const,
+    lightingArc: [{ phase: 'opening', timeOfDay: 'Night', lightingDescription: 'Warm desk lamp pool against deep slate shadows' }],
+    parallelCast: [{ sourceId: 'adult_mara', parallelId: 'young_mara', continuityBridge: 'Matching silver locket and auburn braid' }],
+    assumptions: [],
+  };
+  const customPlanned = buildPlannedScenesFromCustomScenes(
+    [
+      {
+        id: 'custom-scene-1',
+        sceneIndex: 1,
+        narratorLine: 'Mara stepped inside the quiet archive hallway.',
+        beats: [
+          { id: 'c1', textSpan: 'Mara stepped inside', shotType: 'Wide Establishing Shot', userGuidance: 'Show heavy oak door swinging open' },
+          { id: 'c2', textSpan: 'the quiet archive hallway.', shotType: 'Close-Up', userGuidance: 'Hands lifting brass key' },
+        ],
+      },
+    ],
+    mockWords,
+    customBible,
+    'short',
+    'video',
+    4
+  );
+
+  assert(
+    paced4s[0].beatToClipMap?.[1] === 1 &&
+      paced4s[0].beatToClipMap?.[2] === 1 &&
+      paced4s[0].beatToClipMap?.[3] === 2 &&
+      customPlanned.length === 1 &&
+      customPlanned[0].beats.length === 2 &&
+      customPlanned[0].beats[0].depicts.includes('oak door') &&
+      customPlanned[0].timeOfDay === 'Night',
+    'Suite 46: Core Upgrade (Style-Native Craft, 4s Clip Cohesion & Stage 4 Guards)',
+    '46.2 Caps 4s Video Clip Grouping at <=4s / <=2 Beats and Preserves Custom Scene Cut Boundaries',
+    `clipMap=${JSON.stringify(paced4s[0].beatToClipMap)} | customBeats=${customPlanned[0]?.beats.length}`
+  );
+
+  // 46.3 Universal Grounded Checkpoints work for Short+Video & hashStoryInput busts cache on characterStyle change
+  const clayKey = hashStoryInput('Mara walks home.', 'keep dark', 'Claymation');
+  const pixarKey = hashStoryInput('Mara walks home.', 'keep dark', 'Pixar 3D');
+  const shortVideoReq: GenerateStoryRequest = {
+    story: 'Mara stepped inside the quiet archive hallway.',
+    characterStyle: 'Claymation',
+    format: 'short',
+    platform: 'TikTok',
+    durationMode: 'automatic',
+    generationMode: 'video',
+    targetVideoDuration: 4,
+    modelQuality: 'standard',
+  };
+  const svKey = buildCheckpointKey(
+    shortVideoReq.story,
+    undefined,
+    'short',
+    'video',
+    'standard',
+    'Claymation',
+    4
+  );
+  saveGroundedCheckpoint({
+    key: svKey,
+    totalWords: 7,
+    updatedAt: Date.now(),
+    bible: customBible,
+    completedScenes: [],
+  });
+  const svProgress = getGroundedProgressForRequest(shortVideoReq);
+  clearGroundedProgressForRequest(shortVideoReq);
+
+  assert(
+    clayKey !== pixarKey &&
+      Boolean(svProgress) &&
+      svProgress?.hasBible === true &&
+      getGroundedProgressForRequest(shortVideoReq) === null,
+    'Suite 46: Core Upgrade (Style-Native Craft, 4s Clip Cohesion & Stage 4 Guards)',
+    '46.3 Supports Universal Short-Form/Video Checkpoints and Busts Bible Cache on Visual Style Changes',
+    `clayKey=${clayKey} pixarKey=${pixarKey} svProgress=${JSON.stringify(svProgress)}`
+  );
+
+  // 46.4 Stage 4 catches dynamic threat canonicalLook bleed & conflicting video vectors while accepting parallelCast & 4s clip dwell
+  const threatBleedBeat: WrittenPromptBeat = {
+    beatIndex: 1,
+    wordRange: [0, 3],
+    textSpan: 'Mara stepped inside',
+    depicts: 'Mara entering doorway',
+    kind: 'literal',
+    intensity: 'medium',
+    subjectIds: ['adult_mara'],
+    shotSize: 'medium',
+    angle: 'eye level',
+    newInfo: 'Mara enters',
+    estimatedSeconds: 3.6,
+    imagePrompt:
+      'Medium shot, eye-level of adult Mara in brown tweed coat with hollow brass eyes walking toward archive desk.',
+  };
+  const conflictVideoBeat: WrittenPromptBeat = {
+    beatIndex: 2,
+    wordRange: [4, 6],
+    textSpan: 'the quiet hallway.',
+    depicts: 'Hallway reveal',
+    kind: 'literal',
+    intensity: 'low',
+    subjectIds: ['young_mara', 'archive'],
+    shotSize: 'wide',
+    angle: 'eye level',
+    newInfo: 'Hallway interior',
+    estimatedSeconds: 3.6,
+    imagePrompt:
+      'Wide establishing shot with slow dolly in and simultaneous dolly out pull back down the quiet archive hallway.',
+  };
+  const bleedCheck = verifyBeatCodeChecks(threatBleedBeat, [threatBleedBeat], customBible, 'short', 'video', 4);
+  const conflictCheck = verifyBeatCodeChecks(conflictVideoBeat, [conflictVideoBeat], customBible, 'short', 'video', 4);
+  const cleanParallelBeat: WrittenPromptBeat = {
+    ...threatBleedBeat,
+    imagePrompt:
+      'Medium shot, eye-level of young Mara wearing a silver locket and auburn braid walking steadily into the archive.',
+  };
+  const parallelCheck = verifyBeatCodeChecks(cleanParallelBeat, [cleanParallelBeat], customBible, 'short', 'video', 4);
+
+  assert(
+    !bleedCheck.passed &&
+      bleedCheck.issues.some((i) => i.includes('hollow brass eyes')) &&
+      !conflictCheck.passed &&
+      conflictCheck.issues.some((i) => i.includes('Conflicting simultaneous camera motion')) &&
+      parallelCheck.passed === true,
+    'Suite 46: Core Upgrade (Style-Native Craft, 4s Clip Cohesion & Stage 4 Guards)',
+    '46.4 Enforces Dynamic Threat Containment, Video Motion Vector Coherence, ParallelCast Whitelist & 4s Dwell Bounds',
+    `bleed=${JSON.stringify(bleedCheck)} | conflict=${JSON.stringify(conflictCheck)} | parallel=${JSON.stringify(parallelCheck)}`
+  );
+}
+
 runTestSuite21().then(async () => {
   runTestSuite23();
   runTestSuite24();
@@ -5457,6 +5731,7 @@ runTestSuite21().then(async () => {
   await runTestSuite43();
   await runTestSuite44();
   await runTestSuite45();
+  runTestSuite46();
   console.log('\n====================================================================');
   console.log('                  FULL-SYSTEM VERIFICATION REPORT                  ');
   console.log('====================================================================');

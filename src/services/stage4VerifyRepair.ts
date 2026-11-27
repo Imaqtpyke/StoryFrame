@@ -233,6 +233,20 @@ export function verifyForbiddenElements(beat: WrittenPromptBeat, bible: StoryBib
   return { passed: issues.length === 0, issues };
 }
 
+function extractDynamicThreatKeywords(bible: StoryBible): string[] {
+  const baseline = ['glowing amber eyes', 'cracked parchment skin', 'black ink veins', 'ink veins'];
+  const canonical = (bible.threat?.canonicalLook || '').toLowerCase();
+  if (!canonical) return baseline;
+
+  const castText = (bible.cast || []).map((c) => c.visualLock.toLowerCase()).join(' | ');
+  const dynamic = canonical
+    .split(/[,;.]|\band\b|\bwith\b/i)
+    .map((part) => part.trim().replace(/^a\s+|^an\s+|^the\s+/i, ''))
+    .filter((part) => part.split(/\s+/).length >= 2 && part.length >= 8 && !castText.includes(part));
+
+  return Array.from(new Set([...baseline, ...dynamic]));
+}
+
 /**
  * Check 6: Style Bleed & Threat Containment
  */
@@ -243,8 +257,8 @@ export function verifyStyleBleed(beat: WrittenPromptBeat, bible: StoryBible): Be
     id.toLowerCase().includes('threat') || id.toLowerCase().includes('monster') || id.toLowerCase().includes('dead')
   );
 
-  // Threat keywords extracted from threat canonicalLook
-  const threatKeywords = ['glowing amber eyes', 'cracked parchment skin', 'black ink veins', 'ink veins'];
+  // Threat keywords extracted from threat canonicalLook plus baseline leak checks
+  const threatKeywords = extractDynamicThreatKeywords(bible);
   for (const kw of threatKeywords) {
     if (lowerPrompt.includes(kw) && !hasThreatInSubjects) {
       issues.push(`Threat visual feature "${kw}" bled into a non-threat beat`);
@@ -265,7 +279,10 @@ export function verifyStyleBleed(beat: WrittenPromptBeat, bible: StoryBible): Be
   return { passed: issues.length === 0, issues };
 }
 
-export function verifyShotLabelMatch(beat: WrittenPromptBeat): BeatCheckResult {
+export function verifyShotLabelMatch(
+  beat: WrittenPromptBeat,
+  generationMode: GenerationMode = 'image'
+): BeatCheckResult {
   const issues: string[] = [];
   const lowerPrompt = beat.imagePrompt.toLowerCase();
   const shotSize = (beat.shotSize || '').toLowerCase();
@@ -283,6 +300,21 @@ export function verifyShotLabelMatch(beat: WrittenPromptBeat): BeatCheckResult {
     issues.push('Shot label "close-up" contradicts wide establishing language in prompt');
   }
 
+  // Conflicting simultaneous camera vectors in Text-to-Video mode
+  if (generationMode === 'video') {
+    const hasPushIn = /\b(?:dolly in|push in|push-in)\b/.test(lowerPrompt);
+    const hasPullOut = /\b(?:dolly out|pull back|pull-out)\b/.test(lowerPrompt);
+    if (hasPushIn && hasPullOut) {
+      issues.push('Conflicting simultaneous camera motion vectors (push-in and pull-out) in single video beat');
+    }
+    if (/\bpan left\b/.test(lowerPrompt) && /\bpan right\b/.test(lowerPrompt)) {
+      issues.push('Conflicting simultaneous camera pan directions (pan left and pan right) in single video beat');
+    }
+    if (/\btilt up\b/.test(lowerPrompt) && /\btilt down\b/.test(lowerPrompt)) {
+      issues.push('Conflicting simultaneous camera tilt directions (tilt up and tilt down) in single video beat');
+    }
+  }
+
   return { passed: issues.length === 0, issues };
 }
 
@@ -290,6 +322,7 @@ export function verifyEntityWhitelist(beat: WrittenPromptBeat, bible: StoryBible
   const issues: string[] = [];
   const validIds = new Set<string>([
     ...bible.cast.map((c) => c.id.toLowerCase()),
+    ...(bible.parallelCast || []).flatMap((pc) => [pc.sourceId.toLowerCase(), pc.parallelId.toLowerCase()]),
     ...bible.locations.map((l) => l.id.toLowerCase()),
     'threat',
     'monster',
@@ -318,7 +351,8 @@ export function verifyBeatCodeChecks(
   sceneBeats: WrittenPromptBeat[],
   bible: StoryBible,
   format: 'short' | 'long' = 'long',
-  generationMode: GenerationMode = 'image'
+  generationMode: GenerationMode = 'image',
+  targetVideoDuration?: number
 ): BeatCheckResult {
   const issues: string[] = [];
 
@@ -342,8 +376,8 @@ export function verifyBeatCodeChecks(
   const styleCheck = verifyStyleBleed(beat, bible);
   if (!styleCheck.passed) issues.push(...styleCheck.issues);
 
-  // Check 6: Shot-label match
-  const labelCheck = verifyShotLabelMatch(beat);
+  // Check 6: Shot-label match & video motion vector consistency
+  const labelCheck = verifyShotLabelMatch(beat, generationMode);
   if (!labelCheck.passed) issues.push(...labelCheck.issues);
 
   // Check 7: Entity whitelist
@@ -352,7 +386,12 @@ export function verifyBeatCodeChecks(
 
   // Pacing boundaries (Image Phrase Cuts allow 2-word phrases down to 0.45s without triggering repairs)
   const minDwell = generationMode === 'video' ? 0.8 : 0.45;
-  const maxDwell = format === 'short' ? 2.2 : 3.0;
+  const maxDwell =
+    generationMode === 'video'
+      ? Math.max(format === 'short' ? 2.2 : 3.0, targetVideoDuration || 4.0)
+      : format === 'short'
+        ? 2.2
+        : 3.0;
   if (beat.estimatedSeconds < minDwell || beat.estimatedSeconds > maxDwell) {
     issues.push(`Beat duration (~${beat.estimatedSeconds}s) violates dwell bounds (${minDwell}s - ${maxDwell}s)`);
   }
@@ -371,11 +410,17 @@ export async function repairFailingBeat(
   modelQuality: GeminiModelQuality = 'standard',
   provider: AiProvider = 'gemini',
   groqModel?: string,
-  userSignal?: AbortSignal
+  userSignal?: AbortSignal,
+  generationMode: GenerationMode = 'image'
 ): Promise<WrittenPromptBeat> {
-  const prompt = `You are a prompt doctor. Fix this single AI image prompt which failed quality checks.
+  const isVideoMode = generationMode === 'video';
+  const modeRule = isVideoMode
+    ? '7. Keep ONE smooth camera vector that settles cleanly (never stack push-in with pull-out) and end with brief ambient foley (no dialogue).'
+    : '7. Keep this as a frozen still-frame moment with ZERO camera motion verbs and ZERO audio/sound cues.';
 
-FAILING IMAGE PROMPT:
+  const prompt = `You are a prompt doctor. Fix this single AI ${isVideoMode ? 'video' : 'image'} prompt which failed quality checks.
+
+FAILING PROMPT:
 """${beat.imagePrompt}"""
 
 DETECTED ISSUES:
@@ -389,14 +434,15 @@ BEAT REQUIREMENTS:
 - Style: ${bible.worldStyle}
 
 REPAIR RULES:
-1. Write 50 to 90 words.
+1. Write 45 to 80 words.
 2. DO NOT quote or mention words, text, numbers, quotation marks, or captions.
 3. Start cleanly with framing and a concrete subject from the story.
 4. No bare pronouns or detached limbs at start.
 5. No fake precision (no Kelvin, %, degrees).
 6. Resolve any figurative metaphors to concrete story entities.
+${modeRule}
 
-Return ONLY the corrected image prompt text as plain string with no markdown formatting.`;
+Return ONLY the corrected prompt text as plain string with no markdown formatting.`;
 
   try {
     if (provider === 'groq') {
@@ -543,10 +589,11 @@ export async function stage4VerifyAndRepairScene(
   onStatusMessage?: (msg: string) => void,
   provider: AiProvider = 'gemini',
   groqModel?: string,
-  options?: { runLlmCritic?: boolean; generationMode?: GenerationMode }
+  options?: { runLlmCritic?: boolean; generationMode?: GenerationMode; targetVideoDuration?: number }
 ): Promise<WrittenPromptBeat[]> {
   const verifiedBeats: WrittenPromptBeat[] = [];
   const genMode = options?.generationMode || 'image';
+  const targetVideoDuration = options?.targetVideoDuration;
 
   for (let i = 0; i < beats.length; i++) {
     if (userSignal?.aborted) {
@@ -554,7 +601,7 @@ export async function stage4VerifyAndRepairScene(
     }
 
     let currentBeat = beats[i];
-    const initialCheck = verifyBeatCodeChecks(currentBeat, beats, bible, format, genMode);
+    const initialCheck = verifyBeatCodeChecks(currentBeat, beats, bible, format, genMode, targetVideoDuration);
 
     if (!initialCheck.passed) {
       if (onStatusMessage) {
@@ -562,13 +609,13 @@ export async function stage4VerifyAndRepairScene(
       }
 
       // Round 1 Repair
-      let repaired = await repairFailingBeat(currentBeat, initialCheck.issues, bible, apiKey, modelQuality, provider, groqModel, userSignal);
-      let secondCheck = verifyBeatCodeChecks(repaired, beats, bible, format, genMode);
+      let repaired = await repairFailingBeat(currentBeat, initialCheck.issues, bible, apiKey, modelQuality, provider, groqModel, userSignal, genMode);
+      let secondCheck = verifyBeatCodeChecks(repaired, beats, bible, format, genMode, targetVideoDuration);
 
       // Round 2 Repair if still failing
       if (!secondCheck.passed) {
-        repaired = await repairFailingBeat(repaired, secondCheck.issues, bible, apiKey, modelQuality, provider, groqModel, userSignal);
-        secondCheck = verifyBeatCodeChecks(repaired, beats, bible, format, genMode);
+        repaired = await repairFailingBeat(repaired, secondCheck.issues, bible, apiKey, modelQuality, provider, groqModel, userSignal, genMode);
+        secondCheck = verifyBeatCodeChecks(repaired, beats, bible, format, genMode, targetVideoDuration);
       }
 
       if (!secondCheck.passed) {

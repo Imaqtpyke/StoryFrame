@@ -1,4 +1,16 @@
-import { Beat, Scene, StyleProfile, StoryFormat, GenerationMode, ThumbnailData, CtaPlatform, CtaModality, CtaEngagementType, CtaPromptData } from '../types';
+import {
+  Beat,
+  Scene,
+  StyleProfile,
+  StoryFormat,
+  GenerationMode,
+  ThumbnailData,
+  CtaPlatform,
+  CtaModality,
+  CtaEngagementType,
+  CtaPromptData,
+  VisualStyleFamily,
+} from '../types';
 import { extractGeographicAnchor } from './beatSplitting';
 import {
   buildCompactCharacterAnchor,
@@ -38,22 +50,121 @@ export interface LintIssue {
 }
 
 /**
- * Normalizes camera movement into standard cinematic terms
+ * Classifies any requested visual artStyle into its native rendering family
+ * so stylized 3D, claymation, 2D illustration, and minimalist art never inherit
+ * mismatched live-action 35mm film grain or bokeh boilerplate.
+ */
+export function classifyVisualStyleFamily(artStyle?: string): VisualStyleFamily {
+  const lower = (artStyle || '').toLowerCase();
+  if (!lower) return 'photoreal';
+
+  if (
+    /\b(?:clay|claymation|stop[- ]?motion|polymer\s+clay|plasticine|diorama|miniature|felt|papercraft|paper[- ]cut|cutout|puppet|handmade\s+miniature)\b/i.test(
+      lower
+    )
+  ) {
+    return 'stop_motion';
+  }
+
+  if (
+    /\b(?:stick\s*man|stick\s*figure|minimalist|flat\s+vector|flat\s+2d|simple\s+2d|infographic|whiteboard|motion\s+graphic)\b/i.test(
+      lower
+    )
+  ) {
+    return 'minimalist_flat';
+  }
+
+  if (
+    /\b(?:3d|blender|unreal|low[- ]poly|lowpoly|pixar|cgi|stylized\s+3d|3d\s+render|3d\s+animation|voxel|machinima)\b/i.test(
+      lower
+    )
+  ) {
+    return 'stylized_3d';
+  }
+
+  if (
+    /\b(?:anime|manga|cartoon|comic|rubber[- ]hose|watercolor|gouache|storybook|ink|charcoal|etching|woodcut|cel[- ]shaded|2d|illustrated|illustration|oil\s+painting|painterly|noir\s+ink)\b/i.test(
+      lower
+    )
+  ) {
+    return 'illustration_2d';
+  }
+
+  return 'photoreal';
+}
+
+/**
+ * Returns style-native rendering cues tailored to the medium and modality.
+ */
+export function getStyleNativeRenderCue(
+  styleFamily: VisualStyleFamily,
+  isVideoMode: boolean,
+  explicitOptics?: string
+): string {
+  switch (styleFamily) {
+    case 'stop_motion':
+      return isVideoMode
+        ? 'Render Craft: matte polymer clay texture with subtle thumbprints, tabletop miniature depth, 12fps stop-motion cadence.'
+        : 'Render Craft: matte sculpted miniature texture, subtle handcrafted surface marks, shallow tabletop depth of field.';
+    case 'stylized_3d':
+      return isVideoMode
+        ? 'Render Craft: clean stylized 3D shading, crisp material specular highlights, smooth directional motion blur.'
+        : 'Render Craft: clean stylized 3D surface shading, crisp bevels and material reflections, balanced depth.';
+    case 'illustration_2d':
+      return isVideoMode
+        ? 'Render Craft: expressive 2D linework and cohesive hand-crafted shading, fluid drawn keyframe motion.'
+        : 'Render Craft: crisp 2D linework, cohesive painterly/cel shading, clean graphic silhouettes.';
+    case 'minimalist_flat':
+      return isVideoMode
+        ? 'Render Craft: bold clean silhouettes, solid flat color blocking, uncluttered composition.'
+        : 'Render Craft: crisp minimalist flat vector shapes, bold silhouettes, uncluttered background.';
+    case 'photoreal':
+    default: {
+      const cleanOptics = explicitOptics && explicitOptics.trim()
+        ? explicitOptics.trim()
+        : '35mm cinematic lens, shallow depth of field, sharp subject focus';
+      return `Optics: Shot on ${cleanOptics}.`;
+    }
+  }
+}
+
+/**
+ * Normalizes camera movement into clear single-vector cinematic terms.
+ * Avoids double-move collisions and replaces flat digital "zoom" with physical dolly motion.
  */
 export function normalizeCameraMovement(movement?: string): string {
   if (!movement || movement.trim() === '') return 'Static shot';
   const lower = movement.toLowerCase();
-  if (lower.includes('dolly in') || lower.includes('push in')) return 'Slow dolly in';
-  if (lower.includes('dolly out') || lower.includes('pull out')) return 'Slow dolly out';
+  if (lower.includes('whip') || lower.includes('swish')) return 'Fast directional whip-pan';
+  if (lower.includes('dolly in') || lower.includes('push in') || lower.includes('push-in') || lower.includes('zoom in')) {
+    return 'Slow dolly in';
+  }
+  if (lower.includes('dolly out') || lower.includes('pull out') || lower.includes('pull back') || lower.includes('zoom out')) {
+    return 'Slow dolly out';
+  }
   if (lower.includes('pan left')) return 'Smooth pan left';
   if (lower.includes('pan right')) return 'Smooth pan right';
   if (lower.includes('tilt up')) return 'Subtle tilt up';
   if (lower.includes('tilt down')) return 'Subtle tilt down';
-  if (lower.includes('tracking') || lower.includes('truck')) return 'Lateral tracking shot';
+  if (lower.includes('tracking') || lower.includes('truck') || lower.includes('follow')) return 'Lateral tracking shot';
   if (lower.includes('crane') || lower.includes('pedestal')) return 'Vertical crane movement';
-  if (lower.includes('orbital') || lower.includes('orbit')) return '360 degree orbital arc';
+  if (lower.includes('orbital') || lower.includes('orbit')) return 'Smooth orbital arc';
   if (lower.includes('static')) return 'Static lock-off shot';
   return movement.trim();
+}
+
+/**
+ * Ensures non-static video motion directives include a clean settling endpoint
+ * to prevent late-clip drift in T2V models.
+ */
+export function buildVideoMotionDirective(cameraMovement: string): string {
+  if (cameraMovement === 'Static shot' || cameraMovement === 'Static lock-off shot') {
+    return 'Static lock-off shot with steady camera framing and natural subject motion.';
+  }
+  if (cameraMovement === 'Fast directional whip-pan') {
+    return 'Continuous camera motion: Fast directional whip-pan with motion blur, settling cleanly onto the target subject.';
+  }
+  return `Continuous camera motion: ${cameraMovement} at smooth controlled velocity, settling into a steady hold.`;
 }
 
 /**
@@ -141,7 +252,7 @@ export function resolveStyleAndCastingCompatibility(prompt: string, artStyle: st
 
 /**
  * Compiles a visual beat into a unified production-grade prompt.
- * Synthesizes orientation, framing, subject action, environment, lighting, optics, and aspect ratio flags.
+ * Synthesizes orientation, framing, subject action, environment, lighting, style-native optics, and clean aspect ratio.
  */
 export function compileBeatPrompt(
   beat: Beat,
@@ -163,6 +274,7 @@ export function compileBeatPrompt(
   // 1. Resolve Style vs Casting Compatibility & strip hero pronoun wardrobe leaks from shared artStyle
   const rawArtStyle = sanitizeSharedVisualStyle(styleProfile?.artStyle || 'Cinematic photorealism') || 'Cinematic photorealism';
   const { prompt: promptWithoutStyleConflict, artStyle } = resolveStyleAndCastingCompatibility(rawBasePrompt, rawArtStyle);
+  const styleFamily = styleProfile?.styleFamily || classifyVisualStyleFamily(artStyle);
 
   // 2. Sanitize kinetic process verbs for image mode and strip duplicate orientation prefix
   const sanitizedKinetic = isImageMode
@@ -173,8 +285,7 @@ export function compileBeatPrompt(
   const shotType = beat.shotType || 'Medium Shot';
   const cameraAngle = beat.cameraAngle || 'Eye-level';
   const cameraMovement = normalizeCameraMovement(beat.cameraMovement);
-  const optics = beat.optics || '35mm anamorphic lens, f/2.8 aperture';
-  const rawLighting = styleProfile?.lighting || 'natural cinematic lighting, 5600K balanced daylight';
+  const rawLighting = scene?.lightingState || styleProfile?.lighting || 'natural cinematic lighting';
   const lighting = isMonochromeStyle(styleProfile)
     ? sanitizeMonochromeLighting(rawLighting, styleProfile) || 'stark high-contrast chiaroscuro ink lighting with crisp cast shadows'
     : rawLighting;
@@ -186,7 +297,7 @@ export function compileBeatPrompt(
   let compiledText = '';
   let negativePrompt: string | undefined = undefined;
 
-  // Build the unified, non-frugal prompt
+  // Build the unified, non-duplicative prompt
   const components: string[] = [];
 
   // A. Orientation & Mode Declaration
@@ -194,11 +305,12 @@ export function compileBeatPrompt(
     components.push(`Generate a single still image of: ${orientationText}. Static frame. One exact moment in time. Crisp edges, zero camera movement, no motion blur, no video.`);
     negativePrompt = 'motion blur, animation, video, moving camera, timelapse, multiple frames, distorted limbs, extra fingers, text, watermark, low quality, artifacting';
   } else {
-    const motionDirective = cameraMovement !== 'Static shot' && cameraMovement !== 'Static lock-off shot'
-      ? `Continuous camera motion: ${cameraMovement} at smooth controlled velocity.`
-      : `Static lock-off shot with steady camera positioning.`;
+    const motionDirective = buildVideoMotionDirective(cameraMovement);
     components.push(`Generate a continuous video clip of: ${orientationText}. ${motionDirective}`);
-    negativePrompt = 'sudden cuts, frame jitter, morphing, deformed hands, extra limbs, blur, low resolution, watermark, text overlays, warped faces';
+    negativePrompt =
+      styleFamily === 'stop_motion'
+        ? 'sudden cuts, smooth 60fps CGI gloss, photorealism, morphing, deformed hands, watermark, text overlays'
+        : 'sudden cuts, frame jitter, morphing, deformed hands, extra limbs, blur, low resolution, watermark, text overlays, warped faces';
   }
 
   // B. Framing & Angle (only add if baseImagePrompt doesn't already open with the exact shotType)
@@ -212,13 +324,27 @@ export function compileBeatPrompt(
   components.push(baseImagePrompt);
 
   // D. Atmospheric Lighting (if not already deeply described in base prompt)
-  if (!lowerBase.includes('lighting:') && !lowerBase.includes('kelvin') && !lowerBase.includes('key light')) {
+  if (
+    !lowerBase.includes('lighting:') &&
+    !lowerBase.includes('key light') &&
+    !lowerBase.includes('sunlight') &&
+    !lowerBase.includes('moonlight') &&
+    !lowerBase.includes('candlelight') &&
+    !lowerBase.includes('twilight')
+  ) {
     components.push(`Atmospheric Lighting: ${lighting}.`);
   }
 
-  // E. Optics & Lens Prescriptions (if not already embedded)
-  if (!lowerBase.includes('shot on') && !lowerBase.includes('lens') && !lowerBase.includes('mm f/')) {
-    components.push(`Optics: Shot on ${optics}, shallow depth of field, sharp foreground focus.`);
+  // E. Style-Native Rendering / Optics (avoid forcing 35mm film lens onto non-photoreal styles)
+  const hasExplicitRenderOrOptics =
+    lowerBase.includes('shot on') ||
+    lowerBase.includes('lens') ||
+    lowerBase.includes('render craft:') ||
+    lowerBase.includes('polymer clay') ||
+    lowerBase.includes('stop-motion') ||
+    lowerBase.includes('cel-shaded');
+  if (!hasExplicitRenderOrOptics) {
+    components.push(getStyleNativeRenderCue(styleFamily, !isImageMode, beat.optics));
   }
 
   // F. Visual Style & Palette Continuity (if not already embedded)
@@ -226,8 +352,8 @@ export function compileBeatPrompt(
     components.push(`Visual Style: ${artStyle}.`);
   }
 
-  // G. Aspect ratio parameter flag (always guaranteed once at prompt end)
-  if (!baseImagePrompt.includes('--ar')) {
+  // G. Aspect ratio parameter flag (Image mode keeps --ar for Midjourney/Flux compatibility; Video mode omits --ar clutter unless already present)
+  if (isImageMode && !baseImagePrompt.includes('--ar')) {
     components.push(`${arFlag}`);
   }
 
