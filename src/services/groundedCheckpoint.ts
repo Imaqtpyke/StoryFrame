@@ -50,11 +50,13 @@ export function buildCheckpointKey(
   generationMode: string,
   modelQuality: string,
   characterStyle?: string,
-  targetVideoDuration?: number
+  targetVideoDuration?: number,
+  openingHookPriority?: boolean
 ): string {
   const baseHash = hashStoryInput(cleanNarration, authorNotes, characterStyle);
   const clipTag = generationMode === 'video' && targetVideoDuration ? `_clip${targetVideoDuration}s` : '';
-  return `${baseHash}_${format}_${generationMode}_${modelQuality}_${normalizeStyleForKey(characterStyle)}${clipTag}`;
+  const hookTag = openingHookPriority ? '_hook3s' : '';
+  return `${baseHash}_${format}_${generationMode}_${modelQuality}_${normalizeStyleForKey(characterStyle)}${clipTag}${hookTag}`;
 }
 
 export function getGroundedCheckpoint(key: string): GroundedPipelineCheckpoint | null {

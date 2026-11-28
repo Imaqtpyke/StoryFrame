@@ -16,7 +16,7 @@ import { ApiKeyProvider, useApiKey } from './context/ApiKeyContext';
 import { generateStoryDirectly } from './services/geminiClient';
 import { getGroundedProgressForRequest, clearGroundedProgressForRequest } from './services/groundedPipeline';
 import { getHistoryItems, addHistoryItem, deleteHistoryItem, clearAllHistory, updateHistoryResult } from './services/historyStorage';
-import { ActivePage, GenerateStoryRequest, HistoryItem, StoryGenerationResult } from './types';
+import { ActivePage, Beat, GenerateStoryRequest, HistoryItem, StoryGenerationResult } from './types';
 
 function isForbiddenError(msg: string | null): boolean {
   if (!msg) return false;
@@ -209,7 +209,6 @@ function StoryFrameMain() {
       generationMode: draftPayload.generationMode,
       targetVideoDuration: draftPayload.targetVideoDuration,
       beatMode: 'automatic',
-      autoArchitectMode: false,
     });
     setActivePage('generator');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -237,6 +236,28 @@ function StoryFrameMain() {
     setResult(updatedResult);
     const updatedHistory = updateHistoryResult(updatedResult, result.title);
     setHistoryItems(updatedHistory);
+  };
+
+  const handleUpdateBeat = (sceneIndex: number, beatIndex: number, updatedBeat: Beat) => {
+    setResult((prev) => {
+      if (!prev) return prev;
+      const updatedScenes = prev.scenes.map((scene) => {
+        if (scene.index !== sceneIndex) return scene;
+        return {
+          ...scene,
+          beats: scene.beats.map((b) =>
+            b.beatIndex === beatIndex ? { ...b, ...updatedBeat } : b
+          ),
+        };
+      });
+      const updatedResult: StoryGenerationResult = {
+        ...prev,
+        scenes: updatedScenes,
+      };
+      const updatedHistory = updateHistoryResult(updatedResult, prev.title);
+      setHistoryItems(updatedHistory);
+      return updatedResult;
+    });
   };
 
   const handleUpdateThumbnailPrompt = (newPrompt: string) => {
@@ -331,6 +352,7 @@ function StoryFrameMain() {
               totalPlannedScenes={result.progress?.totalPlannedScenes}
               generationStatusMessage={generationStatusMessage}
               onCancelGeneration={handleCancelRequest}
+              onUpdateBeat={handleUpdateBeat}
             />
           ) : (
             <GeneratorForm

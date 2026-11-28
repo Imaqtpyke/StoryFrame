@@ -31,8 +31,18 @@ import {
   Film,
   ChevronDown,
   ChevronUp,
+  Bookmark,
+  BookmarkPlus,
+  X,
 } from 'lucide-react';
 import { parseManuscriptMarkdown } from '../services/scriptParser';
+import {
+  StylePreset,
+  loadStylePresets,
+  saveStylePreset,
+  deleteStylePreset,
+  applyStylePresetToState,
+} from '../services/stylePresetStorage';
 
 interface GeneratorFormProps {
   onSubmit: (data: GenerateStoryRequest) => void;
@@ -66,29 +76,6 @@ const SHORT_PLATFORMS: DropdownOption[] = [
 const LONG_PLATFORMS: DropdownOption[] = [
   { value: 'YouTube', label: 'YouTube', sublabel: '16:9 widescreen' },
   { value: 'General/Any (16:9)', label: 'General / Any', sublabel: '16:9 widescreen' },
-];
-
-const SHORT_DURATIONS: DropdownOption[] = [
-  { value: 'automatic', label: 'Automatic', sublabel: 'Story decides natural length' },
-  { value: '15', label: '15 seconds' },
-  { value: '30', label: '30 seconds' },
-  { value: '45', label: '45 seconds' },
-  { value: '60', label: '60 seconds' },
-  { value: '90', label: '90 seconds' },
-  { value: 'custom', label: 'Custom', sublabel: 'Specify exact seconds' },
-];
-
-const LONG_DURATIONS: DropdownOption[] = [
-  { value: 'automatic', label: 'Automatic', sublabel: 'Story decides natural length' },
-  { value: '60', label: '1 minute' },
-  { value: '120', label: '2 minutes' },
-  { value: '180', label: '3 minutes' },
-  { value: '300', label: '5 minutes' },
-  { value: '600', label: '10 minutes' },
-  { value: '900', label: '15 minutes' },
-  { value: '1200', label: '20 minutes' },
-  { value: '1800', label: '30 minutes' },
-  { value: 'custom', label: 'Custom', sublabel: 'Specify exact minutes' },
 ];
 
 const VIDEO_DURATIONS: DropdownOption[] = [
@@ -208,7 +195,6 @@ export default function GeneratorForm({
   } = useApiKey();
 
   const [generationMode, setGenerationMode] = useState<GenerationMode>(initialValues?.generationMode || 'image');
-  const [autoArchitectMode, setAutoArchitectMode] = useState<boolean>(initialValues?.autoArchitectMode || false);
   const [beatMode, setBeatMode] = useState<'automatic' | 'custom'>(initialValues?.beatMode || 'automatic');
   const [customScenes, setCustomScenes] = useState<CustomSceneDefinition[]>(initialValues?.customScenes || []);
   const [story, setStory] = useState(initialValues?.story || '');
@@ -218,18 +204,11 @@ export default function GeneratorForm({
   const appliedExternalStyleNonceRef = useRef<number>(externalCharacterStyle?.nonce || 0);
   const [format, setFormat] = useState<StoryFormat>(initialValues?.format || 'short');
   const [platform, setPlatform] = useState(initialValues?.platform || 'TikTok');
-  const [durationValue, setDurationValue] = useState(
-    initialValues?.durationMode === 'automatic'
-      ? 'automatic'
-      : initialValues?.durationSeconds
-        ? String(initialValues.durationSeconds)
-        : 'automatic'
-  );
   const [videoDurationValue, setVideoDurationValue] = useState(
     initialValues?.targetVideoDuration ? String(initialValues.targetVideoDuration) : '5'
   );
-  const [customNumeric, setCustomNumeric] = useState('');
   const [customVideoSeconds, setCustomVideoSeconds] = useState('');
+  const [openingHookPriority, setOpeningHookPriority] = useState<boolean>(Boolean(initialValues?.openingHookPriority));
   const [showAdvanced, setShowAdvanced] = useState(!hasCustomKey);
 
   useEffect(() => {
@@ -258,16 +237,11 @@ export default function GeneratorForm({
       if (initialValues.format !== undefined) setFormat(initialValues.format);
       if (initialValues.platform !== undefined) setPlatform(initialValues.platform);
       if (initialValues.generationMode !== undefined) setGenerationMode(initialValues.generationMode);
-      if (initialValues.autoArchitectMode !== undefined) setAutoArchitectMode(initialValues.autoArchitectMode);
       if (initialValues.beatMode !== undefined) setBeatMode(initialValues.beatMode);
       if (initialValues.customScenes !== undefined) setCustomScenes(initialValues.customScenes);
       if (initialValues.targetVideoDuration !== undefined) setVideoDurationValue(String(initialValues.targetVideoDuration));
-      if (initialValues.durationMode === 'automatic') {
-        setDurationValue('automatic');
-      } else if (initialValues.durationSeconds) {
-        setDurationValue(String(initialValues.durationSeconds));
-      }
       if (initialValues.modelQuality !== undefined) setModelQuality(initialValues.modelQuality);
+      if (initialValues.openingHookPriority !== undefined) setOpeningHookPriority(Boolean(initialValues.openingHookPriority));
     }
   }, [initialValues]);
 
@@ -277,6 +251,16 @@ export default function GeneratorForm({
   const [rememberOptIn, setRememberOptIn] = useState(rememberInSession);
   const [keyFeedback, setKeyFeedback] = useState<string | null>(null);
   const [formValidationNotice, setFormValidationNotice] = useState<string | null>(null);
+
+  // Channel Style DNA Presets (Extra #2)
+  const [stylePresets, setStylePresets] = useState<StylePreset[]>(() => loadStylePresets());
+  const [isPresetSaveOpen, setIsPresetSaveOpen] = useState(false);
+  const [presetNameInput, setPresetNameInput] = useState('');
+  const [presetIncludeFormat, setPresetIncludeFormat] = useState(false);
+  const [presetFeedback, setPresetFeedback] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
 
   // Progressive illumination and stage tracking for breakdown generation
   const [progress, setProgress] = useState(0);
@@ -392,11 +376,105 @@ export default function GeneratorForm({
     setFormat(newFormat);
     if (newFormat === 'short') {
       setPlatform('TikTok');
-      setDurationValue('automatic');
     } else {
       setPlatform('YouTube');
-      setDurationValue('automatic');
     }
+  };
+
+  const handleOpenSavePreset = () => {
+    if (!characterStyle.trim()) {
+      setPresetFeedback({
+        type: 'error',
+        message: 'Enter a visual style description first before saving a preset.',
+      });
+      const inputEl = document.getElementById('character-prompt-input');
+      if (inputEl) inputEl.focus();
+      return;
+    }
+    setPresetFeedback(null);
+    setIsPresetSaveOpen((prev) => !prev);
+  };
+
+  const handleSavePreset = () => {
+    if (!characterStyle.trim()) {
+      setPresetFeedback({
+        type: 'error',
+        message: 'Enter a visual style description before saving.',
+      });
+      return;
+    }
+    if (!presetNameInput.trim()) {
+      setPresetFeedback({
+        type: 'error',
+        message: 'Enter a preset name before saving.',
+      });
+      return;
+    }
+
+    const parsedVideoDuration =
+      videoDurationValue === 'custom'
+        ? Math.max(1, Math.min(60, Number(customVideoSeconds) || 5))
+        : Number(videoDurationValue) || 5;
+
+    try {
+      const { presets, overwritten } = saveStylePreset({
+        name: presetNameInput.trim(),
+        characterStyle: characterStyle.trim(),
+        includeFormatAndDuration: presetIncludeFormat,
+        format,
+        generationMode,
+        targetVideoDuration: generationMode === 'video' ? parsedVideoDuration : undefined,
+      });
+      setStylePresets(presets);
+      setIsPresetSaveOpen(false);
+      setPresetNameInput('');
+      setPresetIncludeFormat(false);
+      setPresetFeedback({
+        type: 'success',
+        message: overwritten ? 'Style preset updated.' : 'Style preset saved.',
+      });
+    } catch (err: any) {
+      setPresetFeedback({
+        type: 'error',
+        message: err?.message || 'Unable to save preset. Try again.',
+      });
+    }
+  };
+
+  const handleApplyPreset = (preset: StylePreset) => {
+    const applied = applyStylePresetToState(preset);
+    setCharacterStyle(applied.characterStyle);
+    if (applied.format) {
+      handleFormatChange(applied.format);
+    }
+    if (applied.generationMode) {
+      setGenerationMode(applied.generationMode);
+    }
+    if (typeof applied.targetVideoDuration === 'number' && applied.targetVideoDuration > 0) {
+      const strVal = String(applied.targetVideoDuration);
+      if (VIDEO_DURATIONS.some((opt) => opt.value === strVal)) {
+        setVideoDurationValue(strVal);
+        setCustomVideoSeconds('');
+      } else {
+        setVideoDurationValue('custom');
+        setCustomVideoSeconds(strVal);
+      }
+    }
+    setPresetFeedback({
+      type: 'success',
+      message: applied.format
+        ? 'Style preset applied with format and clip duration.'
+        : 'Style preset applied.',
+    });
+  };
+
+  const handleDeletePreset = (preset: StylePreset) => {
+    const updated = deleteStylePreset(preset.id);
+    setStylePresets(updated);
+    setPresetFeedback({
+      type: 'success',
+      message: 'Style preset deleted.',
+    });
   };
 
   const partitionStoryIntoScenes = (sourceText: string): CustomSceneDefinition[] => {
@@ -476,7 +554,6 @@ export default function GeneratorForm({
             generationMode: parsed.generationMode,
             targetVideoDuration: parsed.clips[0]?.durationSeconds || 4,
             beatMode: 'automatic',
-            autoArchitectMode: false,
           };
           onDirectResult(parsed.storyResult, directRequest);
           return;
@@ -520,32 +597,9 @@ export default function GeneratorForm({
       }
       durationMode = 'preset';
       durationSeconds = targetVideoDuration;
-    } else if (!autoArchitectMode) {
+    } else {
       durationMode = 'automatic';
       durationSeconds = undefined;
-    } else {
-      if (durationValue === 'automatic') {
-        durationMode = 'automatic';
-      } else if (durationValue === 'custom') {
-        durationMode = 'custom';
-        const num = parseFloat(customNumeric);
-        if (format === 'short') {
-          if (!num || isNaN(num) || num < 1 || num > 600) {
-            setFormValidationNotice('Please enter a custom target duration between 1 and 600 seconds.');
-            return;
-          }
-          durationSeconds = Math.round(num);
-        } else {
-          if (!num || isNaN(num) || num < 1 || num > 120) {
-            setFormValidationNotice('Please enter a custom target duration between 1 and 120 minutes.');
-            return;
-          }
-          durationSeconds = Math.round(num * 60);
-        }
-      } else {
-        durationMode = 'preset';
-        durationSeconds = parseInt(durationValue, 10);
-      }
     }
 
     let parsedCustomScenes: CustomSceneDefinition[] | undefined = undefined;
@@ -591,7 +645,7 @@ export default function GeneratorForm({
       }
     }
 
-    const effectiveBeatMode = autoArchitectMode ? 'automatic' : (parsedCustomScenes ? 'custom' : beatMode);
+    const effectiveBeatMode = parsedCustomScenes ? 'custom' : beatMode;
 
     onSubmit({
       story: story.trim(),
@@ -606,8 +660,8 @@ export default function GeneratorForm({
       generationMode,
       targetVideoDuration,
       beatMode: effectiveBeatMode,
-      customScenes: autoArchitectMode ? undefined : parsedCustomScenes,
-      autoArchitectMode,
+      customScenes: parsedCustomScenes,
+      openingHookPriority: openingHookPriority || undefined,
     });
   };
 
@@ -723,7 +777,7 @@ export default function GeneratorForm({
                 htmlFor="story-input-box"
                 className="block font-display text-sm font-medium text-white"
               >
-                {autoArchitectMode ? 'Story Premise, Question, or Draft' : 'Exact Story or Script'}
+                Exact Story or Script
               </label>
 
               <div className="flex items-center gap-2.5">
@@ -761,23 +815,19 @@ export default function GeneratorForm({
               onChange={(e) => setStory(e.target.value)}
               disabled={isLoading}
               placeholder={
-                autoArchitectMode
-                  ? "Enter any premise, question, or rough draft (for example: 'What happens if you swallow a magnet?' or 'A deep-sea diver discovers a glowing hatch'). StoryFrame expands the narrative and directs every shot."
-                  : beatMode === 'custom'
-                    ? 'e.g. She fell (beat 1) two miles through open air (beat 2), strapped to three airplane seats, and survived (beat 3).'
-                    : 'Paste your story or exact narrator script. Standard mode preserves every word as written without expanding it (enable Enhance Story to expand a short idea).'
+                beatMode === 'custom'
+                  ? 'e.g. She fell (beat 1) two miles through open air (beat 2), strapped to three airplane seats, and survived (beat 3).'
+                  : 'Paste your story or exact narrator script. StoryFrame preserves every word verbatim without expanding it.'
               }
               className={`w-full p-4 bg-[#121211] hover:bg-[#151513] focus:bg-[#121211] text-[#F5F5F0] placeholder:text-[#666660] border rounded-[3px] transition-colors focus:outline-none text-sm sm:text-base leading-relaxed resize-y story-textarea-scroll ${
-                autoArchitectMode
-                  ? 'border-amber-500/40 focus:border-amber-400'
-                  : beatMode === 'custom'
-                    ? 'border-amber-500/50 focus:border-amber-400'
-                    : 'border-white/15 focus:border-white'
+                beatMode === 'custom'
+                  ? 'border-amber-500/50 focus:border-amber-400'
+                  : 'border-white/15 focus:border-white'
               }`}
               required
             />
 
-            {!autoArchitectMode && beatMode === 'custom' && (
+            {beatMode === 'custom' && (
               <div className="text-xs text-amber-200/90 flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-[#18150D] border border-amber-500/30 rounded-[3px]">
                 <span>
                   Manual Beats: place <strong>(beat 1)</strong>, <strong>(beat 2)</strong>, <strong>(beat 3)</strong> after each phrase.
@@ -789,23 +839,166 @@ export default function GeneratorForm({
             )}
           </div>
 
-          {/* Character & Visual Style Input */}
-          <div className="space-y-2">
-            <label
-              htmlFor="character-prompt-input"
-              className="block font-display text-sm font-medium text-white"
-            >
-              Character &amp; Visual Style
-            </label>
+          {/* Character & Visual Style Input + Saveable Channel Style DNA Presets */}
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <label
+                htmlFor="character-prompt-input"
+                className="block font-display text-sm font-medium text-white"
+              >
+                Character &amp; Visual Style
+              </label>
+              <button
+                type="button"
+                id="open-save-style-preset-btn"
+                onClick={handleOpenSavePreset}
+                disabled={isLoading}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#181816] hover:bg-[#242422] text-[#C4C4BE] hover:text-white border border-white/15 rounded-[3px] text-xs font-display transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-white cursor-pointer disabled:opacity-40"
+              >
+                <BookmarkPlus size={13} />
+                <span>Save Style</span>
+              </button>
+            </div>
+
             <input
               type="text"
               id="character-prompt-input"
               value={characterStyle}
-              onChange={(e) => setCharacterStyle(e.target.value)}
+              onChange={(e) => {
+                setCharacterStyle(e.target.value);
+                if (presetFeedback) setPresetFeedback(null);
+              }}
               disabled={isLoading}
               placeholder="e.g. cinematic hyperrealism, 90s anime cel animation, stop-motion felt, textured oil painting..."
               className="w-full px-4 py-2.5 bg-[#121211] hover:bg-[#151513] focus:bg-[#121211] text-[#F5F5F0] placeholder:text-[#666660] border border-white/15 rounded-[3px] transition-colors focus:outline-none focus:border-white text-sm sm:text-base"
             />
+
+            {stylePresets.length > 0 && (
+              <div id="saved-style-presets-strip" className="space-y-1.5">
+                <span className="block font-editorial-meta text-[10px] text-[#8C8C86]">
+                  SAVED STYLE PRESETS
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  {stylePresets.map((preset) => {
+                    const isActive = characterStyle.trim() === preset.characterStyle.trim();
+                    return (
+                      <div
+                        key={preset.id}
+                        className={`inline-flex items-center border rounded-[3px] transition-colors ${
+                          isActive
+                            ? 'bg-[#1D1D1A] border-white text-white'
+                            : 'bg-[#121211] border-white/15 text-[#D8D8D2] hover:border-white/35'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => handleApplyPreset(preset)}
+                          disabled={isLoading}
+                          title={preset.characterStyle}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-display text-left cursor-pointer disabled:opacity-40"
+                        >
+                          <Bookmark size={11} className={isActive ? 'text-amber-300 shrink-0' : 'text-[#8C8C86] shrink-0'} />
+                          <span className="max-w-[180px] truncate">{preset.name}</span>
+                          {preset.includeFormatAndDuration && preset.format && (
+                            <span className="font-mono text-[10px] text-[#8C8C86]">
+                              {preset.format === 'short' ? '9:16' : '16:9'}
+                              {preset.generationMode === 'video' && preset.targetVideoDuration
+                                ? ` ${preset.targetVideoDuration}s`
+                                : ''}
+                            </span>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePreset(preset)}
+                          disabled={isLoading}
+                          aria-label={`Delete preset ${preset.name}`}
+                          title="Delete preset"
+                          className="px-1.5 py-1.5 text-[#7D7D76] hover:text-red-400 border-l border-white/10 transition-colors cursor-pointer disabled:opacity-40"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {isPresetSaveOpen && (
+              <div
+                id="save-style-preset-panel"
+                className="p-3.5 bg-[#121211] border border-white/20 rounded-[3px] space-y-3"
+              >
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor="style-preset-name-input"
+                    className="block font-display text-xs font-medium text-white"
+                  >
+                    Preset Name
+                  </label>
+                  <input
+                    type="text"
+                    id="style-preset-name-input"
+                    value={presetNameInput}
+                    onChange={(e) => setPresetNameInput(e.target.value)}
+                    placeholder="e.g. Dark Clay Diorama, Neo-Seoul Noir Ink"
+                    className="w-full px-3 py-2 bg-[#0C0C0B] text-[#F5F5F0] placeholder:text-[#666660] border border-white/15 rounded-[3px] text-xs sm:text-sm focus:outline-none focus:border-white"
+                  />
+                </div>
+
+                <label className="flex items-center gap-2 text-xs text-[#C4C4BE] cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    id="style-preset-include-format-checkbox"
+                    checked={presetIncludeFormat}
+                    onChange={(e) => setPresetIncludeFormat(e.target.checked)}
+                    className="rounded-[2px] border-white/25 bg-[#0C0C0B] text-white focus:ring-0 focus:ring-offset-0"
+                  />
+                  <span>Also save format and clip duration</span>
+                </label>
+
+                <p className="text-[11px] text-[#8C8C86] leading-relaxed">
+                  Tip: Save art medium, palette, and lighting so presets work across any story, or include character wardrobe for a recurring series.
+                </p>
+
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsPresetSaveOpen(false);
+                      setPresetFeedback(null);
+                    }}
+                    className="px-3 py-1.5 text-xs font-display text-[#C4C4BE] hover:text-white bg-[#181816] hover:bg-[#222220] border border-white/15 rounded-[3px] transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    id="confirm-save-style-preset-btn"
+                    onClick={handleSavePreset}
+                    className="px-3.5 py-1.5 text-xs font-display font-semibold bg-white text-black hover:bg-[#EAEAE6] rounded-[3px] transition-colors cursor-pointer"
+                  >
+                    {stylePresets.some(
+                      (p) => p.name.trim().toLowerCase() === presetNameInput.trim().toLowerCase() && presetNameInput.trim().length > 0
+                    )
+                      ? 'Update Preset'
+                      : 'Save Preset'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {presetFeedback && (
+              <p
+                role="status"
+                className={`text-xs font-narrative ${
+                  presetFeedback.type === 'error' ? 'text-red-400' : 'text-emerald-400'
+                }`}
+              >
+                {presetFeedback.message}
+              </p>
+            )}
           </div>
 
           {/* Action Row: API Key Status + Generate CTA */}
@@ -844,9 +1037,7 @@ export default function GeneratorForm({
               className={`relative w-full sm:w-auto min-w-[240px] min-h-[46px] font-display text-sm sm:text-base font-medium rounded-[3px] transition-colors flex items-center justify-center overflow-hidden shadow-lg cursor-pointer ${
                 isLoading
                   ? 'p-0 bg-[#141413] border border-white/25 cursor-wait'
-                  : autoArchitectMode
-                    ? 'px-6 py-3 bg-amber-400 text-black hover:bg-amber-300 active:bg-amber-500 font-semibold disabled:opacity-40 disabled:cursor-not-allowed'
-                    : 'px-6 py-3 bg-white text-black hover:bg-[#EAEAE6] active:bg-[#D4D4D0] font-semibold disabled:opacity-40 disabled:cursor-not-allowed'
+                  : 'px-6 py-3 bg-white text-black hover:bg-[#EAEAE6] active:bg-[#D4D4D0] font-semibold disabled:opacity-40 disabled:cursor-not-allowed'
               }`}
             >
               {isLoading ? (
@@ -854,36 +1045,25 @@ export default function GeneratorForm({
                   <div className="w-full min-h-[46px] px-6 py-3 flex items-center justify-center gap-2 text-white select-none">
                     <RefreshCw size={15} className="animate-spin text-white/80 shrink-0" />
                     <span className="font-display text-sm font-medium text-white">
-                      {autoArchitectMode
-                        ? 'Architecting Story...'
-                        : `Generating ${generationMode === 'video' ? 'Video' : 'Storyboard'}...`}
+                      {`Generating ${generationMode === 'video' ? 'Video' : 'Storyboard'}...`}
                     </span>
                   </div>
                   <div
-                    className={`absolute inset-0 flex items-center justify-center gap-2 px-6 py-3 select-none pointer-events-none z-10 ${
-                      autoArchitectMode ? 'bg-amber-400 text-black' : 'bg-white text-black'
-                    }`}
+                    className="absolute inset-0 flex items-center justify-center gap-2 px-6 py-3 select-none pointer-events-none z-10 bg-white text-black"
                     style={{ clipPath: `inset(0 ${Math.max(0, 100 - progress)}% 0 0)` }}
                   >
                     <RefreshCw size={15} className="animate-spin text-black shrink-0" />
                     <span className="font-display text-sm font-bold text-black">
-                      {autoArchitectMode
-                        ? 'Architecting Story...'
-                        : `Generating ${generationMode === 'video' ? 'Video' : 'Storyboard'}...`}
+                      {`Generating ${generationMode === 'video' ? 'Video' : 'Storyboard'}...`}
                     </span>
                   </div>
                 </>
               ) : (
                 <span className="flex items-center gap-2">
-                  {autoArchitectMode && <Sparkles size={15} className="shrink-0" />}
                   <span>
-                    {autoArchitectMode
-                      ? generationMode === 'video'
-                        ? 'Enhance & Generate Video Plan'
-                        : 'Enhance & Generate Breakdown'
-                      : generationMode === 'video'
-                        ? 'Generate Video Breakdown'
-                        : 'Generate Breakdown'}
+                    {generationMode === 'video'
+                      ? 'Generate Video Breakdown'
+                      : 'Generate Breakdown'}
                   </span>
                 </span>
               )}
@@ -892,11 +1072,7 @@ export default function GeneratorForm({
 
           {isLoading && (
             <div className="flex items-center gap-2 text-xs font-mono text-[#A0A09A]">
-              <span
-                className={`w-2 h-2 rounded-[1px] animate-pulse shrink-0 ${
-                  autoArchitectMode ? 'bg-amber-400' : 'bg-white'
-                }`}
-              />
+              <span className="w-2 h-2 rounded-[1px] animate-pulse shrink-0 bg-white" />
               <span>{progressPhase}</span>
             </div>
           )}
@@ -914,101 +1090,45 @@ export default function GeneratorForm({
               </span>
             </div>
 
-            {/* Enhance Story Toggle */}
-            <div className="flex items-center justify-between gap-3">
-              <div className="space-y-0.5">
-                <div className="flex items-center gap-2">
-                  <Sparkles size={14} className={autoArchitectMode ? 'text-amber-400' : 'text-[#8C8C86]'} />
-                  <span className="font-display font-medium text-sm text-white">
-                    Enhance Story
-                  </span>
-                </div>
-                <p className="text-xs text-[#8C8C86] leading-snug">
-                  Expands a short idea or 1-line premise into a structured hook and full narration.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                id="auto-architect-toggle-switch"
-                role="switch"
-                aria-checked={autoArchitectMode}
-                disabled={isLoading}
-                onClick={() => setAutoArchitectMode(!autoArchitectMode)}
-                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-[3px] border transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-amber-400 ${
-                  autoArchitectMode
-                    ? 'bg-amber-500 border-amber-400'
-                    : 'bg-[#1D1D1B] border-white/20'
-                }`}
-                title="Toggle Enhance Story"
-              >
-                <span
-                  aria-hidden="true"
-                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-[2px] transition-transform ${
-                    autoArchitectMode ? 'translate-x-5.5 bg-black' : 'translate-x-1 bg-[#D4D4D0]'
-                  }`}
-                />
-              </button>
-            </div>
-
-            <div className="border-t border-white/10" />
-
             {/* Beat Pacing */}
             <div className="space-y-2">
               <label className="block font-editorial-meta text-[10px] sm:text-[11px] text-[#9C9C96]">
                 BEAT PACING
               </label>
-              {autoArchitectMode ? (
-                <div
-                  id="auto-architect-pacing-indicator"
-                  className="w-full flex items-center justify-between px-3 bg-[#15140F] border border-amber-500/40 h-[42px] rounded-[3px]"
+              <div
+                id="beat-mode-toggle-group"
+                className="w-full flex p-1 bg-[#0C0C0B] border border-white/15 h-[42px] items-center rounded-[3px]"
+                role="group"
+                aria-label="Beat pacing mode selection"
+              >
+                <button
+                  type="button"
+                  id="beat-mode-auto-btn"
+                  disabled={isLoading}
+                  onClick={() => handleToggleBeatMode('automatic')}
+                  className={`flex-1 h-full px-3 text-xs sm:text-sm transition-colors font-display text-center whitespace-nowrap flex items-center justify-center rounded-[2px] cursor-pointer ${
+                    beatMode === 'automatic'
+                      ? 'bg-white text-black font-semibold'
+                      : 'text-[#9C9C96] hover:text-white'
+                  }`}
                 >
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <Sparkles size={13} className="text-amber-400 shrink-0" />
-                    <span className="text-xs font-display text-amber-300 font-medium truncate">
-                      AI Auto-Pacing Active
-                    </span>
-                  </div>
-                  <span className="text-[10px] font-mono text-amber-300 px-1.5 py-0.5 bg-amber-950/60 border border-amber-700/50 rounded-[2px] shrink-0">
-                    1-Pass
-                  </span>
-                </div>
-              ) : (
-                <div
-                  id="beat-mode-toggle-group"
-                  className="w-full flex p-1 bg-[#0C0C0B] border border-white/15 h-[42px] items-center rounded-[3px]"
-                  role="group"
-                  aria-label="Beat pacing mode selection"
+                  Automatic
+                </button>
+                <button
+                  type="button"
+                  id="beat-mode-custom-btn"
+                  disabled={isLoading}
+                  onClick={() => handleToggleBeatMode('custom')}
+                  className={`flex-1 h-full px-3 text-xs sm:text-sm transition-colors font-display text-center whitespace-nowrap flex items-center justify-center gap-1.5 rounded-[2px] cursor-pointer ${
+                    beatMode === 'custom'
+                      ? 'bg-amber-400 text-black font-semibold'
+                      : 'text-[#9C9C96] hover:text-white'
+                  }`}
                 >
-                  <button
-                    type="button"
-                    id="beat-mode-auto-btn"
-                    disabled={isLoading}
-                    onClick={() => handleToggleBeatMode('automatic')}
-                    className={`flex-1 h-full px-3 text-xs sm:text-sm transition-colors font-display text-center whitespace-nowrap flex items-center justify-center rounded-[2px] cursor-pointer ${
-                      beatMode === 'automatic'
-                        ? 'bg-white text-black font-semibold'
-                        : 'text-[#9C9C96] hover:text-white'
-                    }`}
-                  >
-                    Automatic
-                  </button>
-                  <button
-                    type="button"
-                    id="beat-mode-custom-btn"
-                    disabled={isLoading}
-                    onClick={() => handleToggleBeatMode('custom')}
-                    className={`flex-1 h-full px-3 text-xs sm:text-sm transition-colors font-display text-center whitespace-nowrap flex items-center justify-center gap-1.5 rounded-[2px] cursor-pointer ${
-                      beatMode === 'custom'
-                        ? 'bg-amber-400 text-black font-semibold'
-                        : 'text-[#9C9C96] hover:text-white'
-                    }`}
-                  >
-                    <Scissors size={12} className={beatMode === 'custom' ? 'text-black' : 'text-amber-400'} />
-                    <span>Manual Beats</span>
-                  </button>
-                </div>
-              )}
+                  <Scissors size={12} className={beatMode === 'custom' ? 'text-black' : 'text-amber-400'} />
+                  <span>Manual Beats</span>
+                </button>
+              </div>
             </div>
 
             {/* Aspect Ratio Format */}
@@ -1096,41 +1216,32 @@ export default function GeneratorForm({
                     </div>
                   )}
                 </div>
-              ) : autoArchitectMode ? (
-                <div className="space-y-2">
-                  <CustomDropdown
-                    id="duration-select"
-                    label="Target Duration"
-                    options={format === 'short' ? SHORT_DURATIONS : LONG_DURATIONS}
-                    selectedValue={durationValue}
-                    onSelect={setDurationValue}
-                    disabled={isLoading}
-                    helperText="Controls how long Enhance Story expands your narration script."
-                  />
-                  {durationValue === 'custom' && (
-                    <div className="pt-1 space-y-1.5">
-                      <label
-                        htmlFor="custom-numeric-input"
-                        className="block font-editorial-meta text-[10px] text-[#9C9C96]"
-                      >
-                        {format === 'long' ? 'CUSTOM MINUTES (1 - 120)' : 'CUSTOM SECONDS (1 - 600)'}
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        max={format === 'long' ? '120' : '600'}
-                        id="custom-numeric-input"
-                        value={customNumeric}
-                        onChange={(e) => setCustomNumeric(e.target.value)}
-                        disabled={isLoading}
-                        placeholder={format === 'long' ? 'e.g. 7' : 'e.g. 35'}
-                        className="w-full px-3.5 h-[42px] bg-[#0C0C0B] text-[#F5F5F0] placeholder:text-[#666660] border border-white/15 focus:border-white rounded-[3px] focus:outline-none text-xs sm:text-sm font-mono transition-colors"
-                        required
-                      />
-                    </div>
-                  )}
-                </div>
               ) : null}
+
+              {/* Opening 3s Visual Hook Priority (Extra #6) */}
+              <div className="pt-2 border-t border-white/10">
+                <label
+                  htmlFor="opening-hook-priority-checkbox"
+                  className="flex items-start gap-2.5 p-3 bg-[#0C0C0B] hover:bg-[#141412] border border-white/15 rounded-[3px] cursor-pointer select-none transition-colors"
+                >
+                  <input
+                    type="checkbox"
+                    id="opening-hook-priority-checkbox"
+                    checked={openingHookPriority}
+                    onChange={(e) => setOpeningHookPriority(e.target.checked)}
+                    disabled={isLoading}
+                    className="mt-0.5 rounded-[2px] border-white/25 bg-[#0C0C0B] text-white focus:ring-0 focus:ring-offset-0 shrink-0"
+                  />
+                  <div className="space-y-1 min-w-0">
+                    <span className="block text-xs sm:text-sm font-display font-medium text-white">
+                      Opening 3s Visual Hook Priority
+                    </span>
+                    <p className="text-[11px] text-[#8C8C86] leading-relaxed font-narrative">
+                      Sharpens Scene 1 Beat 1 to Beat 3 framing contrast and focal intrigue for stronger cold opens without spoiling later reveals.
+                    </p>
+                  </div>
+                </label>
+              </div>
             </div>
           </div>
 

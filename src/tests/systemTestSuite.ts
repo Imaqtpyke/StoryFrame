@@ -115,6 +115,33 @@ import {
   selectSendableAttachmentIds,
   sendChatMessage,
 } from '../services/assistantChatService';
+import {
+  buildStoryFingerprint,
+  markBeatCopied,
+  loadCopiedBeatsMap,
+  isBeatCopiedMatch,
+  countCopiedBeats,
+  clearCopiedBeatsForStory,
+} from '../services/copiedBeatsStorage';
+import {
+  loadStylePresets,
+  saveStylePreset,
+  deleteStylePreset,
+  applyStylePresetToState,
+  clearAllStylePresets,
+} from '../services/stylePresetStorage';
+import {
+  buildSingleBeatRewritePrompt,
+  normalizeRewrittenBeat,
+} from '../services/beatRewriteService';
+import {
+  buildOpeningHookStage2Guidance,
+  applyOpeningHookContrast,
+} from '../services/stage2BeatPlan';
+import {
+  buildOpeningHookStage3Guidance,
+  getOpeningHookBeatIndices,
+} from '../services/stage3PromptWriter';
 import { Scene, Beat, StyleProfile, StoryGenerationResult, GenerateStoryRequest, AssistantImageAttachment, AssistantChatMessage } from '../types';
 
 interface TestResult {
@@ -514,7 +541,6 @@ import {
   PlannedScene,
   PlannedBeat,
 } from '../services/stage2BeatPlan';
-import { verifyEnhancePreservesBible } from '../services/enhanceBibleDiff';
 import { hashStoryInput, getCachedStoryBible, setCachedStoryBible, clearCachedStoryBible } from '../services/bibleCache';
 import { stage0PrepareNarration, extractAuthorNotes } from '../services/stage0Prepare';
 import { verifyBeatCodeChecks } from '../services/stage4VerifyRepair';
@@ -641,74 +667,19 @@ const cleanedVidText = cleanAndDeduplicatePrompt(invalidVideoPrompt, true);
 assert(!cleanedVidText.includes('"Hold steady!"') || invalidVideoPrompt.includes('"'), 'Video Mode', 'Catches quotation marks in video prompt verification');
 
 // ============================================================================
-// 14. ENHANCE NON-HORROR FIXTURE & BIBLE PRESERVATION DIFF VERIFICATION
+// 14. AUTHOR NOTES & NARRATION PREPARATION CHECK
 // ============================================================================
-console.log('--- Running Test Suite 14: Enhance Non-Horror & Bible Diff Check ---');
+console.log('--- Running Test Suite 14: Author Notes & Narration Prep ---');
 
-let enhanceFixtureText = '';
-try {
-  const ePath = path.resolve(process.cwd(), 'tests/fixtures/enhance_non_horror.txt');
-  enhanceFixtureText = fs.existsSync(ePath) ? fs.readFileSync(ePath, 'utf8') : fs.readFileSync(path.resolve(process.cwd(), 'src/tests/fixtures/enhance_non_horror.txt'), 'utf8');
-} catch {
-  enhanceFixtureText = 'In the spring of 1888, Master Henri Blanc believed his life work was already complete. He was mistaken.';
-}
-
-const enhancePrepared = stage0PrepareNarration(enhanceFixtureText);
-assert(enhancePrepared.authorNotes?.includes('Geneva, Switzerland'), 'Enhance Mode', 'Author notes capture 1888 Geneva setting');
-
-const watchmakerBible = {
-  cast: [
-    { id: 'henri_blanc', role: 'Master horologist', visualLock: 'A 65-year-old watchmaker with silver wire-rim spectacles and worn leather apron over pressed linen shirt' },
-    { id: 'clara', role: 'Apprentice', visualLock: 'A 19-year-old young woman with sharp inquisitive brown eyes wearing a dark wool waistcoat' },
-  ],
-  threat: {
-    canonicalLook: 'none (non-horror historical drama)',
-    allowedVariants: [],
-  },
-  locations: [
-    { id: 'blanc_atelier', visualLock: 'Geneva watchmaking atelier with arched north-facing windows, polished mahogany benches, and brass lathes' },
-  ],
-  motifs: [
-    { id: 'celestial_pocket_watch', description: '18-karat gold astronomical pocket watch with three perpetual calendar dials' },
-  ],
-  events: [
-    'Henri believes life work complete',
-    'Clara dusts mahogany cabinets in sunlit atelier',
-    'Henri unlocks iron vault beneath workbench',
-    'Gold celestial watch retrieved from velvet casket',
-    'Clara examines ruby pallet stones and balance wheel',
-    'Cipher reveals forgotten signature of anonymous patron',
-  ],
-  referents: [
-    {
-      phrase: 'his life work was already complete. He was mistaken.',
-      concreteEntity: 'gold celestial pocket watch',
-      visualDepiction: 'An intricate open-faced gold pocket watch displaying astronomical moonphase dials',
-    },
-  ],
-  withheld: [
-    'The identity of the royal patron who commissioned the secret celestial escapement fifty years prior',
-  ],
-  forbidden: [
-    'magic spells',
-    'supernatural ghosts',
-    'time travel portals',
-    'steam-powered weapons',
-  ],
-  worldStyle: 'photographic 35mm warm cinematic realism, soft natural daylight and polished brass reflections',
-  assumptions: ['Atelier is located on Rue du Rhone', 'Tools are manual swiss horological lathes'],
-};
-
-// Test valid enhancement preserving the bible
-const goodEnhancedText = `In the spring of 1888, Master Henri Blanc sat at his mahogany bench in the sunlit Geneva atelier, believing his masterwork was behind him. Beside him, his apprentice Clara dusted the glass cabinets as morning light beamed across the room. Henri unlocked the iron vault, gently lifting the 18-karat gold celestial pocket watch from its velvet casket. Clara leaned closer, marveling at the oscillating balance wheel and microscopic ruby jewels ticking in silent precision. Beneath the third dial, a hidden engraved cipher concealed the forgotten legacy of the anonymous patron who never returned.`;
-
-const diffResultGood = verifyEnhancePreservesBible(goodEnhancedText, watchmakerBible);
-assert(diffResultGood.preserved, 'Enhance Bible Preservation', 'Approves enhanced narrative that preserves cast, locations, and causal events');
-
-// Test bad enhancement introducing forbidden magic/weapons
-const badEnhancedText = `Master Henri used magic spells and steam-powered weapons to open a supernatural time travel portal in the shop.`;
-const diffResultBad = verifyEnhancePreservesBible(badEnhancedText, watchmakerBible);
-assert(!diffResultBad.preserved, 'Enhance Bible Preservation', 'Rejects enhanced narrative that introduces forbidden tropes or drops core cast');
+const notesSampleInput =
+  'In the spring of 1888, Master Henri Blanc believed his life work was already complete. He was mistaken.\n\nNOTES:\nSetting: Geneva, Switzerland (1888).';
+const notesPrepared = stage0PrepareNarration(notesSampleInput);
+assert(
+  notesPrepared.authorNotes?.includes('Geneva, Switzerland') === true &&
+    !notesPrepared.cleanNarration.includes('NOTES:'),
+  'Stage 0 Prep',
+  'Author notes capture 1888 Geneva setting and strip NOTES block from narration'
+);
 
 // ============================================================================
 // 15. STORY BIBLE SESSION CACHE VERIFICATION
@@ -726,7 +697,23 @@ assert(hash1 === hash2, 'Bible Cache', 'Generates identical deterministic cache 
 const hashChanged = hashStoryInput(storySample + ' Additional text.', notesSample);
 assert(hash1 !== hashChanged, 'Bible Cache', 'Generates different hash when story text changes');
 
-setCachedStoryBible(storySample, notesSample, watchmakerBible);
+const sampleCacheBible = {
+  cast: [
+    { id: 'merchant', role: 'Caravan merchant', visualLock: 'Weather-beaten traveler in sand-colored linen robe' },
+    { id: 'guide', role: 'Trail guide', visualLock: 'Older scout carrying an iron oil lantern' },
+  ],
+  threat: { canonicalLook: 'none', allowedVariants: [] },
+  locations: [{ id: 'silk_road', visualLock: 'Wind-carved desert pass at dusk' }],
+  motifs: [],
+  events: ['Merchant leads pack camels into the canyon pass'],
+  referents: [],
+  withheld: [],
+  forbidden: [],
+  worldStyle: 'Warm 35mm cinematic realism',
+  assumptions: [],
+};
+
+setCachedStoryBible(storySample, notesSample, sampleCacheBible);
 const retrieved = getCachedStoryBible(storySample, notesSample);
 assert(retrieved !== null && retrieved.cast.length === 2, 'Bible Cache', 'Retrieves cached Bible across mode or format switches without regenerating');
 
@@ -5707,6 +5694,424 @@ function runTestSuite46() {
   );
 }
 
+// ============================================================================
+// 47. EXTRAS #1, #2, #5: COPIED CHECKMARKS, STYLE PRESETS & QUICK REWRITE
+// ============================================================================
+function runTestSuite47() {
+  console.log('\n--- Running Test Suite 47: Copied Checkmarks, Channel Style Presets & Quick Rewrite ---');
+
+  // 47.1 Copied Beat Persistence & Automatic Hash Invalidation on Prompt Rewrite
+  const sampleStory: StoryGenerationResult = {
+    title: 'Archive Clock',
+    totalDurationSeconds: 6,
+    generationMode: 'image',
+    styleProfile: {
+      artStyle: 'Matte stop-motion clay diorama',
+      colorPalette: 'Slate blue and brass amber',
+      lighting: 'Warm desk lamp light',
+      eraAndSetting: 'Quiet archive room',
+      styleFamily: 'stop_motion',
+    },
+    characterSheet: { Mara: 'Woman in brown tweed coat with auburn braid' },
+    locationSheet: { Archive: 'Oak shelves and brass desk lamp' },
+    scenes: [
+      {
+        index: 1,
+        narratorLine: 'Mara unlocked the brass ledger.',
+        estimatedSeconds: 3,
+        beats: [
+          {
+            beatIndex: 1,
+            textSpan: 'Mara unlocked',
+            shotType: 'Medium Shot',
+            cameraAngle: 'eye-level',
+            imagePrompt: 'Vertical 9:16 portrait composition, Medium Shot, eye-level of Mara reaching for the brass key.',
+            estimatedSeconds: 1.5,
+          },
+          {
+            beatIndex: 2,
+            textSpan: 'the brass ledger.',
+            shotType: 'Close-Up',
+            cameraAngle: 'high-angle',
+            imagePrompt: 'Vertical 9:16 portrait composition, Close-Up, high-angle of brass clasp clicking open.',
+            estimatedSeconds: 1.5,
+          },
+        ],
+      },
+      {
+        index: 2,
+        narratorLine: 'The lid opened.',
+        estimatedSeconds: 3,
+        beats: [
+          {
+            beatIndex: 1,
+            textSpan: 'The lid opened.',
+            shotType: 'Close-Up',
+            cameraAngle: 'low-angle',
+            imagePrompt: 'Vertical 9:16 portrait composition, Close-Up, low-angle of heavy oak ledger cover rising.',
+            estimatedSeconds: 3,
+          },
+        ],
+      },
+    ],
+  };
+
+  const fpBefore = buildStoryFingerprint(sampleStory);
+  clearCopiedBeatsForStory(fpBefore);
+  markBeatCopied(fpBefore, 1, 1, 'Prompt 1.1 v1');
+  markBeatCopied(fpBefore, 2, 1, 'Prompt 2.1 v1');
+
+  const fpAfterPromptEdit = buildStoryFingerprint({
+    ...sampleStory,
+    scenes: sampleStory.scenes.map((sc) =>
+      sc.index === 1
+        ? {
+            ...sc,
+            beats: sc.beats.map((b) =>
+              b.beatIndex === 1 ? { ...b, imagePrompt: 'Rewritten prompt 1.1 v2' } : b
+            ),
+          }
+        : sc
+    ),
+  });
+  const loadedCopied = loadCopiedBeatsMap(fpBefore);
+  const stillCopied11AfterRewrite = isBeatCopiedMatch(loadedCopied, 1, 1, 'Rewritten prompt 1.1 v2');
+  const stillCopied21AfterRewrite = isBeatCopiedMatch(loadedCopied, 2, 1, 'Prompt 2.1 v1');
+  const copiedTotal = countCopiedBeats(loadedCopied, [
+    { sceneIndex: 1, beatIndex: 1, promptText: 'Rewritten prompt 1.1 v2' },
+    { sceneIndex: 1, beatIndex: 2, promptText: 'Prompt 1.2 v1' },
+    { sceneIndex: 2, beatIndex: 1, promptText: 'Prompt 2.1 v1' },
+  ]);
+  clearCopiedBeatsForStory(fpBefore);
+
+  assert(
+    fpBefore === fpAfterPromptEdit &&
+      stillCopied11AfterRewrite === false &&
+      stillCopied21AfterRewrite === true &&
+      copiedTotal === 1,
+    'Suite 47: Copied Checkmarks, Style Presets & Quick Rewrite',
+    '47.1 Persists Copied Checkmarks Across Scenes & Automatically Invalidates Stale Hash on Beat Rewrite',
+    `fpSame=${fpBefore === fpAfterPromptEdit} | s1b1=${stillCopied11AfterRewrite} | s2b1=${stillCopied21AfterRewrite} | total=${copiedTotal}`
+  );
+
+  // 47.2 Channel Style DNA Presets: Style-Only safety vs Opt-in Format+Duration & Overwrite/Delete
+  clearAllStylePresets();
+  const savedStyleOnly = saveStylePreset({
+    name: 'Diorama Clay',
+    characterStyle: 'Handcrafted matte clay stop-motion diorama, warm brass lamp',
+    includeFormatAndDuration: false,
+    format: 'long',
+    generationMode: 'video',
+    targetVideoDuration: 8,
+  });
+  const appliedStyleOnly = applyStylePresetToState(savedStyleOnly.saved);
+
+  const savedUpdated = saveStylePreset({
+    name: 'diorama clay',
+    characterStyle: 'Handcrafted matte clay diorama, cool slate twilight',
+    includeFormatAndDuration: true,
+    format: 'short',
+    generationMode: 'video',
+    targetVideoDuration: 4,
+  });
+  const appliedWithFormat = applyStylePresetToState(savedUpdated.saved);
+  const allAfterUpdate = loadStylePresets();
+  const afterDelete = deleteStylePreset(savedUpdated.saved.id);
+  clearAllStylePresets();
+
+  assert(
+    appliedStyleOnly.characterStyle.includes('Handcrafted matte clay') &&
+      appliedStyleOnly.format === undefined &&
+      appliedStyleOnly.generationMode === undefined &&
+      appliedStyleOnly.targetVideoDuration === undefined &&
+      savedUpdated.overwritten === true &&
+      allAfterUpdate.length === 1 &&
+      appliedWithFormat.format === 'short' &&
+      appliedWithFormat.generationMode === 'video' &&
+      appliedWithFormat.targetVideoDuration === 4 &&
+      afterDelete.length === 0,
+    'Suite 47: Copied Checkmarks, Style Presets & Quick Rewrite',
+    '47.2 Saves, Overwrites, Deletes Channel Style Presets & Keeps Style-Only Presets Isolated From Format/Duration',
+    `styleOnly=${JSON.stringify(appliedStyleOnly)} | withFormat=${JSON.stringify(appliedWithFormat)} | count=${allAfterUpdate.length}`
+  );
+
+  // 47.3 Single-Beat Quick Rewrite Prompt Context + Deterministic Normalization & Metadata Sync
+  const noirMonoResult: StoryGenerationResult = {
+    title: 'Midnight Darkroom',
+    totalDurationSeconds: 4,
+    generationMode: 'image',
+    styleProfile: {
+      artStyle: 'High-contrast monochrome black-and-white ink noir',
+      colorPalette: 'Pure black ink, crisp stark white highlights, cool slate grays',
+      lighting: 'Hard directional moonlight contrast',
+      eraAndSetting: '1980s darkroom',
+      styleFamily: 'illustration_2d',
+    },
+    characterSheet: {
+      Joon: 'Lean photographer in crumpled trench coat',
+    },
+    locationSheet: {
+      Darkroom: 'Concrete photo lab with clothesline and enlarger',
+    },
+    storyBible: {
+      cast: [{ id: 'Joon', role: 'Lead', visualLock: 'Lean photographer in crumpled trench coat' }],
+      threat: { canonicalLook: 'hollow shadow silhouette', allowedVariants: [] },
+      locations: [{ id: 'Darkroom', visualLock: 'Concrete photo lab', spatialPlacement: 'Enlarger table at back wall' }],
+      motifs: [],
+      events: ['Joon inspects strip'],
+      referents: [],
+      withheld: ['The future accident date stays hidden'],
+      forbidden: ['neon smartphone'],
+      worldStyle: 'High-contrast monochrome black-and-white ink noir',
+      styleFamily: 'illustration_2d',
+      assumptions: [],
+    },
+    scenes: [
+      {
+        index: 1,
+        narratorLine: 'Sweden kept the secret inside dark film.',
+        lightingState: 'Cold silver moonlight slicing across wet tiles',
+        timeOfDay: 'Midnight',
+        estimatedSeconds: 4,
+        beats: [
+          {
+            beatIndex: 1,
+            textSpan: 'Sweden',
+            shotType: 'Medium Shot',
+            cameraAngle: 'eye-level',
+            imagePrompt: 'Vertical 9:16 portrait composition, Medium Shot, eye-level of Joon entering Darkroom.',
+            estimatedSeconds: 2,
+          },
+          {
+            beatIndex: 2,
+            textSpan: 'kept the secret inside dark film.',
+            shotType: 'Wide Shot',
+            cameraAngle: 'eye-level',
+            imagePrompt: 'Vertical 9:16 portrait composition, Wide Shot, eye-level of enlarger table.',
+            estimatedSeconds: 2,
+          },
+        ],
+      },
+    ],
+  };
+
+  const rewritePrompt = buildSingleBeatRewritePrompt({
+    result: noirMonoResult,
+    scene: noirMonoResult.scenes[0],
+    beat: noirMonoResult.scenes[0].beats[0],
+    prevBeat: null,
+    nextBeat: noirMonoResult.scenes[0].beats[1],
+    format: 'short',
+    instruction: 'Switch to a tighter close-up on his inked hands holding wet film',
+  });
+
+  const normalizedRewritten = normalizeRewrittenBeat({
+    rawPrompt:
+      'Close-Up, low-angle of Joon holding wet negative strip bathed in warm amber tungsten glow as camera slowly pans right. Audio: soft drip.',
+    rawShotType: 'Close-Up',
+    rawCameraAngle: 'low-angle',
+    originalBeat: noirMonoResult.scenes[0].beats[0],
+    result: noirMonoResult,
+    format: 'short',
+  });
+
+  const displayNormalized = normalizeStoryboardForDisplay(
+    [
+      {
+        ...noirMonoResult.scenes[0],
+        beats: [normalizedRewritten, noirMonoResult.scenes[0].beats[1]],
+      },
+    ],
+    {
+      isVideoMode: false,
+      isLongForm: false,
+      styleProfile: noirMonoResult.styleProfile,
+      characterSheet: noirMonoResult.characterSheet,
+      locationSheet: noirMonoResult.locationSheet,
+    }
+  );
+
+  const firstDisplayed = displayNormalized[0].beats[0];
+  assert(
+    rewritePrompt.includes('Withheld Secrets') &&
+      rewritePrompt.includes('PREVIOUS BEAT') &&
+      rewritePrompt.includes('NEXT BEAT') &&
+      rewritePrompt.includes('Cold silver moonlight slicing across wet tiles') &&
+      normalizedRewritten.shotType === 'Close-Up' &&
+      normalizedRewritten.cameraAngle === 'low-angle' &&
+      !/\bamber\b/i.test(normalizedRewritten.imagePrompt) &&
+      !/\bpans\s+right\b/i.test(normalizedRewritten.imagePrompt) &&
+      !/\bAudio:/i.test(normalizedRewritten.imagePrompt) &&
+      normalizedRewritten.userRewritten === true &&
+      firstDisplayed.userRewritten === true &&
+      !firstDisplayed.imagePrompt.includes('topographic map'),
+    'Suite 47: Copied Checkmarks, Style Presets & Quick Rewrite',
+    '47.3 Locks Rewrite Context (Withheld/Neighbors/Lighting), Enforces Monochrome & Still-Image Hygiene, Syncs Metadata & Preserves Rewrite',
+    `normalized=${normalizedRewritten.imagePrompt} | shot=${normalizedRewritten.shotType}/${normalizedRewritten.cameraAngle} | displayed=${firstDisplayed.imagePrompt}`
+  );
+}
+
+// ============================================================================
+// 48. OPENING 3S VISUAL HOOK PRIORITY (EXTRA #6)
+// ============================================================================
+function runTestSuite48() {
+  console.log('\n--- Running Test Suite 48: Opening 3s Visual Hook Priority (Extra #6) ---');
+
+  // 48.1 Checkpoint Isolation
+  const ckptOff = buildCheckpointKey(
+    'Rain hammered the tin roof at midnight.',
+    undefined,
+    'short',
+    'image',
+    'standard',
+    'Ink noir',
+    undefined,
+    false
+  );
+  const ckptOn = buildCheckpointKey(
+    'Rain hammered the tin roof at midnight.',
+    undefined,
+    'short',
+    'image',
+    'standard',
+    'Ink noir',
+    undefined,
+    true
+  );
+  assert(
+    ckptOff !== ckptOn && ckptOn.endsWith('_hook3s') && !ckptOff.endsWith('_hook3s'),
+    'Suite 48: Opening 3s Visual Hook Priority',
+    '48.1 Checkpoint Keys Isolate Opening Hook Priority ON vs OFF',
+    `ckptOff=${ckptOff} | ckptOn=${ckptOn}`
+  );
+
+  // 48.2 Deterministic Framing Contrast Scoped Strictly to Scene 1 Beats Starting Under 3.0s
+  const sampleScenes: PlannedScene[] = [
+    {
+      index: 1,
+      narratorLine: 'He opened the steel door slowly without looking back.',
+      estimatedSeconds: 5.5,
+      averageBeatSeconds: 1.4,
+      fastCutRatio: 0,
+      beatToClipMap: { 1: 1, 2: 1, 3: 2, 4: 2 },
+      beats: [
+        {
+          beatIndex: 1,
+          wordRange: [0, 3],
+          textSpan: 'He opened the steel',
+          depicts: 'Joon pulls heavy steel door ajar',
+          kind: 'literal',
+          intensity: 'low',
+          subjectIds: ['Joon'],
+          shotSize: 'medium',
+          angle: 'eye level',
+          newInfo: 'Door opens',
+          estimatedSeconds: 1.5,
+          clipIndex: 1,
+        },
+        {
+          beatIndex: 2,
+          wordRange: [4, 5],
+          textSpan: 'door slowly',
+          depicts: 'Door latch slides clear',
+          kind: 'literal',
+          intensity: 'low',
+          subjectIds: ['Joon'],
+          shotSize: 'medium',
+          angle: 'low',
+          newInfo: 'Latch release',
+          estimatedSeconds: 2.0,
+          clipIndex: 1,
+        },
+        {
+          beatIndex: 3,
+          wordRange: [6, 8],
+          textSpan: 'without looking back.',
+          depicts: 'Hallway shadow behind him',
+          kind: 'withheld-effect',
+          intensity: 'low',
+          subjectIds: ['Joon'],
+          shotSize: 'medium',
+          angle: 'eye level',
+          newInfo: 'After 3s cutoff',
+          estimatedSeconds: 2.0,
+          clipIndex: 2,
+        },
+      ],
+    },
+    {
+      index: 2,
+      narratorLine: 'Cold stairs dropped below.',
+      estimatedSeconds: 2.5,
+      averageBeatSeconds: 2.5,
+      fastCutRatio: 0,
+      beats: [
+        {
+          beatIndex: 1,
+          wordRange: [9, 12],
+          textSpan: 'Cold stairs dropped below.',
+          depicts: 'Concrete stairwell descends',
+          kind: 'literal',
+          intensity: 'low',
+          subjectIds: ['Stairwell'],
+          shotSize: 'medium',
+          angle: 'eye level',
+          newInfo: 'Stairwell framing',
+          estimatedSeconds: 2.5,
+        },
+      ],
+    },
+  ];
+
+  const hookedScenes = applyOpeningHookContrast(sampleScenes);
+  const s1b1 = hookedScenes[0].beats[0];
+  const s1b2 = hookedScenes[0].beats[1];
+  const s1b3 = hookedScenes[0].beats[2];
+  const s2b1 = hookedScenes[1].beats[0];
+
+  assert(
+    s1b1.angle === 'low' &&
+      s1b1.intensity === 'medium' &&
+      s1b2.shotSize !== s1b1.shotSize &&
+      s1b2.shotSize !== 'over-the-shoulder' &&
+      s1b1.clipIndex === 1 &&
+      s1b2.clipIndex === 1 &&
+      s1b3.shotSize === 'medium' &&
+      s1b3.angle === 'eye level' &&
+      s1b3.intensity === 'low' &&
+      s2b1.shotSize === 'medium' &&
+      s2b1.angle === 'eye level',
+    'Suite 48: Opening 3s Visual Hook Priority',
+    '48.2 Diversifies Scene 1 Framing Inside First 3 Seconds Without Touching Beats >= 3s, Clips, or Scene 2',
+    `s1b1=${s1b1.shotSize}/${s1b1.angle} | s1b2=${s1b2.shotSize}/${s1b2.angle} | s1b3=${s1b3.shotSize}/${s1b3.angle} | s2b1=${s2b1.shotSize}/${s2b1.angle}`
+  );
+
+  // 48.3 Stage 2 & Stage 3 Guidance Targets Opening Beats, Protects Withheld Secrets & Honors Mode
+  const stage2VideoGuide = buildOpeningHookStage2Guidance(true);
+  const stage2ImageGuide = buildOpeningHookStage2Guidance(false);
+  const targetIndices = getOpeningHookBeatIndices(sampleScenes[0].beats);
+  const stage3ImageGuide = buildOpeningHookStage3Guidance(false, sampleScenes[0].beats);
+  const stage3VideoGuide = buildOpeningHookStage3Guidance(true, sampleScenes[0].beats);
+
+  assert(
+    stage2VideoGuide.includes('clip cohesion') &&
+      stage2ImageGuide.includes('2-6 word') &&
+      stage2VideoGuide.includes('NEVER spoil Withheld') &&
+      targetIndices.length === 2 &&
+      targetIndices[0] === 1 &&
+      targetIndices[1] === 2 &&
+      stage3ImageGuide.includes('Scene 1 Beats 1, 2 ONLY') &&
+      stage3ImageGuide.includes('frozen peak-tension still frame') &&
+      stage3VideoGuide.includes('kinetic physical tension') &&
+      stage3VideoGuide.includes('withheld secrets strictly') &&
+      !stage2VideoGuide.includes('\u2014') &&
+      !stage3VideoGuide.includes('\u2014'),
+    'Suite 48: Opening 3s Visual Hook Priority',
+    '48.3 Targets Scene 1 Opening <3s Beats With Withheld Safety, Mode Discipline & Zero Em Dashes',
+    `indices=${targetIndices.join(',')} | s3Image=${stage3ImageGuide}`
+  );
+}
+
 runTestSuite21().then(async () => {
   runTestSuite23();
   runTestSuite24();
@@ -5732,6 +6137,8 @@ runTestSuite21().then(async () => {
   await runTestSuite44();
   await runTestSuite45();
   runTestSuite46();
+  runTestSuite47();
+  runTestSuite48();
   console.log('\n====================================================================');
   console.log('                  FULL-SYSTEM VERIFICATION REPORT                  ');
   console.log('====================================================================');

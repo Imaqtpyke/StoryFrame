@@ -481,7 +481,6 @@ export interface PartialStoryboardStreamState {
   styleProfile?: Record<string, any>;
   characterSheet?: Record<string, string>;
   locationSheet?: Record<string, string>;
-  hookAnalysis?: Record<string, any>;
   thumbnail?: Record<string, any>;
   sceneIndex?: number;
   prompts?: Array<Record<string, any>>;
@@ -826,7 +825,6 @@ export function extractCompletedStoryboardFields(rawBuffer: string): PartialStor
         if (key === 'styleProfile') result.styleProfile = parsedObj;
         else if (key === 'characterSheet') result.characterSheet = parsedObj;
         else if (key === 'locationSheet') result.locationSheet = parsedObj;
-        else if (key === 'hookAnalysis') result.hookAnalysis = parsedObj;
         else if (key === 'thumbnail') result.thumbnail = parsedObj;
       } catch {
         // Ignore partial object
@@ -904,7 +902,7 @@ export async function streamJsonLlmWithSceneProgress<T = any>(
     const hasData =
       partial.scenes.length > 0 ||
       (Array.isArray(partial.prompts) && partial.prompts.length > 0) ||
-      Boolean(partial.styleProfile || partial.characterSheet || partial.hookAnalysis);
+      Boolean(partial.styleProfile || partial.characterSheet);
     if (!hasData) return false;
 
     const sceneSig = partial.scenes
@@ -918,7 +916,6 @@ export async function streamJsonLlmWithSceneProgress<T = any>(
       partial.styleProfile ? 1 : 0,
       partial.characterSheet ? Object.keys(partial.characterSheet).length : 0,
       partial.locationSheet ? Object.keys(partial.locationSheet).length : 0,
-      partial.hookAnalysis ? 1 : 0,
       Array.isArray(partial.prompts) ? partial.prompts.length : 0,
     ].join(':');
     const signature = `${metaSig}::${sceneSig}`;

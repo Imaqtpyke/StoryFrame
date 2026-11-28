@@ -3628,7 +3628,7 @@ export function normalizeStoryboardForDisplay(
 
     const formatted = deduped.map((b, idx) => {
       const geo = extractGeographicAnchor(b.textSpan);
-      if (geo && getWordCount(b.textSpan) <= 3) {
+      if (geo && getWordCount(b.textSpan) <= 3 && !b.userRewritten) {
         return {
           ...b,
           beatIndex: idx + 1,

@@ -107,6 +107,7 @@ export interface Beat {
   flaggedIssue?: string;
   shotRole?: ShotRole;
   clipIndex?: number;
+  userRewritten?: boolean;
 }
 
 export interface Scene {
@@ -162,12 +163,7 @@ export interface StoryGenerationResult {
   scenes: Scene[];
   generationMode?: GenerationMode;
   targetVideoDuration?: number;
-  autoArchitectMode?: boolean;
-  hookAnalysis?: {
-    headlineHook?: string;
-    hookType?: string;
-    hookRationale?: string;
-  };
+  openingHookPriority?: boolean;
   thumbnail?: ThumbnailData;
   ctaPrompt?: CtaPromptData;
   storyBible?: StoryBible;
@@ -215,7 +211,7 @@ export interface GenerateStoryRequest {
   targetVideoDuration?: number;
   beatMode?: 'automatic' | 'custom';
   customScenes?: CustomSceneDefinition[];
-  autoArchitectMode?: boolean;
+  openingHookPriority?: boolean;
 }
 
 export interface HistoryItem {

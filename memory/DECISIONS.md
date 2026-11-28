@@ -409,3 +409,31 @@
 - **Context:** Improves T2V clip cohesion, T2I craft across any visual style/story genre, spatial/lighting continuity, and 4-second clip pacing without adding UI clutter or mobile reference-upload friction.
 - **Date:** 2026-11-27
 - **Status:** Active
+
+## Complete Removal of Enhance Story Mode
+- **Fact/Decision:** Erased Enhance Story Mode (`enhanceStoryArchitect.ts`, `enhanceBibleDiff.ts`, `autoArchitectMode`, `hookAnalysis`, `scriptOutline`, and the `Enhance Story` toggle and `Target Duration` dropdown in `GeneratorForm.tsx` / `ResultsSkeleton.tsx`). All story breakdowns now route exclusively through the unified Grounded Pipeline (`executeGroundedPipeline()`), while users can expand ideas beforehand via the AI Assistant (`266 / 266` tests passing).
+- **Context:** Eliminates duplicate generation pipeline maintenance and form clutter since the user expands ideas with AI Assistant and always runs verbatim scripts through one unified engine.
+- **Date:** 2026-11-27
+- **Status:** Active
+
+## Removal of Scene Clip Prompt Card & Per-Scene Video Synthesis
+- **Fact/Decision:** Removed the `SCENE CLIP PROMPT` UI card and `Master Clip Prompt` lines from Copy All / Markdown exports in `ResultsView.tsx`, removed `sceneVideoPrompt` from Stage 3 schemas/instructions/fallbacks (`stage3PromptWriter.ts`) and `groundedPipeline.ts`, and kept every Video Mode beat prompt standalone and per-beat (`266 / 266` tests passing). Preserved `scriptParser.ts` for pre-written `### Clip` markdown imports where Beat 1 already contains the clip prompt.
+- **Context:** Eliminates redundant per-scene summary boxes that cramped the per-beat results view and wasted Stage 3 output tokens.
+- **Date:** 2026-11-27
+- **Status:** Active
+
+## Production Workflow Extras #1, #2, and #5 (Suite 47)
+- **Fact/Decision:**
+  1. **Cross-Scene Copy & Next Beat + Persisted Copied Checkmarks (`copiedBeatsStorage.ts`, `ResultsView.tsx`, `BeatBottomSheet.tsx`):** Added `await`-safe clipboard copying (`navigator.clipboard.writeText` with `<textarea>` fallback and error notice) that only advances across scenes when copy succeeds, expands collapsed target scenes automatically, and persists per-beat copied checkmarks in `localStorage` keyed by `{storyFingerprint}::{sceneIndex}::{beatIndex}::{compiledPromptHash}` so edits or rewrites automatically invalidate stale checkmarks.
+  2. **Saveable Channel Style DNA Presets (`stylePresetStorage.ts`, `GeneratorForm.tsx`):** Added `localStorage` CRUD for reusable `Character & Visual Style` presets defaulting strictly to Visual Style Only with an explicit opt-in checkbox (`Also save format and clip duration`) so format/duration never change silently.
+  3. **Single-Beat Quick Rewrite with Continuity Lock & 1-Step Undo (`beatRewriteService.ts`, `ResultsView.tsx`, `BeatBottomSheet.tsx`, `App.tsx`):** Added per-beat inline Quick Rewrite passing locked `StoryBible`, `styleProfile`, `scene.lightingState`, `withheld`/`forbidden` rules, and immediate neighboring beats (`prevBeat`/`nextBeat`), running Stage 4 checks + prompt sanitizers (`userRewritten: true` shield in `beatProgressionEngine.ts`), persisting changes via `updateHistoryResult`, preserving instructions on error with `Retry`, and supporting 1-step `Undo Rewrite`.
+- **Context:** Speeds up mobile and desktop prompt copying across long storyboards, saves recurring channel aesthetics without cross-project format collisions, and fixes individual weak beats without re-running the full pipeline.
+- **Date:** 2026-11-27
+- **Status:** Active
+
+## Opening 3s Visual Hook Priority (Extra #6, Suite 48)
+- **Fact/Decision:** Added an opt-in `Opening 3s Visual Hook Priority` checkbox (`openingHookPriority?: boolean`) inside `Director Controls` (`GeneratorForm.tsx`) wired through `types.ts`, `groundedCheckpoint.ts` (`_hook3s` key isolation), `stage2BeatPlan.ts` (`buildOpeningHookStage2Guidance` + deterministic post-pacing `applyOpeningHookContrast`), `stage3PromptWriter.ts` (`buildOpeningHookStage3Guidance` scoped to Scene 1 beats starting under `3.0s`), `groundedPipeline.ts`, and a `3S HOOK PRIORITY` Scene 1 header badge (`ResultsView.tsx`).
+- **Context:** Sharpens opening framing contrast, foreground depth separation, and visual focal intrigue in the crucial first 3 seconds across both Image and Video modes while preserving Custom Beat boundaries, Video clip ceilings, `StoryBible.withheld` secret protection, and isolated checkpoints (`272 / 272` tests passing).
+- **Date:** 2026-11-28
+- **Status:** Active
+

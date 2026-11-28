@@ -24,7 +24,6 @@ import {
   stage3WriteScenePromptsBatch,
   WrittenPromptBeat,
   SceneStage3Meta,
-  buildFallbackSceneVideoPrompt,
 } from './stage3PromptWriter';
 import { stage4VerifyAndRepairScene } from './stage4VerifyRepair';
 import {
@@ -63,7 +62,8 @@ export function getGroundedProgressForRequest(req: GenerateStoryRequest | null |
     req.generationMode || 'image',
     req.modelQuality || 'standard',
     req.characterStyle,
-    isVideo ? req.targetVideoDuration : undefined
+    isVideo ? req.targetVideoDuration : undefined,
+    req.openingHookPriority
   );
   return summarizeGroundedCheckpoint(key);
 }
@@ -81,7 +81,8 @@ export function clearGroundedProgressForRequest(req: GenerateStoryRequest | null
     req.generationMode || 'image',
     req.modelQuality || 'standard',
     req.characterStyle,
-    isVideo ? req.targetVideoDuration : undefined
+    isVideo ? req.targetVideoDuration : undefined,
+    req.openingHookPriority
   );
   clearGroundedCheckpoint(key);
 }
@@ -184,6 +185,7 @@ function assembleGroundedStoryResult(params: {
     scenes: [...scenes],
     generationMode,
     targetVideoDuration: req.targetVideoDuration || (isVideo ? 5 : undefined),
+    openingHookPriority: req.openingHookPriority ? true : undefined,
     thumbnail,
     storyBible: bible,
     assumptions: bible.assumptions,
@@ -234,7 +236,8 @@ export async function executeGroundedPipeline(
     generationMode,
     modelQuality,
     req.characterStyle,
-    targetVideoDuration
+    targetVideoDuration,
+    req.openingHookPriority
   );
 
   let checkpoint = getGroundedCheckpoint(checkpointKey);
@@ -352,7 +355,8 @@ export async function executeGroundedPipeline(
       onStatusMessage,
       provider,
       groqModel,
-      targetVideoDuration
+      targetVideoDuration,
+      Boolean(req.openingHookPriority)
     );
     saveGroundedCheckpoint({
       key: checkpointKey,
@@ -466,8 +470,6 @@ export async function executeGroundedPipeline(
         beatToClipMap: ps.beatToClipMap,
       });
     });
-    const sceneVideoPromptsOut = new Map<number, string>();
-
     const writtenMap = await stage3WriteScenePromptsBatch(
       batchInput,
       bible,
@@ -526,7 +528,7 @@ export async function executeGroundedPipeline(
         : undefined,
       sceneMetaMap,
       targetVideoDuration,
-      isVideo ? sceneVideoPromptsOut : undefined
+      Boolean(req.openingHookPriority)
     );
 
     // Run deterministic Stage 4 verification sequentially for each scene in this batch
@@ -561,17 +563,6 @@ export async function executeGroundedPipeline(
 
       previousDepicts = verifiedBeats.slice(-2).map((b) => b.depicts);
 
-      const resolvedSceneVideoPrompt = isVideo
-        ? sceneVideoPromptsOut.get(sceneNum) ||
-          buildFallbackSceneVideoPrompt(
-            verifiedBeats,
-            bible,
-            format,
-            targetVideoDuration,
-            sceneMetaMap.get(sceneNum)
-          )
-        : undefined;
-
       finalScenes.push({
         index: sceneNum,
         narratorLine: plannedScene.narratorLine,
@@ -580,7 +571,6 @@ export async function executeGroundedPipeline(
         timeOfDay: plannedScene.timeOfDay,
         lightingState: plannedScene.lightingState,
         beatToClipMap: plannedScene.beatToClipMap,
-        videoPrompt: resolvedSceneVideoPrompt,
       });
 
       // Checkpoint and surface each finished scene progressively right after Stage 4

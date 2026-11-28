@@ -31,11 +31,6 @@ export const SCENE_PROMPTS_SCHEMA = {
   type: 'OBJECT',
   properties: {
     sceneIndex: { type: 'INTEGER' },
-    sceneVideoPrompt: {
-      type: 'STRING',
-      description:
-        'For Text to Video mode only: cohesive 45 to 85 word linear T2V clip prompt covering the full scene clip duration without narration text or tool names.',
-    },
     prompts: {
       type: 'ARRAY',
       description: 'Array of self-contained visual prompts matching beatIndex',
@@ -123,28 +118,36 @@ function formatBibleContextForStage3(bible: StoryBible, format: StoryFormat, isV
   };
 }
 
-export function buildFallbackSceneVideoPrompt(
-  beats: WrittenPromptBeat[],
-  bible: StoryBible,
-  format: StoryFormat,
-  targetVideoDuration?: number,
-  sceneMeta?: SceneStage3Meta
-): string {
-  const orientation = format === 'short' ? 'Vertical 9:16 portrait composition' : 'Cinematic 16:9 widescreen composition';
-  const clipSec = targetVideoDuration || sceneMeta?.estimatedSeconds || 4;
-  const firstBeat = beats[0];
-  const lastBeat = beats[beats.length - 1] || firstBeat;
-  const actionArc =
-    beats.length > 1 && firstBeat && lastBeat && firstBeat.beatIndex !== lastBeat.beatIndex
-      ? `${firstBeat.depicts}, progressing smoothly into ${lastBeat.depicts}`
-      : firstBeat?.depicts || 'Continuous narrative action';
-  const lightNote = sceneMeta?.lightingState || bible.lightingArc?.[0]?.lightingDescription || 'natural atmospheric lighting';
-  const styleFamily = bible.styleFamily || classifyVisualStyleFamily(bible.worldStyle);
-  const craftCue = getStyleNativeRenderCue(styleFamily, true);
-  return `${orientation} (${clipSec}s continuous clip). ${actionArc}, ending in a steady visual hold. ${lightNote}. ${craftCue} ${bible.worldStyle}. Audio: subtle ambient room tone and natural foley only, no dialogue.`.replace(
-    /\.\s*\./g,
-    '.'
-  );
+export function getOpeningHookBeatIndices(beats: PlannedBeat[]): number[] {
+  const indices: number[] = [];
+  let elapsed = 0;
+  for (let i = 0; i < beats.length; i++) {
+    const b = beats[i];
+    if (i === 0 || elapsed < 3.0) {
+      indices.push(b.beatIndex);
+    }
+    elapsed += b.estimatedSeconds || 0;
+  }
+  return indices;
+}
+
+export function buildOpeningHookStage3Guidance(isVideoMode: boolean, beats: PlannedBeat[]): string {
+  const targetBeats = getOpeningHookBeatIndices(beats);
+  if (targetBeats.length === 0) return '';
+  const beatLabel =
+    targetBeats.length === 1
+      ? `Scene 1 Beat ${targetBeats[0]}`
+      : `Scene 1 Beats ${targetBeats.join(', ')}`;
+
+  const motionModeLine = isVideoMode
+    ? 'Open immediately mid-motion with kinetic physical tension or unmistakable gaze clarity inside the first seconds.'
+    : 'Compose an arresting frozen peak-tension still frame with strong visual contrast.';
+
+  return `
+OPENING 3-SECOND VISUAL HOOK PRIORITY (${beatLabel} ONLY):
+- Lead immediately with the beat's high-contrast framing, strong foreground-to-background depth separation, dramatic directional shadow/light contrast matching the active lightingState and styleFamily, and crisp focal subject clarity so the cold open stops viewers in the first 3 seconds.
+- ${motionModeLine}
+- CANON & WITHHELD GUARD: Honor Story Bible withheld secrets strictly (never reveal hidden causes prematurely) and never invent unstated props or characters.`;
 }
 
 export async function stage3WriteScenePrompts(
@@ -163,7 +166,7 @@ export async function stage3WriteScenePrompts(
   onProgress?: (partialBeats: WrittenPromptBeat[]) => void,
   sceneMeta?: SceneStage3Meta,
   targetVideoDuration?: number,
-  outSceneVideoPrompt?: (videoPrompt: string) => void
+  openingHookPriority?: boolean
 ): Promise<WrittenPromptBeat[]> {
   const isVideoMode = generationMode === 'video';
   const clipSeconds = targetVideoDuration || sceneMeta?.estimatedSeconds || 4;
@@ -189,20 +192,18 @@ export async function stage3WriteScenePrompts(
 
   const videoClipSchemaRule = isVideoMode
     ? `
-7. LINEAR TEXT-TO-VIDEO CLIP SYNTHESIS ("sceneVideoPrompt"):
-   - Write "sceneVideoPrompt" (45 to 85 words) for this whole ~${clipSeconds}s clip in strict linear order:
-     1) Framing + aspect (${format === 'short' ? 'Vertical 9:16 portrait' : 'Wide 16:9 widescreen'})
-     2) Subject(s) with permanentAnatomy & eraWardrobe (NEVER bare names)
-     3) Continuous progressive action over ~${clipSeconds}s ending in a clear physical resting state
-     4) Grounded setting (3-5 concrete spatial props matching spatialPlacement) + natural lightingState
-     5) Single smooth camera vector settling cleanly into a steady hold (NEVER stack 2 moves)
-     6) Style-native craft (${ctx.renderCue}) + worldStyle
-     7) "Audio: [concrete ambient foley], no dialogue."
-   - Per-beat "imagePrompt" entries MUST ALSO be kinetic, standalone T2V shots using progressive action verbs and ending with "Audio: [ambient foley], no dialogue."`
+7. KINETIC STANDALONE VIDEO BEATS (~${clipSeconds}s clip pacing):
+   - Every per-beat "imagePrompt" MUST be a standalone, progressive T2V shot using active motion verbs and a single smooth camera vector settling cleanly into a steady hold (NEVER stack 2 conflicting moves).
+   - End every beat prompt with "Audio: [concrete ambient foley], no dialogue."`
     : `
 7. FROZEN STILL-FRAME DISCIPLINE:
    - Use crisp frozen peak-action moments (never video tracking/panning prose).
    - Strictly FORBID audio, foley, sound, or music words.`;
+
+  const openingHookDirective =
+    openingHookPriority && sceneIndex === 1
+      ? buildOpeningHookStage3Guidance(isVideoMode, beats)
+      : '';
 
   const systemInstruction = `You are an expert Director of Photography and AI prompt artist.
 Write production-ready, standalone ${isVideoMode ? 'Text-to-Video' : 'Text-to-Image'} prompts for SCENE ${sceneIndex}.
@@ -258,12 +259,12 @@ CRITICAL RULES FOR WRITING EACH PROMPT (35 to 60 crisp words per beat prompt - n
    - ZERO Kelvin numbers (no "3200K"), ZERO percentages (no "60% weight"), ZERO degree math, ZERO lens math (no "35mm f/1.8").
 5. FIGURATIVE RESOLUTION & WITHHELD PROTECTION:
    - Resolve figurative beats to concrete referent visuals; for withheld-effect beats, depict ONLY environmental consequences, never the hidden cause.
-6. ZERO EM DASHES: Never use em dashes anywhere.${videoClipSchemaRule}
+6. ZERO EM DASHES: Never use em dashes anywhere.${videoClipSchemaRule}${openingHookDirective ? `\n${openingHookDirective}` : ''}
 
 Output ONLY raw JSON matching this exact structure:
 {
   "sceneIndex": ${sceneIndex},
-  ${isVideoMode ? '"sceneVideoPrompt": "45 to 85 word linear T2V clip prompt for the whole clip...",\n  ' : ''}"prompts": [
+  "prompts": [
     {
       "beatIndex": 1,
       "imagePrompt": "Crisp self-contained prompt matching all rules above..."
@@ -367,13 +368,6 @@ Output ONLY raw JSON matching this exact structure:
     };
   });
 
-  if (isVideoMode && outSceneVideoPrompt) {
-    const rawMaster = typeof parsed.sceneVideoPrompt === 'string' ? parsed.sceneVideoPrompt.trim() : '';
-    outSceneVideoPrompt(
-      rawMaster || buildFallbackSceneVideoPrompt(writtenBeats, bible, format, targetVideoDuration, sceneMeta)
-    );
-  }
-
   return writtenBeats;
 }
 
@@ -392,7 +386,7 @@ export async function stage3WriteScenePromptsBatch(
   onProgress?: (partialMap: Map<number, WrittenPromptBeat[]>) => void,
   sceneMetaMap?: Map<number, SceneStage3Meta>,
   targetVideoDuration?: number,
-  outSceneVideoPrompts?: Map<number, string>
+  openingHookPriority?: boolean
 ): Promise<Map<number, WrittenPromptBeat[]>> {
   if (sceneBatch.length === 0) return new Map();
   if (sceneBatch.length === 1) {
@@ -417,11 +411,7 @@ export async function stage3WriteScenePromptsBatch(
         : undefined,
       sceneMetaMap?.get(single.sceneIndex),
       targetVideoDuration,
-      outSceneVideoPrompts
-        ? (vp) => {
-            outSceneVideoPrompts.set(single.sceneIndex, vp);
-          }
-        : undefined
+      openingHookPriority
     );
     return new Map([[single.sceneIndex, written]]);
   }
@@ -456,8 +446,13 @@ export async function stage3WriteScenePromptsBatch(
     .join('\n\n');
 
   const videoBatchRule = isVideoMode
-    ? `6. LINEAR VIDEO CLIPS: For EACH scene in Video Mode, include "sceneVideoPrompt" (45-85 words) uniting the clip linearly: Framing -> Subject (permanentAnatomy + eraWardrobe) -> Continuous Action into settling hold -> Spatial Context & Lighting -> Single Camera Vector settling cleanly -> Style Craft -> "Audio: [ambient foley], no dialogue." Keep every beat "imagePrompt" kinetic with ambient foley (no dialogue).`
+    ? `6. STANDALONE VIDEO BEATS: Keep every beat "imagePrompt" standalone and kinetic with progressive motion, a single smooth camera vector settling cleanly, style-native craft, and "Audio: [ambient foley], no dialogue."`
     : `6. STRICT STILL-IMAGE ISOLATION: Crisp frozen peak-action moments only. Strictly FORBID audio, foley, sound, or music words.`;
+
+  const sceneOneInBatch = openingHookPriority ? sceneBatch.find((sc) => sc.sceneIndex === 1) : undefined;
+  const openingHookBatchDirective = sceneOneInBatch
+    ? buildOpeningHookStage3Guidance(isVideoMode, sceneOneInBatch.beats)
+    : '';
 
   const batchInstruction = `You are an expert Director of Photography and AI prompt artist.
 Write production-ready, standalone ${isVideoMode ? 'Text-to-Video' : 'Text-to-Image'} prompts for SCENES ${sceneLabelRange} in sequence.
@@ -510,14 +505,14 @@ CRITICAL RULES FOR WRITING EACH PROMPT (35 to 60 crisp words per beat prompt - n
    - ZERO Kelvin numbers (no "3200K"), ZERO percentages (no "60% weight"), ZERO degree math, ZERO lens math (use "shallow depth of field" or "deep focus").
 5. FIGURATIVE RESOLUTION & WITHHELD PROTECTION:
    - Draw concrete story-world referents for figurative lines and environmental effects only for withheld-effect lines.
-${videoBatchRule}
+${videoBatchRule}${openingHookBatchDirective ? `\n${openingHookBatchDirective}` : ''}
 
 Output ONLY valid raw JSON matching this exact structure without em dashes (write scenes in exact sequential order [${sceneBatch.map((s) => s.sceneIndex).join(', ')}] and beats in order):
 {
   "scenes": [
     {
       "sceneIndex": ${sceneBatch[0].sceneIndex},
-      ${isVideoMode ? '"sceneVideoPrompt": "45 to 85 word linear T2V clip prompt...",\n      ' : ''}"prompts": [
+      "prompts": [
         {
           "beatIndex": 1,
           "imagePrompt": "Crisp self-contained prompt matching all rules above..."
@@ -612,7 +607,6 @@ Output ONLY valid raw JSON matching this exact structure without em dashes (writ
   const resultMap = new Map<number, WrittenPromptBeat[]>();
   const rawScenes = Array.isArray(parsed?.scenes) ? parsed.scenes : [];
   const scenePromptLookup = new Map<number, Map<number, string>>();
-  const rawVideoPromptLookup = new Map<number, string>();
 
   for (const sc of rawScenes) {
     if (typeof sc?.sceneIndex !== 'number') continue;
@@ -623,9 +617,6 @@ Output ONLY valid raw JSON matching this exact structure without em dashes (writ
       }
     }
     scenePromptLookup.set(sc.sceneIndex, bMap);
-    if (typeof sc.sceneVideoPrompt === 'string' && sc.sceneVideoPrompt.trim()) {
-      rawVideoPromptLookup.set(sc.sceneIndex, sc.sceneVideoPrompt.trim());
-    }
   }
 
   for (const sc of sceneBatch) {
@@ -645,14 +636,6 @@ Output ONLY valid raw JSON matching this exact structure without em dashes (writ
       };
     });
     resultMap.set(sc.sceneIndex, writtenBeats);
-
-    if (isVideoMode && outSceneVideoPrompts) {
-      const meta = sceneMetaMap?.get(sc.sceneIndex);
-      const vp =
-        rawVideoPromptLookup.get(sc.sceneIndex) ||
-        buildFallbackSceneVideoPrompt(writtenBeats, bible, format, targetVideoDuration, meta);
-      outSceneVideoPrompts.set(sc.sceneIndex, vp);
-    }
   }
 
   return resultMap;

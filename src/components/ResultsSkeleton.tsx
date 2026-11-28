@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   Clapperboard,
   Image as ImageIcon,
-  Sparkles,
   Clock,
   Copy,
   Layers,
@@ -34,7 +33,6 @@ export default function ResultsSkeleton({ request, onBackToEdit, onCancelRequest
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   const isVideoMode = request?.generationMode === 'video';
-  const autoArchitectMode = request?.autoArchitectMode || false;
   const platform = request?.platform || 'TikTok';
   const format = request?.format || 'short';
 
@@ -98,12 +96,6 @@ export default function ResultsSkeleton({ request, onBackToEdit, onCancelRequest
               TEXT TO IMAGE
             </span>
           )}
-          {autoArchitectMode && (
-            <span className="stamp-chip bg-amber-950/40 text-amber-300 border-amber-800/50">
-              <Sparkles size={9} className="mr-1 inline text-amber-400" />
-              AUTO ARCHITECT
-            </span>
-          )}
           <span className="stamp-chip">
             {platform.toUpperCase()} ({format === 'long' ? '16:9' : '9:16'})
           </span>
@@ -128,13 +120,9 @@ export default function ResultsSkeleton({ request, onBackToEdit, onCancelRequest
       <div className="bg-[#111110] border border-white/10 p-4 sm:p-5 corner-bracket-container shadow-2xl space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center space-x-2">
-            <span
-              className={`w-2 h-2 rounded-[1px] animate-pulse shrink-0 ${
-                autoArchitectMode ? 'bg-amber-400' : 'bg-white'
-              }`}
-            />
+            <span className="w-2 h-2 rounded-[1px] animate-pulse shrink-0 bg-white" />
             <span className="font-editorial-meta text-xs tracking-wider uppercase text-white font-medium">
-              {autoArchitectMode ? 'ARCHITECTING STORY & SCENE BREAKDOWN' : 'GENERATING CINEMATIC STORYBOARD'}
+              GENERATING CINEMATIC STORYBOARD
             </span>
           </div>
           <div className="flex items-center space-x-3 text-xs font-mono text-[#888882]">
@@ -151,9 +139,7 @@ export default function ResultsSkeleton({ request, onBackToEdit, onCancelRequest
         {/* Shimmering Progress Bar */}
         <div className="w-full h-1.5 bg-[#1F1F1D] rounded-[1px] overflow-hidden relative">
           <div
-            className={`h-full transition-all duration-200 relative ${
-              autoArchitectMode ? 'bg-amber-400' : 'bg-white'
-            }`}
+            className="h-full transition-all duration-200 relative bg-white"
             style={{ width: `${progress}%` }}
           >
             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent animate-liquid-shimmer" />

@@ -417,6 +417,84 @@ export function buildPlannedScenesFromCustomScenes(
 }
 
 /**
+ * Stage 2 directive and deterministic framing contrast for Opening 3s Visual Hook Priority.
+ */
+export function buildOpeningHookStage2Guidance(isVideoMode: boolean): string {
+  const clipConstraint = isVideoMode
+    ? 'Keep Video Mode clip cohesion intact: stay within the clip duration and subject continuity without cramming contradictory locations into one clip.'
+    : 'Keep natural 2-6 word phrase cuts cleanly aligned to grammar boundaries.';
+  return [
+    '8. OPENING 3-SECOND VISUAL HOOK PRIORITY (Scene 1 beats starting under 3.0s):',
+    '   - Make Beat 1 and immediate follow-up beats visually arresting instead of generic eye-level medium shots: choose bold contrasting shotSize + angle pairs (e.g., low angle hero silhouette, extreme close-up tactile detail, or stark wide contrast pivoting immediately to a close-up).',
+    '   - Set intensity="high" on genuinely gripping opening moments.',
+    `   - CANON & SPOILER SAFETY: NEVER spoil Withheld mysteries before their reveal scene and NEVER invent shock props outside the narration/Story Bible. ${clipConstraint}`,
+  ].join('\n');
+}
+
+export function applyOpeningHookContrast(scenes: PlannedScene[]): PlannedScene[] {
+  if (!Array.isArray(scenes) || scenes.length === 0) return scenes;
+
+  return scenes.map((scene, sIdx) => {
+    if (sIdx !== 0 || !Array.isArray(scene.beats) || scene.beats.length === 0) {
+      return scene;
+    }
+
+    let elapsedSec = 0;
+    const updatedBeats: PlannedBeat[] = [];
+
+    for (let bIdx = 0; bIdx < scene.beats.length; bIdx++) {
+      const beat = scene.beats[bIdx];
+      const startsWithinOpeningWindow = elapsedSec < 3.0;
+      elapsedSec += beat.estimatedSeconds || 0;
+
+      if (!startsWithinOpeningWindow) {
+        updatedBeats.push(beat);
+        continue;
+      }
+
+      let nextShotSize = (beat.shotSize || 'medium').toLowerCase();
+      let nextAngle = (beat.angle || 'eye level').toLowerCase();
+      let nextIntensity = beat.intensity || 'medium';
+
+      if (bIdx === 0) {
+        if (nextShotSize === 'medium' && nextAngle === 'eye level') {
+          nextAngle = 'low';
+        }
+        if (nextIntensity === 'low') {
+          nextIntensity = 'medium';
+        }
+      } else {
+        const prev = updatedBeats[bIdx - 1];
+        const prevShot = (prev.shotSize || 'medium').toLowerCase();
+        const prevAngle = (prev.angle || 'eye level').toLowerCase();
+
+        if (nextShotSize === prevShot && nextAngle === prevAngle) {
+          if (prevShot === 'close-up' || prevShot === 'extreme close-up') {
+            nextShotSize = 'medium';
+            nextAngle = prevAngle === 'low' ? 'eye level' : 'low';
+          } else {
+            nextShotSize = 'close-up';
+            nextAngle = prevAngle === 'eye level' ? 'low' : 'eye level';
+          }
+        }
+      }
+
+      updatedBeats.push({
+        ...beat,
+        shotSize: nextShotSize,
+        angle: nextAngle,
+        intensity: nextIntensity,
+      });
+    }
+
+    return {
+      ...scene,
+      beats: updatedBeats,
+    };
+  });
+}
+
+/**
  * Main Stage 2 entry point
  */
 export async function stage2GenerateBeatPlan(
@@ -430,7 +508,8 @@ export async function stage2GenerateBeatPlan(
   onStatusMessage?: (msg: string) => void,
   provider: AiProvider = 'gemini',
   groqModel?: string,
-  targetVideoDuration?: number
+  targetVideoDuration?: number,
+  openingHookPriority?: boolean
 ): Promise<PlannedScene[]> {
   const isShortForm = format === 'short';
   const isVideoMode = generationMode === 'video';
@@ -497,7 +576,7 @@ ${segmentationRule1}
 4. WITHHELD MYSTERIES: For moments that the story hides, mark kind="withheld-effect", and depict only physical effects or reactions, NEVER the hidden source.
 ${dynamicRule5}
 6. LIGHTING & TIME OF DAY: Assign scene "timeOfDay" and "lightingState" matching the Lighting Arc using natural descriptive words only (ZERO Kelvin numbers).
-7. OVERLAY TEXT & SHOT VOCABULARY: If narration mentions an explicit year/date, put it in "overlayText", never in image prose. shotSize in ['wide', 'medium', 'close-up', 'extreme close-up', 'over-the-shoulder']. Angle in ['eye level', 'high', 'low', 'overhead', 'dutch tilt']. OTS strictly requires two people.
+7. OVERLAY TEXT & SHOT VOCABULARY: If narration mentions an explicit year/date, put it in "overlayText", never in image prose. shotSize in ['wide', 'medium', 'close-up', 'extreme close-up', 'over-the-shoulder']. Angle in ['eye level', 'high', 'low', 'overhead', 'dutch tilt']. OTS strictly requires two people.${openingHookPriority ? `\n${buildOpeningHookStage2Guidance(isVideoMode)}` : ''}
 
 Output valid JSON matching the schema without em dashes.`;
 
@@ -575,6 +654,7 @@ Output valid JSON matching the schema without em dashes.`;
     };
   });
 
-  return enforceStage2Pacing(rawScenes, words, format, generationMode, targetVideoDuration);
+  const pacedScenes = enforceStage2Pacing(rawScenes, words, format, generationMode, targetVideoDuration);
+  return openingHookPriority ? applyOpeningHookContrast(pacedScenes) : pacedScenes;
 }
 

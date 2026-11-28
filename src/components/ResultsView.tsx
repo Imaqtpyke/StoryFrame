@@ -34,7 +34,20 @@ import {
   Zap,
   AlertTriangle,
   Square,
+  RefreshCw,
+  RotateCcw,
+  AlertCircle,
 } from 'lucide-react';
+import { useApiKey } from '../context/ApiKeyContext';
+import {
+  buildBeatCopyKey,
+  buildStoryFingerprint,
+  countCopiedBeats,
+  isBeatCopiedMatch,
+  loadCopiedBeatsMap,
+  markBeatCopied,
+} from '../services/copiedBeatsStorage';
+import { rewriteSingleBeatPrompt } from '../services/beatRewriteService';
 
 import {
   syncStoryResultToContinuity,
@@ -62,6 +75,7 @@ interface ResultsViewProps {
   totalPlannedScenes?: number;
   generationStatusMessage?: string | null;
   onCancelGeneration?: () => void;
+  onUpdateBeat?: (sceneIndex: number, beatIndex: number, updatedBeat: Beat) => void;
 }
 
 const toRomanNumeral = (num: number): string => {
@@ -106,10 +120,48 @@ export default function ResultsView({
   totalPlannedScenes,
   generationStatusMessage,
   onCancelGeneration,
+  onUpdateBeat,
 }: ResultsViewProps) {
+  const { apiKey, aiProvider, modelQuality, groqModel } = useApiKey();
   const [copiedIndex, setCopiedIndex] = useState<string | null>(null);
+  const [clipboardError, setClipboardError] = useState<string | null>(null);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const exportMenuRef = useRef<HTMLDivElement>(null);
+
+  // Extra #1: Persisted copied checkmarks keyed by story fingerprint + compiled prompt hash
+  const storyFingerprint = useMemo(
+    () => buildStoryFingerprint(result),
+    [result.title, result.scenes, result.generationMode]
+  );
+  const [copiedBeatHashes, setCopiedBeatHashes] = useState<Record<string, string>>(() =>
+    loadCopiedBeatsMap(buildStoryFingerprint(result))
+  );
+  useEffect(() => {
+    setCopiedBeatHashes(loadCopiedBeatsMap(storyFingerprint));
+  }, [storyFingerprint]);
+
+  // Extra #5: Single-Beat Quick Rewrite & 1-step Undo state
+  const [rewritingBeatKey, setRewritingBeatKey] = useState<string | null>(null);
+  const [rewriteUndoMap, setRewriteUndoMap] = useState<Record<string, Beat>>({});
+  const [rewriteInstruction, setRewriteInstruction] = useState<string>('');
+  const [rewriteError, setRewriteError] = useState<string | null>(null);
+  const [rewriteSuccess, setRewriteSuccess] = useState<{ beatKey: string; message: string } | null>(null);
+  const [isDesktopRewriteOpen, setIsDesktopRewriteOpen] = useState<boolean>(false);
+  const rewriteAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    setRewriteUndoMap({});
+    setRewriteInstruction('');
+    setRewriteError(null);
+    setRewriteSuccess(null);
+    setIsDesktopRewriteOpen(false);
+  }, [storyFingerprint]);
+
+  useEffect(() => {
+    return () => {
+      rewriteAbortRef.current?.abort();
+    };
+  }, []);
 
   // Modal states
   const [isRefModalOpen, setIsRefModalOpen] = useState<boolean>(false);
@@ -256,16 +308,46 @@ export default function ResultsView({
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
-  const copyToClipboard = async (text: string, identifier: string) => {
+  const copyToClipboard = async (text: string, identifier: string): Promise<boolean> => {
+    let copied = false;
     try {
-      await navigator.clipboard.writeText(text);
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        copied = true;
+      }
+    } catch {
+      copied = false;
+    }
+
+    if (!copied && typeof document !== 'undefined') {
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        textarea.style.top = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        copied = document.execCommand('copy');
+        document.body.removeChild(textarea);
+      } catch {
+        copied = false;
+      }
+    }
+
+    if (copied) {
+      setClipboardError(null);
       setCopiedIndex(identifier);
       setTimeout(() => {
         setCopiedIndex((current) => (current === identifier ? null : current));
       }, 2000);
-    } catch (err) {
-      console.error('Failed to copy text:', err);
+      return true;
     }
+
+    setClipboardError('Unable to copy to clipboard. Check browser permissions and try again.');
+    return false;
   };
 
   const toggleSceneExpand = (sceneIndex: number) => {
@@ -373,7 +455,7 @@ export default function ResultsView({
     };
   });
 
-  // Flat list of beats for Prev/Next stepping in desktop inspector
+  // Flat list of beats for Prev/Next cross-scene stepping in desktop inspector & bottom sheet
   const flatBeatRefs = useMemo(() => {
     const list: { scene: Scene; beat: Beat }[] = [];
     normalizedScenes.forEach((scene) => {
@@ -383,6 +465,33 @@ export default function ResultsView({
     });
     return list;
   }, [normalizedScenes]);
+
+  const compiledPromptByKey = useMemo(() => {
+    const map = new Map<string, string>();
+    flatBeatRefs.forEach(({ scene, beat }) => {
+      const compiled = compileBeatPrompt(
+        beat,
+        scene,
+        result.styleProfile,
+        'universal',
+        format,
+        result.generationMode
+      );
+      map.set(buildBeatCopyKey(scene.index, beat.beatIndex), compiled.promptText);
+    });
+    return map;
+  }, [flatBeatRefs, result.styleProfile, format, result.generationMode]);
+
+  const copiedBeatsCount = useMemo(() => {
+    return countCopiedBeats(
+      copiedBeatHashes,
+      flatBeatRefs.map(({ scene, beat }) => ({
+        sceneIndex: scene.index,
+        beatIndex: beat.beatIndex,
+        promptText: compiledPromptByKey.get(buildBeatCopyKey(scene.index, beat.beatIndex)) || '',
+      }))
+    );
+  }, [copiedBeatHashes, flatBeatRefs, compiledPromptByKey]);
 
   const currentFlatIndex = flatBeatRefs.findIndex(
     (item) =>
@@ -397,12 +506,185 @@ export default function ResultsView({
       ? flatBeatRefs[currentFlatIndex + 1]
       : null;
 
+  const mobileFlatIndex = mobileActiveBeat
+    ? flatBeatRefs.findIndex(
+        (item) =>
+          item.scene.index === mobileActiveBeat.sceneIndex &&
+          item.beat.beatIndex === mobileActiveBeat.beat.beatIndex
+      )
+    : -1;
+  const liveMobilePair = mobileFlatIndex >= 0 ? flatBeatRefs[mobileFlatIndex] : null;
+  const mobilePrevPair = mobileFlatIndex > 0 ? flatBeatRefs[mobileFlatIndex - 1] : null;
+  const mobileNextPair =
+    mobileFlatIndex >= 0 && mobileFlatIndex < flatBeatRefs.length - 1
+      ? flatBeatRefs[mobileFlatIndex + 1]
+      : null;
+
+  const focusBeatTarget = (target: { scene: Scene; beat: Beat }, openMobile: boolean) => {
+    setExpandedScenes((prev) => ({ ...prev, [target.scene.index]: true }));
+    setDesktopSelection({
+      sceneIndex: target.scene.index,
+      beatIndex: target.beat.beatIndex,
+    });
+    if (openMobile) {
+      setMobileActiveBeat({
+        sceneIndex: target.scene.index,
+        sceneRoman: toRomanNumeral(target.scene.index),
+        beat: target.beat,
+        allBeats: target.scene.beats || [],
+      });
+    }
+    setRewriteError(null);
+  };
+
+  const handleCopyBeatPrompt = async (
+    compiledPrompt: string,
+    sceneIdx: number,
+    beatIdx: number,
+    advanceNext: boolean,
+    isMobileSource: boolean = false
+  ): Promise<boolean> => {
+    const uiKey = `prompt-scene-${sceneIdx}-beat-${beatIdx}`;
+    const ok = await copyToClipboard(compiledPrompt, uiKey);
+    if (!ok) {
+      return false;
+    }
+
+    const updatedMap = markBeatCopied(storyFingerprint, sceneIdx, beatIdx, compiledPrompt);
+    setCopiedBeatHashes(updatedMap);
+
+    if (advanceNext) {
+      const idx = flatBeatRefs.findIndex(
+        (item) => item.scene.index === sceneIdx && item.beat.beatIndex === beatIdx
+      );
+      const nextTarget = idx >= 0 && idx < flatBeatRefs.length - 1 ? flatBeatRefs[idx + 1] : null;
+      if (nextTarget) {
+        focusBeatTarget(nextTarget, isMobileSource);
+      }
+    }
+    return true;
+  };
+
+  const handleRewriteBeat = async (
+    sceneIndex: number,
+    beatIndex: number,
+    instructionText: string
+  ): Promise<boolean> => {
+    const bKey = buildBeatCopyKey(sceneIndex, beatIndex);
+    if (rewritingBeatKey) {
+      return false;
+    }
+
+    const trimmed = instructionText.trim();
+    if (!trimmed) {
+      setRewriteError('Enter an instruction describing what to change in this beat.');
+      return false;
+    }
+    if (!apiKey || !apiKey.trim()) {
+      setRewriteError('Add an API key in Model & API Settings before rewriting a beat.');
+      return false;
+    }
+
+    const sceneObj = normalizedScenes.find((s) => s.index === sceneIndex);
+    const beatObj = sceneObj?.beats?.find((b) => b.beatIndex === beatIndex);
+    if (!sceneObj || !beatObj) {
+      setRewriteError('Could not locate the selected beat to rewrite.');
+      return false;
+    }
+
+    const beatPos = (sceneObj.beats || []).findIndex((b) => b.beatIndex === beatIndex);
+    const prevNeighbor = beatPos > 0 ? sceneObj.beats[beatPos - 1] : null;
+    const nextNeighbor =
+      beatPos >= 0 && beatPos < sceneObj.beats.length - 1 ? sceneObj.beats[beatPos + 1] : null;
+
+    rewriteAbortRef.current?.abort();
+    const controller = new AbortController();
+    rewriteAbortRef.current = controller;
+
+    setRewritingBeatKey(bKey);
+    setRewriteError(null);
+    setRewriteSuccess(null);
+
+    try {
+      const { beat: rewrittenBeat } = await rewriteSingleBeatPrompt({
+        result,
+        scene: sceneObj,
+        beat: beatObj,
+        prevBeat: prevNeighbor,
+        nextBeat: nextNeighbor,
+        format,
+        instruction: trimmed,
+        apiKey,
+        aiProvider,
+        modelQuality,
+        groqModel,
+        userSignal: controller.signal,
+      });
+
+      setRewriteUndoMap((prev) => ({
+        ...prev,
+        [bKey]: beatObj,
+      }));
+
+      if (onUpdateBeat) {
+        onUpdateBeat(sceneIndex, beatIndex, rewrittenBeat);
+      }
+      if (mobileActiveBeat && mobileActiveBeat.sceneIndex === sceneIndex && mobileActiveBeat.beat.beatIndex === beatIndex) {
+        setMobileActiveBeat({
+          ...mobileActiveBeat,
+          beat: rewrittenBeat,
+        });
+      }
+
+      setRewriteInstruction('');
+      setRewriteSuccess({ beatKey: bKey, message: 'Beat rewritten.' });
+      setTimeout(() => {
+        setRewriteSuccess((curr) => (curr?.beatKey === bKey ? null : curr));
+      }, 3500);
+      return true;
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        return false;
+      }
+      setRewriteError(
+        err?.message || 'Unable to rewrite this beat right now. Try again.'
+      );
+      return false;
+    } finally {
+      setRewritingBeatKey(null);
+    }
+  };
+
+  const handleUndoRewrite = (sceneIndex: number, beatIndex: number) => {
+    const bKey = buildBeatCopyKey(sceneIndex, beatIndex);
+    const previousBeat = rewriteUndoMap[bKey];
+    if (!previousBeat) return;
+
+    if (onUpdateBeat) {
+      onUpdateBeat(sceneIndex, beatIndex, previousBeat);
+    }
+    if (mobileActiveBeat && mobileActiveBeat.sceneIndex === sceneIndex && mobileActiveBeat.beat.beatIndex === beatIndex) {
+      setMobileActiveBeat({
+        ...mobileActiveBeat,
+        beat: previousBeat,
+      });
+    }
+
+    setRewriteUndoMap((prev) => {
+      const next = { ...prev };
+      delete next[bKey];
+      return next;
+    });
+    setRewriteError(null);
+    setRewriteSuccess({ beatKey: bKey, message: 'Rewrite undone.' });
+    setTimeout(() => {
+      setRewriteSuccess((curr) => (curr?.beatKey === bKey ? null : curr));
+    }, 3000);
+  };
+
   const handleCopyAllPrompts = () => {
     const lines: string[] = [];
     normalizedScenes.forEach((scene) => {
-      if (isVideoMode && scene.videoPrompt) {
-        lines.push(`SCENE ${toRomanNumeral(scene.index)} - MASTER CLIP PROMPT (~${scene.estimatedSeconds}s):\n${scene.videoPrompt}`);
-      }
       (scene.beats || []).forEach((b) => {
         const compiled = compileBeatPrompt(
           b,
@@ -562,9 +844,6 @@ export default function ResultsView({
       const isVideoExport = result.generationMode === 'video';
       md += `### SCENE ${toRomanNumeral(scene.index)} (~${effectiveSec}s)\n`;
       md += `**Narrator Line**:\n"${scene.narratorLine}"\n\n`;
-      if (isVideoExport && scene.videoPrompt) {
-        md += `**Master Clip Prompt (~${effectiveSec}s)**:\n\`\`\`text\n${scene.videoPrompt}\n\`\`\`\n\n`;
-      }
 
       md += `| Beat | Duration | Shot Size | Angle | Movement | Spoken Words | ${isVideoExport ? 'Visual Video Prompt' : 'Visual Image Prompt'} |\n`;
       md += `| :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n`;
@@ -914,6 +1193,14 @@ export default function ResultsView({
                       <span className="font-mono text-xs text-[#9C9C96] tabular-nums">
                         ~{scene.estimatedSeconds}s
                       </span>
+                      {scene.index === 1 && result.openingHookPriority && (
+                        <span
+                          className="stamp-chip bg-amber-950/60 text-amber-300 border-amber-700/70 text-[9px]"
+                          title="Opening 3-second visual hook priority active on Scene 1"
+                        >
+                          3S HOOK PRIORITY
+                        </span>
+                      )}
                       <span
                         className={`stamp-chip text-[9px] hidden sm:inline-flex ${
                           scenePacing.status === 'rushed'
@@ -972,49 +1259,6 @@ export default function ResultsView({
                         </div>
                       </div>
 
-                      {/* Universal Scene Clip Prompt (Video Mode Only) */}
-                      {isVideoMode && scene.videoPrompt && (
-                        <div
-                          id={`scene-video-prompt-${scene.index}`}
-                          className="bg-[#0C0C0B] border border-white/15 rounded-[3px] p-3.5 space-y-2.5"
-                        >
-                          <div className="flex items-center justify-between gap-2 flex-wrap border-b border-white/10 pb-2">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <Clapperboard size={13} className="text-amber-400 shrink-0" />
-                              <span className="font-editorial-meta text-[10px] text-amber-300 font-medium">
-                                SCENE CLIP PROMPT (~{result.targetVideoDuration || scene.estimatedSeconds || 4}S)
-                              </span>
-                              {scene.timeOfDay && (
-                                <span className="text-[11px] font-mono text-[#8C8C86] truncate">
-                                  · {scene.timeOfDay}
-                                </span>
-                              )}
-                            </div>
-                            <button
-                              type="button"
-                              id={`copy-scene-clip-btn-${scene.index}`}
-                              onClick={() => copyToClipboard(scene.videoPrompt || '', `scene-clip-${scene.index}`)}
-                              className="inline-flex items-center px-2.5 py-1 bg-white text-black hover:bg-[#EAEAE5] text-xs font-display font-semibold transition-colors rounded-[3px] whitespace-nowrap cursor-pointer"
-                            >
-                              {copiedIndex === `scene-clip-${scene.index}` ? (
-                                <>
-                                  <Check size={11} className="mr-1 text-black" />
-                                  <span>Copied</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Copy size={11} className="mr-1 text-black" />
-                                  <span>Copy Clip Prompt</span>
-                                </>
-                              )}
-                            </button>
-                          </div>
-                          <p className="text-xs sm:text-sm leading-relaxed text-[#F0F0EA] font-mono selection:bg-white selection:text-black">
-                            {scene.videoPrompt}
-                          </p>
-                        </div>
-                      )}
-
                       {/* Beats Section */}
                       <div className="space-y-3 pt-1">
                         <div className="flex items-center justify-between border-t border-white/10 pt-3">
@@ -1052,6 +1296,14 @@ export default function ResultsView({
                             const isSelectedDesktop =
                               activeInspectorPair?.scene.index === scene.index &&
                               activeInspectorPair?.beat.beatIndex === beat.beatIndex;
+                            const cardPromptText =
+                              compiledPromptByKey.get(buildBeatCopyKey(scene.index, beat.beatIndex)) || '';
+                            const isCardCopied = isBeatCopiedMatch(
+                              copiedBeatHashes,
+                              scene.index,
+                              beat.beatIndex,
+                              cardPromptText
+                            );
 
                             return (
                               <div
@@ -1063,7 +1315,9 @@ export default function ResultsView({
                                     ? isVideoMode
                                       ? 'bg-[#1B1810] border-amber-400 lg:ring-1 lg:ring-amber-400/50'
                                       : 'bg-[#1A1A18] border-white lg:ring-1 lg:ring-white/40'
-                                    : 'bg-[#151513] border-white/10 hover:border-white/30 hover:bg-[#191917]'
+                                    : isCardCopied
+                                      ? 'bg-[#131714] border-emerald-500/35 hover:border-emerald-400/60 hover:bg-[#171B18]'
+                                      : 'bg-[#151513] border-white/10 hover:border-white/30 hover:bg-[#191917]'
                                 }`}
                               >
                                 <div className="flex items-center justify-between gap-1.5 border-b border-white/10 pb-2">
@@ -1076,9 +1330,20 @@ export default function ResultsView({
                                   >
                                     Beat {String(beat.beatIndex).padStart(2, '0')}
                                   </span>
-                                  <span className="font-mono text-xs text-emerald-400/90 tabular-nums">
-                                    ~{beat.estimatedSeconds}s
-                                  </span>
+                                  <div className="flex items-center gap-1.5">
+                                    {isCardCopied && (
+                                      <span
+                                        className="inline-flex items-center gap-0.5 font-mono text-[10px] text-emerald-400"
+                                        title="Prompt copied"
+                                      >
+                                        <Check size={10} />
+                                        <span>Copied</span>
+                                      </span>
+                                    )}
+                                    <span className="font-mono text-xs text-emerald-400/90 tabular-nums">
+                                      ~{beat.estimatedSeconds}s
+                                    </span>
+                                  </div>
                                 </div>
 
                                 <div className="my-2 space-y-1">
@@ -1746,8 +2011,7 @@ export default function ResultsView({
               const inspBeat = activeInspectorPair.beat;
               const inspRoman = toRomanNumeral(inspScene.index);
               const beatKey = `scene-${inspScene.index}-beat-${inspBeat.beatIndex}`;
-              const isCopiedPrompt = copiedIndex === `prompt-${beatKey}`;
-              const isCopiedText = copiedIndex === `text-${beatKey}`;
+              const persistentKey = buildBeatCopyKey(inspScene.index, inspBeat.beatIndex);
               const compiled = compileBeatPrompt(
                 inspBeat,
                 inspScene,
@@ -1756,6 +2020,18 @@ export default function ResultsView({
                 format,
                 result.generationMode
               );
+              const isPersistedInspCopied = isBeatCopiedMatch(
+                copiedBeatHashes,
+                inspScene.index,
+                inspBeat.beatIndex,
+                compiled.promptText
+              );
+              const isCopiedPrompt = copiedIndex === `prompt-${beatKey}` || isPersistedInspCopied;
+              const isCopiedText = copiedIndex === `text-${beatKey}`;
+              const isRewritingThis = rewritingBeatKey === persistentKey;
+              const canUndoThis = Boolean(rewriteUndoMap[persistentKey]);
+              const thisRewriteSuccess =
+                rewriteSuccess?.beatKey === persistentKey ? rewriteSuccess.message : null;
 
               return (
                 <div
@@ -1780,19 +2056,21 @@ export default function ResultsView({
                       <span className="font-mono text-xs text-[#8C8C86] tabular-nums">
                         ({currentFlatIndex + 1} / {flatBeatRefs.length})
                       </span>
+                      {copiedBeatsCount > 0 && (
+                        <span
+                          className="font-mono text-[11px] text-emerald-400/90 tabular-nums"
+                          title="Total beats copied in this storyboard"
+                        >
+                          {copiedBeatsCount}/{flatBeatRefs.length} copied
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-1 shrink-0">
                       <button
                         type="button"
                         disabled={!prevFlatPair}
-                        onClick={() =>
-                          prevFlatPair &&
-                          setDesktopSelection({
-                            sceneIndex: prevFlatPair.scene.index,
-                            beatIndex: prevFlatPair.beat.beatIndex,
-                          })
-                        }
+                        onClick={() => prevFlatPair && focusBeatTarget(prevFlatPair, false)}
                         className="p-1.5 bg-[#1E1E1C] hover:bg-[#282825] border border-white/15 rounded-[3px] text-[#C4C4BE] hover:text-white disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer"
                         title="Previous Beat"
                         aria-label="Previous beat"
@@ -1802,13 +2080,7 @@ export default function ResultsView({
                       <button
                         type="button"
                         disabled={!nextFlatPair}
-                        onClick={() =>
-                          nextFlatPair &&
-                          setDesktopSelection({
-                            sceneIndex: nextFlatPair.scene.index,
-                            beatIndex: nextFlatPair.beat.beatIndex,
-                          })
-                        }
+                        onClick={() => nextFlatPair && focusBeatTarget(nextFlatPair, false)}
                         className="p-1.5 bg-[#1E1E1C] hover:bg-[#282825] border border-white/15 rounded-[3px] text-[#C4C4BE] hover:text-white disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer"
                         title="Next Beat"
                         aria-label="Next beat"
@@ -1839,6 +2111,16 @@ export default function ResultsView({
 
                   {/* Inspector Body */}
                   <div className="p-5 space-y-4 max-h-[calc(100vh-14rem)] overflow-y-auto">
+                    {clipboardError && (
+                      <div
+                        role="alert"
+                        className="p-3 bg-red-950/35 border border-red-700/60 rounded-[3px] text-xs text-red-200 flex items-start gap-2"
+                      >
+                        <AlertCircle size={14} className="text-red-400 shrink-0 mt-0.5" />
+                        <span>{clipboardError}</span>
+                      </div>
+                    )}
+
                     {/* Spoken Phrase */}
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
@@ -1901,8 +2183,8 @@ export default function ResultsView({
                     )}
 
                     {/* Beat Prompt */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
+                    <div className="space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
                         <span className="font-display text-xs font-medium text-white flex items-center gap-1.5">
                           {isVideoMode ? (
                             <>
@@ -1918,35 +2200,191 @@ export default function ResultsView({
                         </span>
                         <button
                           type="button"
-                          onClick={() => copyToClipboard(compiled.promptText, `prompt-${beatKey}`)}
-                          className={`font-display text-xs px-3 py-1.5 rounded-[3px] transition-colors flex items-center gap-1.5 font-semibold cursor-pointer ${
-                            isVideoMode
-                              ? 'bg-amber-400 text-black hover:bg-amber-300'
-                              : 'bg-white text-black hover:bg-[#EAEAE5]'
-                          }`}
+                          id="desktop-copy-prompt-btn"
+                          onClick={() =>
+                            handleCopyBeatPrompt(
+                              compiled.promptText,
+                              inspScene.index,
+                              inspBeat.beatIndex,
+                              false,
+                              false
+                            )
+                          }
+                          className="font-display text-xs px-2.5 py-1.5 bg-[#1E1E1C] hover:bg-[#282825] text-white border border-white/15 rounded-[3px] transition-colors flex items-center gap-1.5 font-medium cursor-pointer"
                         >
                           {isCopiedPrompt ? (
                             <>
-                              <Check size={12} className="text-black" />
-                              <span>Copied</span>
+                              <Check size={12} className="text-emerald-400" />
+                              <span className="text-emerald-400">Copied</span>
                             </>
                           ) : (
                             <>
-                              <Copy size={12} className="text-black" />
+                              <Copy size={12} />
                               <span>{isVideoMode ? 'Copy Video Prompt' : 'Copy Prompt'}</span>
                             </>
                           )}
                         </button>
                       </div>
-                      <div
-                        className={`text-xs leading-relaxed p-3.5 border rounded-[3px] font-mono selection:bg-white selection:text-black ${
-                          isVideoMode
-                            ? 'bg-[#0C0C0B] border-amber-700/40 text-[#F0EFEA]'
-                            : 'bg-[#0C0C0B] border-white/15 text-[#E8E8E2]'
-                        }`}
-                      >
-                        {compiled.promptText}
+
+                      {isRewritingThis ? (
+                        <div
+                          aria-busy="true"
+                          aria-label="Rewriting beat prompt"
+                          className="p-3.5 bg-[#0C0C0B] border border-white/15 rounded-[3px] space-y-2 animate-pulse"
+                        >
+                          <div className="h-3 w-5/6 bg-white/10 rounded-[2px]" />
+                          <div className="h-3 w-full bg-white/10 rounded-[2px]" />
+                          <div className="h-3 w-4/5 bg-white/10 rounded-[2px]" />
+                          <div className="h-3 w-2/3 bg-white/10 rounded-[2px]" />
+                        </div>
+                      ) : (
+                        <div
+                          className={`text-xs leading-relaxed p-3.5 border rounded-[3px] font-mono selection:bg-white selection:text-black ${
+                            isVideoMode
+                              ? 'bg-[#0C0C0B] border-amber-700/40 text-[#F0EFEA]'
+                              : 'bg-[#0C0C0B] border-white/15 text-[#E8E8E2]'
+                          }`}
+                        >
+                          {compiled.promptText}
+                        </div>
+                      )}
+
+                      {/* Primary Action Bar: Quick Rewrite + Undo + Cross-Scene Copy & Next Beat */}
+                      <div className="flex items-center justify-between gap-2 flex-wrap pt-1">
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            id="desktop-quick-rewrite-toggle-btn"
+                            onClick={() => {
+                              setIsDesktopRewriteOpen((prev) => !prev);
+                              setRewriteError(null);
+                            }}
+                            disabled={Boolean(rewritingBeatKey)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-display font-medium bg-[#1B1B19] hover:bg-[#252522] text-[#E5E5DF] border border-white/15 rounded-[3px] transition-colors cursor-pointer disabled:opacity-40"
+                          >
+                            <RefreshCw size={12} className={isRewritingThis ? 'animate-spin' : ''} />
+                            <span>Quick Rewrite</span>
+                          </button>
+
+                          {canUndoThis && (
+                            <button
+                              type="button"
+                              id="desktop-undo-rewrite-btn"
+                              onClick={() => handleUndoRewrite(inspScene.index, inspBeat.beatIndex)}
+                              disabled={Boolean(rewritingBeatKey)}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-display font-medium text-[#C4C4BE] hover:text-white hover:bg-white/10 border border-white/10 rounded-[3px] transition-colors cursor-pointer disabled:opacity-40"
+                            >
+                              <RotateCcw size={12} />
+                              <span>Undo Rewrite</span>
+                            </button>
+                          )}
+                        </div>
+
+                        {nextFlatPair && (
+                          <button
+                            type="button"
+                            id="desktop-copy-next-beat-btn"
+                            onClick={() =>
+                              handleCopyBeatPrompt(
+                                compiled.promptText,
+                                inspScene.index,
+                                inspBeat.beatIndex,
+                                true,
+                                false
+                              )
+                            }
+                            className={`font-display text-xs px-3 py-1.5 rounded-[3px] transition-colors inline-flex items-center gap-1.5 font-semibold cursor-pointer ${
+                              isVideoMode
+                                ? 'bg-amber-400 text-black hover:bg-amber-300'
+                                : 'bg-white text-black hover:bg-[#EAEAE5]'
+                            }`}
+                          >
+                            <Copy size={12} className="text-black" />
+                            <span>Copy &amp; Next Beat</span>
+                            <ChevronRight size={13} className="text-black" />
+                          </button>
+                        )}
                       </div>
+
+                      {thisRewriteSuccess && (
+                        <p className="text-xs text-emerald-400 font-narrative">
+                          {thisRewriteSuccess}
+                        </p>
+                      )}
+
+                      {isDesktopRewriteOpen && (
+                        <div
+                          id="desktop-quick-rewrite-panel"
+                          className="p-3.5 bg-[#0E0E0D] border border-white/15 rounded-[3px] space-y-3"
+                        >
+                          <div className="space-y-1.5">
+                            <label
+                              htmlFor="desktop-beat-rewrite-input"
+                              className="block font-display text-xs font-medium text-white"
+                            >
+                              Rewrite Instruction
+                            </label>
+                            <input
+                              type="text"
+                              id="desktop-beat-rewrite-input"
+                              value={rewriteInstruction}
+                              onChange={(e) => setRewriteInstruction(e.target.value)}
+                              disabled={isRewritingThis}
+                              placeholder="e.g. tighter close-up on hands, warmer lamp glow"
+                              className="w-full px-3 py-2 bg-[#141412] text-[#F5F5F0] placeholder:text-[#666660] border border-white/15 rounded-[3px] text-xs focus:outline-none focus:border-white"
+                            />
+                          </div>
+
+                          {rewriteError && (
+                            <div
+                              role="alert"
+                              className="p-2.5 bg-red-950/35 border border-red-700/60 rounded-[3px] text-xs text-red-200 flex items-center justify-between gap-2"
+                            >
+                              <span>{rewriteError}</span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleRewriteBeat(inspScene.index, inspBeat.beatIndex, rewriteInstruction)
+                                }
+                                disabled={isRewritingThis}
+                                className="px-2.5 py-1 bg-white text-black font-display font-semibold rounded-[3px] text-[11px] shrink-0 cursor-pointer"
+                              >
+                                Retry
+                              </button>
+                            </div>
+                          )}
+
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsDesktopRewriteOpen(false);
+                                setRewriteError(null);
+                              }}
+                              disabled={isRewritingThis}
+                              className="px-3 py-1.5 text-xs font-display text-[#C4C4BE] hover:text-white bg-[#1B1B19] border border-white/15 rounded-[3px] cursor-pointer disabled:opacity-40"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              id="desktop-submit-rewrite-btn"
+                              onClick={async () => {
+                                const ok = await handleRewriteBeat(
+                                  inspScene.index,
+                                  inspBeat.beatIndex,
+                                  rewriteInstruction
+                                );
+                                if (ok) setIsDesktopRewriteOpen(false);
+                              }}
+                              disabled={Boolean(rewritingBeatKey)}
+                              className="px-3.5 py-1.5 text-xs font-display font-semibold bg-white text-black hover:bg-[#EAEAE6] rounded-[3px] cursor-pointer disabled:opacity-40"
+                            >
+                              {isRewritingThis ? 'Rewriting Beat...' : 'Rewrite Beat'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1963,27 +2401,72 @@ export default function ResultsView({
       </div>
 
       {/* Mobile & Tablet Beat Expansion Bottom Sheet (< lg) */}
-      <BeatBottomSheet
-        isOpen={Boolean(mobileActiveBeat)}
-        onClose={() => setMobileActiveBeat(null)}
-        sceneIndex={mobileActiveBeat?.sceneIndex ?? 1}
-        sceneRoman={mobileActiveBeat?.sceneRoman ?? 'I'}
-        beat={mobileActiveBeat?.beat ?? null}
-        allBeatsInScene={mobileActiveBeat?.allBeats ?? []}
-        onNavigateBeat={(nextBeat) => {
-          if (mobileActiveBeat) {
-            setMobileActiveBeat({
-              ...mobileActiveBeat,
-              beat: nextBeat,
-            });
-          }
-        }}
-        copiedIndex={copiedIndex}
-        onCopy={copyToClipboard}
-        generationMode={result.generationMode || 'image'}
-        styleProfile={result.styleProfile}
-        format={format}
-      />
+      {(() => {
+        const activeSheetSceneIndex = liveMobilePair?.scene.index ?? mobileActiveBeat?.sceneIndex ?? 1;
+        const activeSheetBeat = liveMobilePair?.beat ?? mobileActiveBeat?.beat ?? null;
+        const activeSheetScene = liveMobilePair?.scene;
+        const sheetBeatKey = activeSheetBeat
+          ? buildBeatCopyKey(activeSheetSceneIndex, activeSheetBeat.beatIndex)
+          : '';
+        const sheetCompiledPrompt = activeSheetBeat
+          ? compiledPromptByKey.get(sheetBeatKey) || ''
+          : '';
+
+        return (
+          <BeatBottomSheet
+            isOpen={Boolean(mobileActiveBeat)}
+            onClose={() => setMobileActiveBeat(null)}
+            sceneIndex={activeSheetSceneIndex}
+            sceneRoman={toRomanNumeral(activeSheetSceneIndex)}
+            scene={activeSheetScene}
+            beat={activeSheetBeat}
+            allBeatsInScene={activeSheetScene?.beats ?? mobileActiveBeat?.allBeats ?? []}
+            onNavigateBeat={(nextBeat) => {
+              if (mobileActiveBeat) {
+                setMobileActiveBeat({
+                  ...mobileActiveBeat,
+                  beat: nextBeat,
+                });
+              }
+            }}
+            globalBeatIndex={mobileFlatIndex >= 0 ? mobileFlatIndex : undefined}
+            totalGlobalBeats={flatBeatRefs.length}
+            hasPrevGlobal={Boolean(mobilePrevPair)}
+            hasNextGlobal={Boolean(mobileNextPair)}
+            onPrevGlobal={() => mobilePrevPair && focusBeatTarget(mobilePrevPair, true)}
+            onNextGlobal={() => mobileNextPair && focusBeatTarget(mobileNextPair, true)}
+            copiedIndex={copiedIndex}
+            isPersistedCopied={
+              Boolean(activeSheetBeat) &&
+              isBeatCopiedMatch(
+                copiedBeatHashes,
+                activeSheetSceneIndex,
+                activeSheetBeat!.beatIndex,
+                sheetCompiledPrompt
+              )
+            }
+            clipboardError={clipboardError}
+            onCopy={copyToClipboard}
+            onCopyBeatPrompt={(promptText, sIdx, bIdx, advanceNext) =>
+              handleCopyBeatPrompt(promptText, sIdx, bIdx, advanceNext, true)
+            }
+            generationMode={result.generationMode || 'image'}
+            styleProfile={result.styleProfile}
+            format={format}
+            onRewriteBeat={handleRewriteBeat}
+            onUndoRewrite={handleUndoRewrite}
+            canUndoRewrite={Boolean(sheetBeatKey && rewriteUndoMap[sheetBeatKey])}
+            isRewritingAny={Boolean(rewritingBeatKey)}
+            isRewritingThisBeat={Boolean(sheetBeatKey && rewritingBeatKey === sheetBeatKey)}
+            rewriteInstruction={rewriteInstruction}
+            onRewriteInstructionChange={setRewriteInstruction}
+            rewriteError={rewriteError}
+            rewriteSuccessMessage={
+              rewriteSuccess?.beatKey === sheetBeatKey ? rewriteSuccess.message : null
+            }
+          />
+        );
+      })()}
 
       {/* Style & Continuity Modal */}
       {isStyleModalOpen &&

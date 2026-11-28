@@ -252,7 +252,7 @@ export function syncStoryResultToContinuity(
     seriesId: resolvedTitle.toLowerCase().replace(/[^a-z0-9]/g, '_'),
     seriesTitle: resolvedTitle,
     genre: (result.storyBible?.worldStyle as string) || "Narrative Series",
-    corePremise: result.hookAnalysis?.headlineHook || "Series narrative arc",
+    corePremise: result.title || result.scenes[0]?.narratorLine || "Series narrative arc",
     languageRule: "Preserve character and narrative continuity across all episodes.",
     totalEpisodes: episodes.length,
     styleProfile: result.styleProfile,

@@ -304,14 +304,17 @@
 
 - [x] **Core Upgrade: Universal Grounded Pipeline, Style-Native Prompts & 4s Clip Cohesion (Suite 46, 268/268 passing):** Classified 5 visual style families (`photoreal`, `stylized_3d`, `stop_motion`, `illustration_2d`, `minimalist_flat`) to replace live-action 35mm boilerplate with medium-native craft, expanded Story Bible continuity (`permanentAnatomy`, `eraWardrobe`, `spatialMap`, `lightingArc`, `parallelCast`), routed all `generateOriginalStory` requests (including Custom Beat Mode and Short/Video) through `executeGroundedPipeline()` with style-and-duration-keyed checkpoints, kept Option B 2-to-6 word T2I beat segmentation untouched, enforced 4s clip cohesion (`<= 2` beats / `<= 4s`) plus universal `SCENE CLIP PROMPT` copy cards in `ResultsView.tsx` with zero external tool names, and added Stage 4 dynamic threat, video camera-vector conflict, and `parallelCast` checks.
 
+- [x] **Complete Removal of Enhance Story Mode (266/266 passing):** Deleted `enhanceStoryArchitect.ts`, `enhanceBibleDiff.ts`, and `enhance_non_horror.txt` fixtures; removed `autoArchitectMode`, `hookAnalysis`, `scriptOutline`, the `Enhance Story` toggle, `Target Duration` dropdown in Text to Image mode, and `ResultsSkeleton` architect badges; routed all breakdowns directly through `executeGroundedPipeline()`.
+
+- [x] **Removal of Scene Clip Prompt (`sceneVideoPrompt`) Card & Stage 3 Synthesis (266/266 passing):** Removed `SCENE CLIP PROMPT` UI box and `Master Clip Prompt` Copy All/Markdown export lines from `ResultsView.tsx`, removed `sceneVideoPrompt` from `stage3PromptWriter.ts` and `groundedPipeline.ts` to keep Video Mode strictly beat-by-beat without cramping results.
+
+- [x] **Extras #1, #2, and #5 (Suite 47, 269/269 passing):** Implemented Cross-Scene `Copy & Next Beat` + prompt-hash persisted `Copied` checkmarks (`copiedBeatsStorage.ts`, `BeatBottomSheet.tsx`, `ResultsView.tsx`), Saveable Channel Style DNA Presets with opt-in format/duration locking (`stylePresetStorage.ts`, `GeneratorForm.tsx`), and Single-Beat Quick Rewrite with Story Bible/neighbor locking, Stage 4 validation, history persistence, and 1-step Undo (`beatRewriteService.ts`, `App.tsx`, `ResultsView.tsx`, `BeatBottomSheet.tsx`).
+- [x] **Extra #6: Opening 3s Visual Hook Priority (Suite 48, 272/272 passing):** Added opt-in `Opening 3s Visual Hook Priority` control (`GeneratorForm.tsx`), `_hook3s` checkpoint isolation (`groundedCheckpoint.ts`), Stage 2 framing contrast + canon guard (`stage2BeatPlan.ts`), Stage 3 Scene 1 `< 3.0s` prompt hook guidance (`stage3PromptWriter.ts`), pipeline propagation (`groundedPipeline.ts`), and `3S HOOK PRIORITY` Scene I badge (`ResultsView.tsx`).
+
 ## Active Testing & Planned Future Roadmap (Post-Testing)
 - [ ] **Deferred Optional Extras (Core Upgrade Follow-Ups):**
-  1. Cross-scene Copy & Next navigation + Copied state checkmarks for rapid phone copy-pasting.
-  2. Saveable Channel Style DNA Presets (1-tap reusable character, palette, and art-style profiles).
-  3. Paste `.SRT` / Audio Runtime Timing Sync for locking beat lengths directly to external voiceover timings.
-  4. Copy Clean Voiceover Script button (plain TTS-ready narration without beat markers or camera notes).
-  5. Single-beat Quick Rewrite (re-roll one weak beat prompt in place without regenerating the storyboard).
-  6. Opening 3s Visual Hook Priority toggle for aggressive scroll-stopping cold opens.
+  - (Extra #3) Paste `.SRT` / Audio Runtime Timing Sync for locking beat lengths directly to external voiceover timings.
+  - (Extra #4) Copy Clean Voiceover Script button (plain TTS-ready narration without beat markers or camera notes).
 - [ ] **Genre Stress-Testing Loop (In Progress):**
   - Completed: **Sci-Fi**, **Documentary / History**, **Horror / Psychological Thriller**, **Stylized Art**, **Multi-Character + Flashbacks**, **130-Word Finance/Diorama (Text-to-Image)**, and **Text-to-Video (4s Clip Mode)**.
   - Remaining stress categories:

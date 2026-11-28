@@ -27,7 +27,6 @@ import {
   stripTransientExpressionsAndPoses,
   synchronizeBeatMetadataWithPrompt,
 } from './beatProgressionEngine';
-import { generateEnhancedStory } from './enhanceStoryArchitect';
 import { executeGroundedPipeline } from './groundedPipeline';
 import { PartialStoryboardStreamState } from './unifiedAiService';
 
@@ -289,8 +288,6 @@ export function normalizeStoryBibleResponse(rawInput: any): {
   styleProfile?: Record<string, any>;
   characterSheet: Record<string, string>;
   locationSheet: Record<string, string>;
-  hookAnalysis?: Record<string, any>;
-  scriptOutline?: string[];
 } {
   const emptyResult = { characterSheet: {}, locationSheet: {} };
   if (!rawInput || typeof rawInput !== 'object') return emptyResult;
@@ -343,12 +340,8 @@ export function normalizeStoryBibleResponse(rawInput: any): {
 
   const characterSheet = toSheetMap(root.characterSheet || root.character_sheet || root.characters || root.cast);
   const locationSheet = toSheetMap(root.locationSheet || root.location_sheet || root.locations);
-  const hookAnalysis = root.hookAnalysis || root.hook_analysis;
-  const scriptOutline = Array.isArray(root.scriptOutline || root.script_outline)
-    ? (root.scriptOutline || root.script_outline).filter((s: any) => typeof s === 'string' && s.trim())
-    : undefined;
 
-  return { styleProfile, characterSheet, locationSheet, hookAnalysis, scriptOutline };
+  return { styleProfile, characterSheet, locationSheet };
 }
 
 export function buildPartialStoryResultFromStream(params: {
@@ -357,12 +350,11 @@ export function buildPartialStoryResultFromStream(params: {
   isLongForm: boolean;
   isVideoMode: boolean;
   targetVideoDuration: number;
-  autoArchitectMode?: boolean;
   stageLabel?: string;
 }): StoryGenerationResult | null {
-  const { partial, req, isLongForm, isVideoMode, targetVideoDuration, autoArchitectMode, stageLabel } = params;
+  const { partial, req, isLongForm, isVideoMode, targetVideoDuration, stageLabel } = params;
   const hasRawScenes = Array.isArray(partial.scenes) && partial.scenes.length > 0;
-  const hasBible = Boolean(partial.styleProfile || partial.characterSheet || partial.locationSheet || partial.hookAnalysis);
+  const hasBible = Boolean(partial.styleProfile || partial.characterSheet || partial.locationSheet);
   if (!hasRawScenes && !hasBible) {
     return null;
   }
@@ -495,15 +487,6 @@ export function buildPartialStoryResultFromStream(params: {
     scenes: partialScenes,
     generationMode: isVideoMode ? 'video' : 'image',
     targetVideoDuration: isVideoMode ? targetVideoDuration : undefined,
-    autoArchitectMode,
-    hookAnalysis:
-      partial.hookAnalysis && typeof partial.hookAnalysis === 'object'
-        ? {
-            headlineHook: partial.hookAnalysis.headlineHook,
-            hookType: partial.hookAnalysis.hookType,
-            hookRationale: partial.hookAnalysis.hookRationale,
-          }
-        : undefined,
     // Defer Thumbnail until all scenes complete
     thumbnail: undefined,
     progress: {
@@ -515,8 +498,8 @@ export function buildPartialStoryResultFromStream(params: {
 }
 
 // ============================================================================
-// ORIGINAL STORY GENERATOR (Toggle OFF)
-// Routes all Standard Mode stories (short/long, image/video, automatic/custom)
+// PRIMARY STORY GENERATOR
+// Routes all stories (short/long, image/video, automatic/custom)
 // through the 5-stage Grounded Pipeline.
 // ============================================================================
 export async function generateOriginalStory(
@@ -535,11 +518,6 @@ export async function generateOriginalStory(
   );
 }
 
-// ============================================================================
-// PRIMARY ROUTER
-// Seamlessly delegates to enhanceStoryArchitect.ts when Toggle is ON,
-// and runs the pure Grounded Pipeline via generateOriginalStory when Toggle is OFF.
-// ============================================================================
 export async function generateStoryDirectly(
   req: GenerateStoryRequest,
   apiKey: string,
@@ -547,15 +525,6 @@ export async function generateStoryDirectly(
   onStatusMessage?: (msg: string) => void,
   onPartialResult?: OnPartialStoryCallback
 ): Promise<StoryGenerationResult> {
-  if (req.autoArchitectMode) {
-    return generateEnhancedStory(
-      req,
-      apiKey,
-      userSignal,
-      onStatusMessage,
-      onPartialResult
-    );
-  }
   return generateOriginalStory(
     req,
     apiKey,

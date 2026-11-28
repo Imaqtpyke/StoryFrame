@@ -285,7 +285,7 @@ const CLIP_CINEMATOGRAPHY_PRESETS: Record<number, {
  * Builds an 8-part video prompt conforming to StoryFrame prompt engineering standards:
  * [Camera & Motion] + [Subject Action] + [Anatomical Gestures] + [Tactile Lighting & Materials] + [Optics & Aspect] + [Audio Foley]
  */
-export function buildEnhancedVideoPrompt(
+export function buildManuscriptVideoPrompt(
   clipNumber: number,
   visualDescription: string,
   _voiceOver: string
@@ -366,7 +366,7 @@ export function parseManuscriptMarkdown(rawMarkdown: string): ParsedScriptResult
       }
       const durationSeconds = Math.max(1, endSeconds - startSeconds);
 
-      const { videoPrompt, startFramePrompt, cinematography } = buildEnhancedVideoPrompt(
+      const { videoPrompt, startFramePrompt, cinematography } = buildManuscriptVideoPrompt(
         currentClipNumber,
         currentVisual,
         currentVoiceOver
@@ -615,12 +615,6 @@ export function parseManuscriptMarkdown(rawMarkdown: string): ParsedScriptResult
     scenes,
     generationMode: 'video',
     targetVideoDuration: 4,
-    autoArchitectMode: false,
-    hookAnalysis: {
-      headlineHook: "Twelve men entered a million-dollar game to expose one outsider—but every single one believed he was that outsider.",
-      hookType: "Identity & Counter-Intuitive Flip",
-      hookRationale: "Instant psychological paradox in the first 4 seconds forces viewers to stay to see who confesses first.",
-    },
     thumbnail: compileThumbnailPrompt({
       rawThumbnail: {
         heroMoment: "Twelve suspicious contestants surrounding the glowing voting chamber, eyes locked in mutual distrust",
